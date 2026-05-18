@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CMS Banking Test Console</title>
+    <link rel="stylesheet" href="/ui/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">CMS Banking Platform</p>
+        <h1>Operations Test Console</h1>
+        <p class="lead">
+          A lightweight browser surface to exercise the foundation, beneficiary,
+          onboarding, and payout APIs without raw request tools.
+        </p>
+        <div class="hero-actions">
+          <button id="refresh-all" class="button button-primary">Refresh Everything</button>
+          <a class="button button-secondary" href="/health" target="_blank" rel="noreferrer">
+            Health Endpoint
+          </a>
+        </div>
+      </section>
+
+      <section class="grid two-col">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Tenant Snapshot</h2>
+            <span class="badge">Read only</span>
+          </div>
+          <pre id="tenant-output" class="output"></pre>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Onboarding Snapshot</h2>
+            <span class="badge">Read only</span>
+          </div>
+          <pre id="onboarding-output" class="output"></pre>
+        </article>
+      </section>
+
+      <section class="grid two-col">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Create Beneficiary</h2>
+            <span class="badge">Write</span>
+          </div>
+          <form id="beneficiary-form" class="form">
+            <input name="beneficiaryId" placeholder="Beneficiary ID" required />
+            <input name="bankTenantId" placeholder="Bank Tenant ID" value="bank-alpha" required />
+            <input name="corporateTenantId" placeholder="Corporate Tenant ID" value="corp-acme" required />
+            <input name="name" placeholder="Beneficiary Name" required />
+            <input name="accountNumber" placeholder="Account Number" required />
+            <input name="ifsc" placeholder="IFSC" required />
+            <select name="type">
+              <option value="vendor">vendor</option>
+              <option value="statutory">statutory</option>
+            </select>
+            <input name="pan" placeholder="PAN" required />
+            <input name="gstin" placeholder="GSTIN (optional)" />
+            <input name="category" placeholder="Category" value="opex" required />
+            <input name="tags" placeholder="Tags comma separated" value="test" />
+            <button type="submit" class="button button-primary">Create Beneficiary</button>
+          </form>
+          <pre id="beneficiary-form-output" class="output small"></pre>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Beneficiaries</h2>
+            <span class="badge">Read only</span>
+          </div>
+          <pre id="beneficiary-output" class="output"></pre>
+        </article>
+      </section>
+
+      <section class="grid two-col">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Create Payout Batch</h2>
+            <span class="badge">Write</span>
+          </div>
+          <form id="payout-form" class="form">
+            <input name="batchId" placeholder="Batch ID" required />
+            <input name="bankTenantId" placeholder="Bank Tenant ID" value="bank-alpha" required />
+            <input name="corporateTenantId" placeholder="Corporate Tenant ID" value="corp-acme" required />
+            <input name="createdByUserId" placeholder="Created By User ID" value="user-maker-002" required />
+            <input name="title" placeholder="Batch Title" required />
+            <input name="itemId" placeholder="Item ID" required />
+            <input name="beneficiaryId" placeholder="Beneficiary ID" value="ben-acme-001" required />
+            <input name="amount" type="number" min="1" step="0.01" placeholder="Amount" required />
+            <input name="currency" placeholder="Currency" value="INR" required />
+            <input name="purpose" placeholder="Purpose" required />
+            <button type="submit" class="button button-primary">Create Batch</button>
+          </form>
+          <pre id="payout-form-output" class="output small"></pre>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Payout Batches</h2>
+            <span class="badge">Read only</span>
+          </div>
+          <pre id="payout-output" class="output"></pre>
+        </article>
+      </section>
+
+      <section class="grid two-col">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Payout Approval Action</h2>
+            <span class="badge">Write</span>
+          </div>
+          <form id="approval-form" class="form">
+            <input name="batchId" placeholder="Batch ID" value="batch-acme-001" required />
+            <select name="action">
+              <option value="submit">submit</option>
+              <option value="approve">approve</option>
+              <option value="reject">reject</option>
+            </select>
+            <input name="actedByUserId" placeholder="Acted By User ID" value="user-checker-001" required />
+            <input name="comment" placeholder="Comment" value="Approved from test console" />
+            <button type="submit" class="button button-primary">Apply Action</button>
+          </form>
+          <pre id="approval-form-output" class="output small"></pre>
+        </article>
+
+        <article class="panel accent">
+          <div class="panel-head">
+            <h2>Quick Tips</h2>
+            <span class="badge">Testing</span>
+          </div>
+          <ul class="tips">
+            <li>Use seeded corporate IDs like <code>corp-acme</code> and <code>corp-zen</code>.</li>
+            <li>Create a beneficiary first if you want a brand new payout item.</li>
+            <li>A payout must move from <code>draft</code> to <code>pending_approval</code> before approval or rejection.</li>
+          </ul>
+        </article>
+      </section>
+    </main>
+
+    <script src="/ui/app.js"></script>
+  </body>
+  </html>

@@ -1,0 +1,33 @@
+{
+  "name": "cmsv01-banking-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bank-embedded payouts platform prototype",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "build:corporate-web": "npm run build --workspace corporate-web",
+    "db:migrate": "node --dns-result-order=ipv4first --env-file=.env --import tsx scripts/db/migrate.ts",
+    "db:seed": "node --dns-result-order=ipv4first --env-file=.env --import tsx scripts/db/seed.ts",
+    "dev:api": "node --dns-result-order=ipv4first --watch --env-file=.env --import tsx apps/api/src/main.ts",
+    "dev:corporate-web": "npm run dev --workspace corporate-web",
+    "dev:worker": "node --dns-result-order=ipv4first --watch --env-file=.env --import tsx apps/worker/src/main.ts",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "fastify": "^5.3.3",
+    "fastify-plugin": "^5.0.1",
+    "kafkajs": "^2.2.4",
+    "pg": "^8.20.0",
+    "zod": "^3.24.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.20.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}

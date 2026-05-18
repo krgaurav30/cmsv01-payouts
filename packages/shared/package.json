@@ -1,0 +1,13 @@
+{
+  "name": "@cmsv01/shared",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./config": "./src/config.ts",
+    "./db": "./src/db.ts",
+    "./events": "./src/events.ts",
+    "./kafka": "./src/kafka.ts",
+    "./outbox": "./src/outbox.ts",
+    "./tenant-context": "./src/tenant-context.ts"
+  }
+}

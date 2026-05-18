@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Corporate Onboarding | CMS Banking</title>
+    <link rel="stylesheet" href="/corporate/onboarding/styles.css" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Embedded Banking Platform</p>
+          <h1>Corporate Onboarding</h1>
+          <p class="lead">
+            A customer-facing onboarding workspace for finance teams to register
+            their company, choose the bank relationship, and submit the first
+            application for review.
+          </p>
+          <div class="hero-points">
+            <span>Live database-backed workflow</span>
+            <span>Corporate tenant and corporate separation</span>
+            <span>Submit and resubmit after send-back</span>
+          </div>
+        </div>
+
+        <aside class="hero-aside">
+          <div class="metric-card">
+            <span class="metric-label">Current Mode</span>
+            <strong>Corporate Self-Service</strong>
+            <p>No admin backdoor. Real API calls. Real onboarding states.</p>
+          </div>
+        </aside>
+      </section>
+
+      <section class="content-grid">
+        <article class="form-card">
+          <div class="card-head">
+            <div>
+              <p class="section-kicker">Application</p>
+              <h2>Create onboarding request</h2>
+            </div>
+            <span class="status-pill">Live</span>
+          </div>
+
+          <form id="onboarding-form" class="onboarding-form">
+            <div class="field-grid two">
+              <label>
+                <span>Bank application ID</span>
+                <input value="Auto-generated after submission" disabled />
+              </label>
+              <label>
+                <span>Primary admin email</span>
+                <input
+                  type="email"
+                  name="primaryCorporateAdminEmail"
+                  placeholder="finance.admin@company.com"
+                  required
+                />
+              </label>
+            </div>
+
+            <div class="field-grid one">
+              <label>
+                <span>Onboarding journey</span>
+                <select id="onboardingMode" name="onboardingMode" required>
+                  <option value="new_corporate_tenant">New corporate tenant</option>
+                  <option value="new_corporate_under_existing_tenant">New corporate under existing tenant</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="field-grid two">
+              <label>
+                <span>Bank tenant</span>
+                <select id="bankTenantId" name="bankTenantId" required></select>
+              </label>
+              <label id="existing-corporate-group">
+                <span>Existing corporate tenant</span>
+                <select id="corporateTenantId" name="corporateTenantId" required></select>
+              </label>
+            </div>
+
+            <div class="field-grid one" id="new-tenant-group">
+              <label>
+                <span>New corporate tenant name</span>
+                <input
+                  name="corporateTenantName"
+                  placeholder="Tata Group"
+                />
+              </label>
+            </div>
+
+            <div class="field-grid one">
+              <label>
+                <span>Corporate name / legal entity name</span>
+                <input
+                  name="legalEntityName"
+                  placeholder="Tata Motors Limited"
+                  required
+                />
+              </label>
+            </div>
+
+            <div class="field-grid three">
+              <label>
+                <span>Authorized signatory name</span>
+                <input name="signatoryName" placeholder="Anita Sharma" required />
+              </label>
+              <label>
+                <span>GSTIN</span>
+                <input name="gstin" placeholder="29ABCDE1234F1Z5 (optional)" />
+              </label>
+              <label>
+                <span>PAN</span>
+                <input name="pan" placeholder="ABCDE1234F" required />
+              </label>
+            </div>
+
+            <div class="field-grid one">
+              <label>
+                <span>Registered address</span>
+                <textarea
+                  name="registeredAddress"
+                  placeholder="12 MG Road, Bengaluru, Karnataka"
+                  rows="4"
+                  required
+                ></textarea>
+              </label>
+            </div>
+
+            <div class="action-row">
+              <button type="button" id="submit-review" class="button button-primary">
+                Submit Application
+              </button>
+            </div>
+          </form>
+
+          <pre id="form-response" class="response-box">Ready.</pre>
+        </article>
+
+        <aside class="sidebar-stack">
+          <article class="side-card">
+            <div class="card-head compact">
+              <div>
+                <p class="section-kicker">Recent Applications</p>
+                <h3>Submission history</h3>
+              </div>
+              <button id="refresh-applications" class="mini-button">Refresh</button>
+            </div>
+            <div id="applications-list" class="list-stack"></div>
+          </article>
+
+          <article class="side-card">
+            <div class="card-head compact">
+              <div>
+                <p class="section-kicker">Tenant Context</p>
+                <h3>Available corporates</h3>
+              </div>
+            </div>
+            <div id="tenant-summary" class="list-stack"></div>
+          </article>
+        </aside>
+      </section>
+    </main>
+
+    <script src="/corporate/onboarding/app.js"></script>
+  </body>
+  </html>

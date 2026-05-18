@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bank Console | Dev Portal</title>
+    <link rel="stylesheet" href="/bank/dev-portal/styles.css" />
+  </head>
+  <body>
+    <main class="dashboard-shell">
+      <nav class="top-nav" aria-label="Bank console navigation">
+        <a class="nav-link" href="/bank/onboarding-review">Onboarding Review</a>
+        <a class="nav-link" href="/bank/payout-operations">Payout Operations</a>
+        <a class="nav-link nav-link-active" href="/bank/dev-portal">Dev Portal</a>
+      </nav>
+
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Bank Console</p>
+          <h1>Developer Portal</h1>
+          <p class="lead">
+            Publish partner-ready APIs for beneficiary and payment flows. This
+            page groups the contracts by product so corporates can integrate the
+            exact maker and checker actions supported by the platform.
+          </p>
+          <div class="hero-tags">
+            <span>Partner APIs</span>
+            <span>API key protected</span>
+            <span>Maker-checker lifecycle</span>
+          </div>
+        </div>
+
+        <aside class="hero-side">
+          <div class="hero-card">
+            <span class="hero-card-label">Published products</span>
+            <strong>Beneficiary + Payments</strong>
+            <p>
+              Covers creation and authorization flows so partner teams can raise
+              work and complete checker review without using the UI.
+            </p>
+          </div>
+        </aside>
+      </section>
+
+      <section class="docs-layout">
+        <aside class="api-nav-panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Products</p>
+              <h2>Navigation</h2>
+            </div>
+          </div>
+
+          <div id="api-menu" class="api-menu">
+            <section class="api-group">
+              <h3>Beneficiary</h3>
+              <a href="#" class="api-link api-link-active" data-api-link="create-beneficiary">Create Bene</a>
+              <a href="#" class="api-link" data-api-link="auth-beneficiary">Auth Bene</a>
+            </section>
+
+            <section class="api-group">
+              <h3>Payments</h3>
+              <a href="#" class="api-link" data-api-link="create-transaction">Make Payment</a>
+              <a href="#" class="api-link" data-api-link="auth-transaction">Auth Payment</a>
+              <a href="#" class="api-link" data-api-link="get-transaction-status">Get Transaction Status</a>
+            </section>
+
+            <section class="api-group">
+              <h3>API Keys</h3>
+              <a href="#" class="api-link" data-api-link="api-keys">Generate API Key</a>
+            </section>
+          </div>
+        </aside>
+
+        <article class="docs-panel" data-dev-section="api-detail">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Beneficiary Product</p>
+              <h2 id="api-title">Create Beneficiary</h2>
+              <p id="api-meta" class="api-meta">POST /v1/partner/beneficiaries</p>
+            </div>
+            <div class="docs-actions">
+              <a class="mini-button docs-link" href="/bank/dev-portal/openapi/catalog" target="_blank" rel="noreferrer">
+                Open API catalog
+              </a>
+              <a class="mini-button docs-link" href="/bank/dev-portal/openapi/swagger-download">
+                Download Swagger
+              </a>
+            </div>
+          </div>
+
+          <p id="api-summary" class="lead compact-lead"></p>
+
+          <div class="detail-grid">
+            <div class="detail-card">
+              <strong>Auth</strong>
+              <p>Header: <code>x-api-key</code></p>
+              <p>Use the bank-provisioned partner API key for authentication.</p>
+            </div>
+            <div class="detail-card">
+              <strong>Usage Notes</strong>
+              <ul id="api-notes" class="docs-list"></ul>
+            </div>
+          </div>
+
+          <div class="docs-block">
+            <h3>Request Fields</h3>
+            <table class="docs-table">
+              <thead>
+                <tr>
+                  <th>Field</th>
+                  <th>Required</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody id="api-fields"></tbody>
+            </table>
+          </div>
+
+          <section class="detail-card">
+            <strong>Request Example</strong>
+            <pre id="api-example" class="response-box"></pre>
+          </section>
+
+          <div class="detail-grid response-grid">
+            <section class="detail-card">
+              <strong>Sample Success Response</strong>
+              <pre id="api-success-response" class="response-box response-box-compact"></pre>
+            </section>
+            <section class="detail-card">
+              <strong>Sample Error Response</strong>
+              <pre id="api-error-response" class="response-box response-box-compact"></pre>
+            </section>
+          </div>
+        </article>
+
+        <article class="docs-panel" data-dev-section="api-keys" hidden>
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">API Keys</p>
+              <h2>Generate and manage keys</h2>
+            </div>
+          </div>
+
+          <form id="api-key-form" class="action-form">
+            <div class="action-grid">
+              <label>
+                <span>Label</span>
+                <input name="label" placeholder="Maya Pharma production key" />
+              </label>
+              <label>
+                <span>Scope</span>
+                <select name="productScope">
+                  <option value="all">All products</option>
+                  <option value="beneficiary">Beneficiary</option>
+                  <option value="payments">Payments</option>
+                </select>
+              </label>
+            </div>
+
+            <label>
+              <span>Generated by</span>
+              <input name="createdBy" value="bank-ops-001" />
+            </label>
+
+            <div class="action-buttons">
+              <button type="submit" class="button button-primary">Generate API Key</button>
+            </div>
+          </form>
+
+          <pre id="api-key-output" class="response-box">Ready.</pre>
+
+          <div class="docs-block">
+            <h3>Active keys</h3>
+            <div id="api-key-list" class="queue-list"></div>
+          </div>
+        </article>
+      </section>
+    </main>
+    <script src="/bank/dev-portal/app.js"></script>
+  </body>
+</html>

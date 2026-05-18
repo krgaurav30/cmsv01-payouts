@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bank Console | Payout Operations</title>
+    <link rel="stylesheet" href="/bank/payout-operations/styles.css" />
+  </head>
+  <body>
+    <main class="dashboard-shell">
+      <nav class="top-nav" aria-label="Bank console navigation">
+        <a class="nav-link" href="/bank/onboarding-review">Onboarding Review</a>
+        <a class="nav-link nav-link-active" href="/bank/payout-operations">Payout Operations</a>
+        <a class="nav-link" href="/bank/dev-portal">Dev Portal</a>
+      </nav>
+
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Bank Console</p>
+          <h1>Payout Operations Portal</h1>
+          <p class="lead">
+            Review approved payout batches, dispatch them to the mock bank, and
+            simulate the bank response so batch and item statuses move through a
+            realistic operations lifecycle.
+          </p>
+          <div class="hero-tags">
+            <span>Approval handoff</span>
+            <span>Dispatch controls</span>
+            <span>Item-level processing status</span>
+          </div>
+        </div>
+
+        <aside class="hero-side">
+          <div class="hero-card">
+            <span class="hero-card-label">Today's scope</span>
+            <strong>Mock bank dispatch</strong>
+            <p>
+              Start with approved payout batches and test dispatch plus status
+              progression without leaving the portal.
+            </p>
+          </div>
+        </aside>
+      </section>
+
+      <section class="layout">
+        <aside class="queue-panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Payout Queue</p>
+              <h2>Batches</h2>
+            </div>
+            <button id="refresh-batches" class="mini-button">Refresh</button>
+          </div>
+
+          <label class="filter">
+            <span>Bank tenant filter</span>
+            <select id="bank-filter"></select>
+          </label>
+
+          <div id="queue-list" class="queue-list"></div>
+        </aside>
+
+        <section class="detail-panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Batch Detail</p>
+              <h2 id="detail-title">Select a payout batch</h2>
+            </div>
+            <span id="detail-state" class="state-pill">No selection</span>
+          </div>
+
+          <div id="detail-body" class="detail-body empty-state">
+            Choose a payout batch from the left to inspect it.
+          </div>
+
+          <form id="operations-form" class="action-form">
+            <div class="action-grid">
+              <label>
+                <span>Operations action</span>
+                <select id="operation" name="operation">
+                  <option value="dispatch">Dispatch to mock bank</option>
+                  <option value="simulate">Simulate bank response</option>
+                </select>
+              </label>
+              <label>
+                <span>Bank user ID</span>
+                <input id="actedByUserId" name="actedByUserId" value="bank-ops-001" required />
+              </label>
+            </div>
+
+            <label>
+              <span>Comment</span>
+              <textarea
+                id="comment"
+                name="comment"
+                rows="4"
+                placeholder="Leave dispatch or processing notes for the operations trail."
+                required
+              ></textarea>
+            </label>
+
+            <div class="action-buttons">
+              <button type="submit" class="button button-primary">Run Action</button>
+            </div>
+          </form>
+
+          <pre id="action-output" class="response-box">Ready.</pre>
+        </section>
+      </section>
+    </main>
+
+    <script src="/bank/payout-operations/app.js"></script>
+  </body>
+</html>

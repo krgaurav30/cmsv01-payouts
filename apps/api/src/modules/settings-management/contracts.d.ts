@@ -1,0 +1,56 @@
+import { z } from "zod";
+export declare const duplicateReferencePolicySchema: z.ZodEnum<["enabled", "disabled"]>;
+export declare const corporateTenantSettingsSchema: z.ZodObject<{
+    corporateTenantId: z.ZodString;
+    actedByUserId: z.ZodString;
+    companyDisplayName: z.ZodString;
+    supportEmail: z.ZodUnion<[z.ZodOptional<z.ZodString>, z.ZodLiteral<"">]>;
+    supportPhone: z.ZodUnion<[z.ZodOptional<z.ZodString>, z.ZodLiteral<"">]>;
+    registeredAddress: z.ZodUnion<[z.ZodOptional<z.ZodString>, z.ZodLiteral<"">]>;
+    defaultApprovalNoteTemplate: z.ZodUnion<[z.ZodOptional<z.ZodString>, z.ZodLiteral<"">]>;
+    maxSingleTransactionAmount: z.ZodNumber;
+    maxDailyCumulativeTransactionAmount: z.ZodNumber;
+    maxBulkUploadRows: z.ZodNumber;
+    duplicateReferencePolicy: z.ZodEnum<["enabled", "disabled"]>;
+}, "strip", z.ZodTypeAny, {
+    corporateTenantId: string;
+    actedByUserId: string;
+    duplicateReferencePolicy: "disabled" | "enabled";
+    companyDisplayName: string;
+    maxSingleTransactionAmount: number;
+    maxDailyCumulativeTransactionAmount: number;
+    maxBulkUploadRows: number;
+    supportEmail?: string | undefined;
+    supportPhone?: string | undefined;
+    registeredAddress?: string | undefined;
+    defaultApprovalNoteTemplate?: string | undefined;
+}, {
+    corporateTenantId: string;
+    actedByUserId: string;
+    duplicateReferencePolicy: "disabled" | "enabled";
+    companyDisplayName: string;
+    maxSingleTransactionAmount: number;
+    maxDailyCumulativeTransactionAmount: number;
+    maxBulkUploadRows: number;
+    supportEmail?: string | undefined;
+    supportPhone?: string | undefined;
+    registeredAddress?: string | undefined;
+    defaultApprovalNoteTemplate?: string | undefined;
+}>;
+export type DuplicateReferencePolicy = z.infer<typeof duplicateReferencePolicySchema>;
+export type CorporateTenantSettingsRequest = z.infer<typeof corporateTenantSettingsSchema>;
+export type CorporateTenantSettings = {
+    corporateTenantId: string;
+    companyDisplayName: string;
+    supportEmail: string | null;
+    supportPhone: string | null;
+    registeredAddress: string | null;
+    defaultApprovalNoteTemplate: string | null;
+    maxSingleTransactionAmount: number;
+    maxDailyCumulativeTransactionAmount: number;
+    maxBulkUploadRows: number;
+    duplicateReferencePolicy: DuplicateReferencePolicy;
+    updatedAt: string | null;
+    updatedByUserId: string | null;
+    updatedByRole: string | null;
+};
