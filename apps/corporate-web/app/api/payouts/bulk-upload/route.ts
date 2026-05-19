@@ -18,6 +18,7 @@ type ParsedUpload = {
 };
 
 export async function POST(request: NextRequest) {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3101";
   const session = parseSessionCookie(request.cookies.get(SESSION_COOKIE)?.value);
 
   if (!session) {
