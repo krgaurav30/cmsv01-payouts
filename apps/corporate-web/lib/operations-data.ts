@@ -13,7 +13,7 @@ import type {
   PayoutFileUpload
 } from "./types";
 
-const API_BASE = "http://127.0.0.1:3101";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3101";
 
 export async function loadOperationsInitialData(
   session: CorporateSession,

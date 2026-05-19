@@ -7,7 +7,8 @@ export async function POST(request: NextRequest) {
   const password = String(formData.get("password") ?? "");
 
   try {
-    const response = await fetch("http://127.0.0.1:3101/v1/auth/login", {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3101";
+    const response = await fetch(`${apiUrl}/v1/auth/login`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"

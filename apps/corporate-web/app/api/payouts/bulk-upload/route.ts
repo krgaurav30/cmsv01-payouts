@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const response = await fetch("http://127.0.0.1:3101/v1/payouts/file-uploads/accept", {
+    const response = await fetch(`${apiUrl}/v1/payouts/file-uploads/accept`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -158,7 +158,8 @@ async function recordRejectedFileUpload(payload: {
   uploadedByUserId: string;
   errors: string[];
 }) {
-  await fetch("http://127.0.0.1:3101/v1/payouts/file-uploads", {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3101";
+  await fetch(`${apiUrl}/v1/payouts/file-uploads`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
