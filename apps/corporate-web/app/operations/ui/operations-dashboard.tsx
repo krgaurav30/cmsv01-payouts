@@ -585,6 +585,7 @@ export function OperationsDashboard({
     const now = new Date();
     return transactions.filter(t => {
       if (dashboardDateRange === "all") return true;
+      if (!t.createdAt) return false;
       const tDate = new Date(t.createdAt);
       const diffTime = Math.abs(now.getTime() - tDate.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));

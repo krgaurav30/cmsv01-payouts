@@ -53,7 +53,7 @@ export async function loadOperationsInitialData(
   }
 
   const settingsRequest = session.permissions.includes("settings.view")
-    ? fetchApi<CorporateTenantSettings>(
+    ? fetchApi<CorporateTenantSettings | null>(
         `/v1/settings/corporate-tenant?corporateTenantId=${encodeURIComponent(session.corporateTenantId)}&actedByUserId=${encodeURIComponent(session.userId)}`,
         null
       )
