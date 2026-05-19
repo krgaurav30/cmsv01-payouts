@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as xlsx from "xlsx";
 
+import { resolveApiBase } from "../../../../lib/api-base";
 import { parseSessionCookie, SESSION_COOKIE } from "../../../../lib/session-cookie";
 
 type ParsedUpload = {
@@ -15,7 +16,7 @@ type ParsedUpload = {
 };
 
 export async function POST(request: NextRequest) {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3101";
+  const apiUrl = resolveApiBase(request.nextUrl.origin);
   const session = parseSessionCookie(request.cookies.get(SESSION_COOKIE)?.value);
 
   if (!session) {
@@ -52,6 +53,7 @@ export async function POST(request: NextRequest) {
 
     if (parsedUpload.errors.length > 0) {
       await recordRejectedFileUpload({
+        apiUrl,
         uploadId,
         bankTenantId: session.bankTenantId,
         corporateTenantId: session.corporateTenantId,
@@ -207,6 +209,7 @@ function parseWorkbookFromBuffer(buffer: Buffer): ParsedUpload {
 }
 
 async function recordRejectedFileUpload(payload: {
+  apiUrl: string;
   uploadId: string;
   bankTenantId: string;
   corporateTenantId: string;
@@ -215,8 +218,7 @@ async function recordRejectedFileUpload(payload: {
   uploadedByUserId: string;
   errors: string[];
 }) {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3101";
-  await fetch(`${apiUrl}/v1/payouts/file-uploads`, {
+  await fetch(`${payload.apiUrl}/v1/payouts/file-uploads`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -237,4 +239,3 @@ async function recordRejectedFileUpload(payload: {
     cache: "no-store"
   }).catch(() => undefined);
 }
-

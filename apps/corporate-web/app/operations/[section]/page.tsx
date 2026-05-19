@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
 import { loadOperationsInitialData } from "../../../lib/operations-data";
@@ -32,7 +32,11 @@ export default async function OperationsSectionPage({
 }: OperationsSectionPageProps) {
   const { section } = await params;
   const cookieStore = await cookies();
+  const headerStore = await headers();
   const session = parseSessionCookie(cookieStore.get(SESSION_COOKIE)?.value);
+  const host = headerStore.get("x-forwarded-host") ?? headerStore.get("host");
+  const protocol = headerStore.get("x-forwarded-proto") ?? "https";
+  const requestOrigin = host ? `${protocol}://${host}` : null;
 
   if (!session) {
     redirect("/login");
@@ -44,7 +48,8 @@ export default async function OperationsSectionPage({
 
   const initialData = await loadOperationsInitialData(
     session,
-    cookieStore.get("cmsSelectedCorporateId")?.value
+    cookieStore.get("cmsSelectedCorporateId")?.value,
+    requestOrigin
   );
 
   return (
