@@ -528,6 +528,16 @@ async function run() {
     })
   );
 
+  // Render requires Web Services to bind to a port, even if they only run background jobs.
+  const http = await import("http");
+  const server = http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end("Worker is healthy");
+  });
+  server.listen(config.port, "0.0.0.0", () => {
+    console.log(`Dummy health server listening on port ${config.port}`);
+  });
+
   await Promise.all([startConsumer(), runPublisherLoop()]);
 }
 
