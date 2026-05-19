@@ -1,8 +1,5 @@
-import { spawn } from "node:child_process";
-import { existsSync, promises as fs } from "node:fs";
-import path from "node:path";
-
 import { NextRequest, NextResponse } from "next/server";
+import * as xlsx from "xlsx";
 
 import { parseSessionCookie, SESSION_COOKIE } from "../../../../../lib/session-cookie";
 
@@ -16,16 +13,8 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const tempDir = path.join(process.cwd(), ".runtime-temp");
-  const outputPath = path.join(
-    tempDir,
-    `future-pay-template-${Date.now()}-${Math.random().toString(36).slice(2)}.xlsx`
-  );
-
   try {
-    await fs.mkdir(tempDir, { recursive: true });
-    await generateTemplate(outputPath);
-    const file = await fs.readFile(outputPath);
+    const file = generateTemplateBuffer();
 
     return new NextResponse(file, {
       status: 200,
@@ -47,52 +36,32 @@ export async function GET(request: NextRequest) {
       },
       { status: 500 }
     );
-  } finally {
-    await fs.unlink(outputPath).catch(() => undefined);
   }
 }
+function generateTemplateBuffer(): Buffer {
+  const HEADERS = [
+    "Transaction Reference",
+    "Beneficiary Name",
+    "Amount",
+    "Tag",
+    "Remark"
+  ];
 
-async function generateTemplate(outputPath: string) {
-  const python =
-    "C:\\Users\\krgau\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe";
-  const script = resolveWorkspacePath(
-    "scripts",
-    "generate_bulk_transactions_template.py"
-  );
+  const SAMPLE_ROW = [
+    "INV-2026-000143",
+    "Jain Ashish",
+    101.00,
+    "salary",
+    "May payout batch"
+  ];
 
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn(python, [script, outputPath], {
-      windowsHide: true
-    });
+  const workbook = xlsx.utils.book_new();
+  const sheet = xlsx.utils.aoa_to_sheet([HEADERS, SAMPLE_ROW]);
 
-    let stderr = "";
+  sheet["!cols"] = HEADERS.map((header) => ({ wch: Math.max(header.length + 6, 22) }));
 
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
+  xlsx.utils.book_append_sheet(workbook, sheet, "Bulk Transactions");
 
-    child.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(stderr || `Template generator failed with exit code ${code}`));
-        return;
-      }
-
-      resolve();
-    });
-  });
-}
-
-function resolveWorkspacePath(...segments: string[]) {
-  const direct = path.join(process.cwd(), ...segments);
-  if (existsSync(direct)) {
-    return direct;
-  }
-
-  const repoRoot = path.resolve(process.cwd(), "..", "..");
-  const fromRepoRoot = path.join(repoRoot, ...segments);
-  if (existsSync(fromRepoRoot)) {
-    return fromRepoRoot;
-  }
-
-  return direct;
+  const buffer = xlsx.write(workbook, { type: "buffer", bookType: "xlsx" });
+  return buffer;
 }

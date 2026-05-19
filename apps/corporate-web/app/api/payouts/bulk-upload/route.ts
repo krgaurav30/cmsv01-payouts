@@ -1,8 +1,5 @@
-import { spawn } from "node:child_process";
-import { existsSync, promises as fs } from "node:fs";
-import path from "node:path";
-
 import { NextRequest, NextResponse } from "next/server";
+import * as xlsx from "xlsx";
 
 import { parseSessionCookie, SESSION_COOKIE } from "../../../../lib/session-cookie";
 
@@ -49,18 +46,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const tempDir = path.join(process.cwd(), ".runtime-temp");
-  const tempFilePath = path.join(
-    tempDir,
-    `future-pay-bulk-${Date.now()}-${Math.random().toString(36).slice(2)}.xlsx`
-  );
-
   try {
-    await fs.mkdir(tempDir, { recursive: true });
     const buffer = Buffer.from(await file.arrayBuffer());
-    await fs.writeFile(tempFilePath, buffer);
-
-    const parsedUpload = await parseWorkbook(tempFilePath);
+    const parsedUpload = parseWorkbookFromBuffer(buffer);
 
     if (parsedUpload.errors.length > 0) {
       await recordRejectedFileUpload({
@@ -110,44 +98,112 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 }
     );
-  } finally {
-    await fs.unlink(tempFilePath).catch(() => undefined);
   }
 }
 
-async function parseWorkbook(filePath: string) {
-  const python = "C:\\Users\\krgau\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe";
-  const script = resolveWorkspacePath("scripts", "parse_bulk_transactions_xlsx.py");
+function parseWorkbookFromBuffer(buffer: Buffer): ParsedUpload {
+  const EXPECTED_HEADERS: Record<string, string> = {
+    "transaction reference": "transactionReference",
+    "beneficiary name": "beneficiaryName",
+    amount: "amount",
+    tag: "tag",
+    remark: "remark"
+  };
 
-  return new Promise<ParsedUpload>((resolve, reject) => {
-    const child = spawn(python, [script, filePath], {
-      windowsHide: true
+  const workbook = xlsx.read(buffer, { type: "buffer" });
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) {
+    return { rows: [], errors: ["The uploaded sheet is empty."] };
+  }
+
+  const sheet = workbook.Sheets[sheetName];
+  const rows = xlsx.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: null });
+  if (rows.length === 0) {
+    return { rows: [], errors: ["The uploaded sheet is empty."] };
+  }
+
+  const headerRow = rows[0] || [];
+  const headerMap: Record<string, number> = {};
+
+  for (let i = 0; i < headerRow.length; i++) {
+    const cellValue = headerRow[i];
+    const normalized = String(cellValue || "").trim().toLowerCase();
+    if (EXPECTED_HEADERS[normalized]) {
+      headerMap[EXPECTED_HEADERS[normalized]] = i;
+    }
+  }
+
+  const requiredLabels = [
+    "transactionReference",
+    "beneficiaryName",
+    "amount",
+    "tag",
+    "remark"
+  ];
+  
+  const missing = requiredLabels.filter((label) => headerMap[label] === undefined);
+
+  if (missing.length > 0) {
+    return {
+      rows: [],
+      errors: ["Missing required columns: " + missing.join(", ")]
+    };
+  }
+
+  const parsedRows: ParsedUpload["rows"] = [];
+  const errors: string[] = [];
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.length === 0 || !row.some((val) => val !== undefined && val !== null && val !== "")) {
+      continue;
+    }
+
+    const getStr = (idx: number) => {
+      const val = row[idx];
+      const str = String(val === undefined || val === null ? "" : val).trim();
+      return str || null;
+    };
+
+    const transactionReference = getStr(headerMap["transactionReference"]);
+    const beneficiaryName = getStr(headerMap["beneficiaryName"]);
+    const amountVal = row[headerMap["amount"]];
+    const tag = getStr(headerMap["tag"]);
+    const remark = getStr(headerMap["remark"]);
+
+    if (!transactionReference) {
+      errors.push(`Row ${i + 1}: Transaction Reference is required.`);
+      continue;
+    }
+
+    if (!beneficiaryName) {
+      errors.push(`Row ${i + 1}: Beneficiary Name is required.`);
+      continue;
+    }
+
+    let amount = 0;
+    if (typeof amountVal === "number") {
+      amount = amountVal;
+    } else {
+      const parsed = parseFloat(String(amountVal || "").trim());
+      if (!isNaN(parsed)) amount = parsed;
+    }
+
+    if (amount <= 0) {
+      errors.push(`Row ${i + 1}: Amount must be a positive number.`);
+      continue;
+    }
+
+    parsedRows.push({
+      transactionReference,
+      beneficiaryName,
+      amount,
+      tag: tag === "" ? null : tag,
+      remark: remark === "" ? null : remark
     });
+  }
 
-    let stdout = "";
-    let stderr = "";
-
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-    });
-
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    child.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(stderr || `Excel parser failed with exit code ${code}`));
-        return;
-      }
-
-      try {
-        resolve(JSON.parse(stdout) as ParsedUpload);
-      } catch (error) {
-        reject(error);
-      }
-    });
-  });
+  return { rows: parsedRows, errors };
 }
 
 async function recordRejectedFileUpload(payload: {
@@ -182,17 +238,3 @@ async function recordRejectedFileUpload(payload: {
   }).catch(() => undefined);
 }
 
-function resolveWorkspacePath(...segments: string[]) {
-  const direct = path.join(process.cwd(), ...segments);
-  if (existsSync(direct)) {
-    return direct;
-  }
-
-  const repoRoot = path.resolve(process.cwd(), "..", "..");
-  const fromRepoRoot = path.join(repoRoot, ...segments);
-  if (existsSync(fromRepoRoot)) {
-    return fromRepoRoot;
-  }
-
-  return direct;
-}

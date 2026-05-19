@@ -2887,7 +2887,7 @@ export function OperationsDashboard({
                 <div className="ops-actions">
                   <a
                     className="ops-button secondary ops-link-button"
-                    href="http://127.0.0.1:3101/bank/dev-portal"
+                    href="/bank/dev-portal"
                     rel="noreferrer"
                     target="_blank"
                   >
@@ -2895,7 +2895,7 @@ export function OperationsDashboard({
                   </a>
                   <a
                     className="ops-button primary ops-link-button"
-                    href="http://127.0.0.1:3101/bank/dev-portal/openapi/swagger-download"
+                    href="/bank/dev-portal/openapi/swagger-download"
                   >
                     Download Swagger
                   </a>
@@ -2904,7 +2904,7 @@ export function OperationsDashboard({
 
               <iframe
                 className="ops-devportal-frame"
-                src="http://127.0.0.1:3101/bank/dev-portal"
+                src="/bank/dev-portal"
                 title="Future Pay Developer Portal"
               />
             </section>
