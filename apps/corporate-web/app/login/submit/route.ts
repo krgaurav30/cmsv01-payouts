@@ -38,7 +38,8 @@ export async function POST(request: NextRequest) {
     });
 
     return redirectResponse;
-  } catch {
-    return NextResponse.redirect(new URL("/login?error=service_unavailable", request.url));
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.redirect(new URL(`/login?error=service_unavailable&details=${encodeURIComponent(msg)}`, request.url));
   }
 }
