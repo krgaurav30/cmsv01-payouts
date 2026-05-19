@@ -15,12 +15,13 @@ export async function GET(request: NextRequest) {
 
   try {
     const file = generateTemplateBuffer();
+    const body = new Blob([new Uint8Array(file)], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    });
 
-    return new NextResponse(new Uint8Array(file), {
+    return new NextResponse(body, {
       status: 200,
       headers: {
-        "Content-Type":
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Disposition":
           'attachment; filename="future-pay-bulk-transaction-template.xlsx"',
         "Cache-Control": "no-store"
