@@ -540,7 +540,7 @@ export function OperationsDashboard({
   const selectedTenant = corporateTenants.find(
     (tenant) => tenant.tenantId === session?.corporateTenantId
   );
-  const avatarInitials = getInitials(session.displayName);
+  const avatarInitials = getInitials(session?.displayName ?? "User");
   const activeSectionLabel =
     SECTIONS.find((section) => section.id === activeSection)?.label ?? "Workspace";
   const unreadNotificationCount = useMemo(
