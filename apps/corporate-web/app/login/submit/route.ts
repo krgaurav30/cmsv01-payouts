@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { resolveApiBase } from "../../../lib/api-base";
 import { SESSION_COOKIE } from "../../../lib/session-cookie";
 
 export async function POST(request: NextRequest) {
@@ -7,7 +8,7 @@ export async function POST(request: NextRequest) {
   const password = String(formData.get("password") ?? "");
 
   try {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3101";
+    const apiUrl = resolveApiBase(request.nextUrl.origin);
     const response = await fetch(`${apiUrl}/v1/auth/login`, {
       method: "POST",
       headers: {
@@ -26,10 +27,14 @@ export async function POST(request: NextRequest) {
     };
 
     if (!response.ok || !data.session) {
-      return NextResponse.redirect(new URL("/login?error=invalid_credentials", request.url));
+      return NextResponse.redirect(new URL("/login?error=invalid_credentials", request.url), {
+        status: 303
+      });
     }
 
-    const redirectResponse = NextResponse.redirect(new URL("/operations", request.url));
+    const redirectResponse = NextResponse.redirect(new URL("/operations", request.url), {
+      status: 303
+    });
     redirectResponse.cookies.set(SESSION_COOKIE, encodeURIComponent(JSON.stringify(data.session)), {
       httpOnly: false,
       sameSite: "lax",
@@ -40,6 +45,9 @@ export async function POST(request: NextRequest) {
     return redirectResponse;
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.redirect(new URL(`/login?error=service_unavailable&details=${encodeURIComponent(msg)}`, request.url));
+    return NextResponse.redirect(
+      new URL(`/login?error=service_unavailable&details=${encodeURIComponent(msg)}`, request.url),
+      { status: 303 }
+    );
   }
 }
