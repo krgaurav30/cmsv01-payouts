@@ -186,6 +186,10 @@ type OperationsDashboardProps = {
   initialSection: SectionId;
 };
 
+type RefreshWorkspaceOptions = {
+  silent?: boolean;
+};
+
 export function OperationsDashboard({
   initialData,
   initialSession,
@@ -200,6 +204,9 @@ export function OperationsDashboard({
   const beneficiaryApprovalsRef = useRef<HTMLDivElement | null>(null);
   const roleApprovalsRef = useRef<HTMLDivElement | null>(null);
   const userApprovalsRef = useRef<HTMLDivElement | null>(null);
+  const autoRefreshInFlightRef = useRef(false);
+  const latestSessionRef = useRef<CorporateSession | null>(initialSession);
+  const latestCorporateIdRef = useRef(initialData.selectedCorporateId);
 
   const [session, setSession] = useState<CorporateSession | null>(initialSession);
   const [loading, setLoading] = useState(false);
@@ -274,6 +281,14 @@ export function OperationsDashboard({
     setActiveSection(initialSection);
   }, [initialSection]);
 
+  useEffect(() => {
+    latestSessionRef.current = session;
+  }, [session]);
+
+  useEffect(() => {
+    latestCorporateIdRef.current = selectedCorporateId;
+  }, [selectedCorporateId]);
+
   async function bootstrap(currentSession: CorporateSession) {
     setLoading(true);
     const contextResult = await loadContext(currentSession);
@@ -331,7 +346,13 @@ export function OperationsDashboard({
     return { ok: true as const, corporateId: preferredCorporateId };
   }
 
-  async function refreshWorkspace(currentSession: CorporateSession, corporateId: string) {
+  async function refreshWorkspace(
+    currentSession: CorporateSession,
+    corporateId: string,
+    options: RefreshWorkspaceOptions = {}
+  ) {
+    const silent = options.silent ?? false;
+
     if (!corporateId) {
       setTransactions([]);
       setFileUploads([]);
@@ -339,11 +360,15 @@ export function OperationsDashboard({
       setRoles([]);
       setUsers([]);
       setSettings(null);
-      setNotice({ tone: "info", text: "No child corporate is available for this user yet." });
+      if (!silent) {
+        setNotice({ tone: "info", text: "No child corporate is available for this user yet." });
+      }
       return;
     }
 
-    setBusy(true);
+    if (!silent) {
+      setBusy(true);
+    }
     const settingsRequest = hasPermission(currentSession, "settings.view")
       ? fetchJson<CorporateTenantSettings>(
           `/v1/settings/corporate-tenant?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&actedByUserId=${encodeURIComponent(currentSession.userId)}`
@@ -421,13 +446,15 @@ export function OperationsDashboard({
       settingsResult
     ].filter((result) => !result.ok);
 
-    if (failures.length > 0) {
+    if (!silent && failures.length > 0) {
       setNotice({
         tone: "error",
         text: failures.map((result) => result.message).join(" | ")
       });
     }
-    setBusy(false);
+    if (!silent) {
+      setBusy(false);
+    }
   }
 
   async function loadTransactionDetail(batchId: string) {
@@ -501,6 +528,62 @@ export function OperationsDashboard({
 
     void refreshNotifications(session.userId);
   }, [session]);
+
+  useEffect(() => {
+    async function runAutoRefresh() {
+      if (document.hidden || autoRefreshInFlightRef.current) {
+        return;
+      }
+
+      const currentSession = latestSessionRef.current;
+      const corporateId = latestCorporateIdRef.current;
+
+      if (!currentSession || !corporateId) {
+        return;
+      }
+
+      autoRefreshInFlightRef.current = true;
+
+      try {
+        await Promise.all([
+          refreshWorkspace(currentSession, corporateId, { silent: true }),
+          refreshNotifications(currentSession.userId)
+        ]);
+      } finally {
+        autoRefreshInFlightRef.current = false;
+      }
+    }
+
+    const refreshMs =
+      activeSection === "transactions" ||
+      activeSection === "file-uploads" ||
+      activeSection === "approvals"
+        ? 4000
+        : 8000;
+
+    const intervalId = window.setInterval(() => {
+      void runAutoRefresh();
+    }, refreshMs);
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        void runAutoRefresh();
+      }
+    };
+
+    const handleWindowFocus = () => {
+      void runAutoRefresh();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleWindowFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleWindowFocus);
+    };
+  }, [activeSection]);
 
   useEffect(() => {
     if (!activeTimelineId) {
