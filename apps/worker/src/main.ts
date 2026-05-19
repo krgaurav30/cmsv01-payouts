@@ -464,13 +464,18 @@ async function handleDomainEvent(event: DomainEventEnvelope) {
 }
 
 async function postToApi(path: string, body?: Record<string, unknown>) {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    method: "POST",
-    headers: {
+  const requestInit: RequestInit = {
+    method: "POST"
+  };
+
+  if (body) {
+    requestInit.headers = {
       "Content-Type": "application/json"
-    },
-    ...(body ? { body: JSON.stringify(body) } : {})
-  });
+    };
+    requestInit.body = JSON.stringify(body);
+  }
+
+  const response = await fetch(`${apiBaseUrl}${path}`, requestInit);
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
