@@ -54,7 +54,7 @@ app.get("/context", async (request) => {
 
 try {
   await app.listen({
-    host: "127.0.0.1",
+    host: "0.0.0.0",
     port: config.port
   });
 } catch (error) {
