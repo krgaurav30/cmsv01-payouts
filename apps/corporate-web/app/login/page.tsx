@@ -1,3 +1,7 @@
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+
+import { parseSessionCookie, SESSION_COOKIE } from "../../lib/session-cookie";
 import { LoginCard } from "./ui/login-card";
 import "./styles.css";
 
@@ -11,6 +15,13 @@ export default async function LoginPage({
 }: {
   searchParams?: Promise<{ error?: string }>;
 }) {
+  const cookieStore = await cookies();
+  const session = parseSessionCookie(cookieStore.get(SESSION_COOKIE)?.value);
+
+  if (session) {
+    redirect("/operations/home");
+  }
+
   const params = searchParams ? await searchParams : undefined;
   const error =
     params?.error && params.error in LOGIN_ERRORS

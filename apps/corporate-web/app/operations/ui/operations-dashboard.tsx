@@ -1477,7 +1477,7 @@ export function OperationsDashboard({
 
   function handleLogout() {
     clearSession();
-    router.replace("/login");
+    window.location.assign("/logout");
   }
 
   function navigateToSection(section: SectionId) {
