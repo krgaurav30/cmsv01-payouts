@@ -15,7 +15,18 @@ const producer = kafka.producer();
 const consumer = kafka.consumer({
   groupId: `${config.kafkaClientId}-projection-worker`
 });
-const apiBaseUrl = `http://127.0.0.1:${config.port}`;
+const apiBaseUrl =
+  process.env.API_URL ||
+  process.env.WORKER_API_URL ||
+  (process.env.NODE_ENV === "development"
+    ? `http://127.0.0.1:${config.port}`
+    : null);
+
+if (!apiBaseUrl) {
+  throw new Error(
+    "Worker API base URL is not configured. Set API_URL for deployed worker callbacks."
+  );
+}
 
 let producerConnected = false;
 let consumerConnected = false;
@@ -405,9 +416,7 @@ async function syncApprovalAssignments(batchId: string) {
 
 async function handleDomainEvent(event: DomainEventEnvelope) {
   if (event.aggregateType === "file-upload" && event.eventType === "file.accepted") {
-    await fetch(`${apiBaseUrl}/v1/payouts/file-uploads/${event.aggregateId}/process`, {
-      method: "POST"
-    });
+    await postToApi(`/v1/payouts/file-uploads/${event.aggregateId}/process`);
     return;
   }
 
@@ -415,9 +424,7 @@ async function handleDomainEvent(event: DomainEventEnvelope) {
     event.aggregateType === "transaction-command" &&
     event.eventType === "transaction.command.accepted"
   ) {
-    await fetch(`${apiBaseUrl}/v1/payouts/commands/${event.aggregateId}/process`, {
-      method: "POST"
-    });
+    await postToApi(`/v1/payouts/commands/${event.aggregateId}/process`);
     return;
   }
 
@@ -441,31 +448,38 @@ async function handleDomainEvent(event: DomainEventEnvelope) {
   }
 
   if (event.eventType === "transaction.approved") {
-    const dispatchResponse = await fetch(`${apiBaseUrl}/v1/payouts/batches/${batchId}/dispatch`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        actedByUserId: "system-worker",
-        comment: "Automatically sent to bank by background dispatch worker"
-      })
+    const dispatchResponse = await postToApi(`/v1/payouts/batches/${batchId}/dispatch`, {
+      actedByUserId: "system-worker",
+      comment: "Automatically sent to bank by background dispatch worker"
     });
 
     if (dispatchResponse.ok) {
-      await fetch(`${apiBaseUrl}/v1/payouts/batches/${batchId}/simulate-response`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          actedByUserId: "system-worker",
-          comment: "Mock bank response processed by background worker"
-        })
+      await postToApi(`/v1/payouts/batches/${batchId}/simulate-bank-response`, {
+        actedByUserId: "system-worker",
+        comment: "Mock bank response processed by background worker"
       });
       await syncTransactionProjection(batchId);
     }
   }
+}
+
+async function postToApi(path: string, body?: Record<string, unknown>) {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    ...(body ? { body: JSON.stringify(body) } : {})
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(
+      `API callback failed for ${path}: ${response.status} ${response.statusText}${text ? ` - ${text}` : ""}`
+    );
+  }
+
+  return response;
 }
 
 async function startConsumer() {
