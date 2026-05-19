@@ -8,7 +8,9 @@ export function createKafkaClient(config: AppConfig) {
     brokers: config.kafkaBrokers,
     ...(config.kafkaSaslUsername && config.kafkaSaslPassword
       ? {
-          ssl: true,
+          ssl: {
+            rejectUnauthorized: false
+          },
           sasl: {
             mechanism: "scram-sha-256",
             username: config.kafkaSaslUsername,
