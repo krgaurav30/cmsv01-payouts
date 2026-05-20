@@ -69,6 +69,11 @@
               <h3>API Keys</h3>
               <a href="#" class="api-link" data-api-link="api-keys">Generate API Key</a>
             </section>
+
+            <section class="api-group">
+              <h3>Webhooks</h3>
+              <a href="#" class="api-link" data-api-link="webhooks">Register Webhook</a>
+            </section>
           </div>
         </aside>
 
@@ -173,6 +178,66 @@
           <div class="docs-block">
             <h3>Active keys</h3>
             <div id="api-key-list" class="queue-list"></div>
+          </div>
+        </article>
+
+        <article class="docs-panel" data-dev-section="webhooks" hidden>
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Webhooks</p>
+              <h2>Register and manage webhooks</h2>
+              <p class="api-meta">Create callback endpoints for partner events and monitor recent delivery attempts.</p>
+            </div>
+          </div>
+
+          <form id="webhook-form" class="action-form">
+            <label>
+              <span>Label</span>
+              <input name="label" placeholder="Maya Pharma production webhook" />
+            </label>
+
+            <label>
+              <span>Webhook URL</span>
+              <input name="webhookUrl" placeholder="https://partner.example.com/future-pay/webhooks" required />
+            </label>
+
+            <label>
+              <span>Description</span>
+              <textarea name="description" placeholder="Optional notes for the ops or partner team"></textarea>
+            </label>
+
+            <fieldset class="action-fieldset">
+              <legend>Subscriptions</legend>
+              <div class="action-grid webhook-picker">
+                <label>
+                  <span>Select category</span>
+                  <select id="webhook-event-select">
+                    <option value="">Choose a category</option>
+                  </select>
+                </label>
+                <div class="action-buttons webhook-add-button">
+                  <button type="button" id="webhook-add-event" class="mini-button">Add category</button>
+                </div>
+              </div>
+              <div id="webhook-selected-events" class="selected-chip-list"></div>
+            </fieldset>
+
+            <div class="action-buttons">
+              <button type="submit" class="button button-primary">Register webhook</button>
+            </div>
+          </form>
+
+          <pre id="webhook-output" class="response-box">Ready.</pre>
+
+          <div class="detail-grid">
+            <section class="detail-card">
+              <strong>Registered webhooks</strong>
+              <div id="webhook-list" class="queue-list"></div>
+            </section>
+            <section class="detail-card">
+              <strong>Recent delivery logs</strong>
+              <div id="webhook-delivery-list" class="queue-list"></div>
+            </section>
           </div>
         </article>
       </section>

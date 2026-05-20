@@ -476,6 +476,78 @@ textarea {
   justify-content: flex-start;
 }
 
+.compact-actions {
+  margin-top: 10px;
+}
+
+.action-fieldset {
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-soft);
+}
+
+.action-fieldset legend {
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.webhook-picker {
+  align-items: end;
+}
+
+.webhook-add-button {
+  align-items: flex-end;
+}
+
+.selected-chip-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.selected-chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  min-height: 34px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.checkbox-item {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-strong);
+}
+
+.checkbox-item input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
 .response-box {
   margin: 18px 0 0;
   min-height: 120px;

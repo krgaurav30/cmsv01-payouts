@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -67,6 +67,14 @@ type SetupAuditEntry = {
   actorRole: string | null;
   state: string;
   remark: string | null;
+};
+
+type DateRangePreset = "" | "today" | "yesterday" | "this_week" | "this_month" | "custom";
+
+type DateRangeFilter = {
+  preset: DateRangePreset;
+  from: string;
+  to: string;
 };
 
 export const SECTIONS: Array<{ id: SectionId; label: string; accent: string }> = [
@@ -196,6 +204,7 @@ export function OperationsDashboard({
   initialSection
 }: OperationsDashboardProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const bootstrappedRef = useRef(false);
   const skipNextCorporateRefreshRef = useRef(Boolean(initialData.selectedCorporateId));
   const otherMenuRef = useRef<HTMLDetailsElement | null>(null);
@@ -211,7 +220,6 @@ export function OperationsDashboard({
   const [session, setSession] = useState<CorporateSession | null>(initialSession);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [activeSection, setActiveSection] = useState<SectionId>(initialSection);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [activeTimelineId, setActiveTimelineId] = useState<string | null>(null);
   const [approvalSectionFilter, setApprovalSectionFilter] =
@@ -246,11 +254,20 @@ export function OperationsDashboard({
 
   const [beneficiarySearch, setBeneficiarySearch] = useState("");
   const [beneficiaryStatusFilter, setBeneficiaryStatusFilter] = useState("");
-  const [beneficiaryCategoryFilter, setBeneficiaryCategoryFilter] = useState("");
+  const [beneficiaryDateFilter, setBeneficiaryDateFilter] = useState<DateRangeFilter>(
+    createEmptyDateRangeFilter()
+  );
 
   const [transactionSearch, setTransactionSearch] = useState("");
   const [transactionStateFilter, setTransactionStateFilter] = useState("");
-  const [transactionTagFilter, setTransactionTagFilter] = useState("");
+  const [transactionDateFilter, setTransactionDateFilter] = useState<DateRangeFilter>(
+    createEmptyDateRangeFilter()
+  );
+  const [fileUploadSearch, setFileUploadSearch] = useState("");
+  const [fileUploadStatusFilter, setFileUploadStatusFilter] = useState("");
+  const [fileUploadDateFilter, setFileUploadDateFilter] = useState<DateRangeFilter>(
+    createEmptyDateRangeFilter()
+  );
   const [dashboardDateRange, setDashboardDateRange] = useState("all");
 
   useEffect(() => {
@@ -277,9 +294,10 @@ export function OperationsDashboard({
     void bootstrap(currentSession);
   }, [initialSession, router]);
 
-  useEffect(() => {
-    setActiveSection(initialSection);
-  }, [initialSection]);
+  const activeSection = useMemo(
+    () => resolveSectionFromPathname(pathname) ?? initialSection,
+    [pathname, initialSection]
+  );
 
   useEffect(() => {
     latestSessionRef.current = session;
@@ -698,49 +716,128 @@ export function OperationsDashboard({
   }, [activeTimelineId, transactionDetailCache, transactions]);
 
   const beneficiaryRows = useMemo(() => {
-    return beneficiaries.filter((beneficiary) => {
+    return beneficiaries
+      .filter((beneficiary) => {
       const searchTerm = beneficiarySearch.trim().toLowerCase();
-      const categoryTerm = beneficiaryCategoryFilter.trim().toLowerCase();
+      const beneficiaryDate = normalizeDateOnly(beneficiary.lastUpdatedAt);
 
       const matchesSearch =
         searchTerm.length === 0 ||
-        beneficiary.name.toLowerCase().includes(searchTerm) ||
-        beneficiary.beneficiaryId.toLowerCase().includes(searchTerm) ||
-        beneficiary.accountNumber.includes(searchTerm);
+        [
+          beneficiary.name,
+          beneficiary.beneficiaryId,
+          beneficiary.accountNumber,
+          beneficiary.ifsc,
+          beneficiary.bankName,
+          beneficiary.phoneNumber ?? "",
+          beneficiary.category ?? "",
+          beneficiary.status,
+          beneficiary.approvalState,
+          beneficiary.reviewComment ?? "",
+          beneficiary.tags.join(" ")
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(searchTerm);
 
       const matchesStatus =
         beneficiaryStatusFilter.length === 0 ||
         beneficiary.status === beneficiaryStatusFilter;
 
-      const matchesCategory =
-        categoryTerm.length === 0 ||
-        (beneficiary.category ?? "").toLowerCase().includes(categoryTerm);
+      const matchesDate = matchesDateRangeFilter(beneficiaryDate, beneficiaryDateFilter);
 
-      return matchesSearch && matchesStatus && matchesCategory;
-    });
-  }, [beneficiaries, beneficiaryCategoryFilter, beneficiarySearch, beneficiaryStatusFilter]);
+      return matchesSearch && matchesStatus && matchesDate;
+    })
+      .sort(
+        (left, right) =>
+          compareDateDesc(left.lastUpdatedAt, right.lastUpdatedAt) ||
+          right.beneficiaryId.localeCompare(left.beneficiaryId)
+      );
+  }, [
+    beneficiaries,
+    beneficiaryDateFilter,
+    beneficiarySearch,
+    beneficiaryStatusFilter
+  ]);
 
   const transactionRows = useMemo(() => {
-    return transactions.filter((transaction) => {
+    return transactions
+      .filter((transaction) => {
       const searchTerm = transactionSearch.trim().toLowerCase();
-      const tagTerm = transactionTagFilter.trim().toLowerCase();
+      const transactionDate = normalizeDateOnly(transaction.createdAt);
 
       const matchesSearch =
         searchTerm.length === 0 ||
-        transaction.batchId.toLowerCase().includes(searchTerm) ||
-        transaction.title.toLowerCase().includes(searchTerm);
+        [
+          transaction.batchId,
+          transaction.title,
+          transaction.primaryBeneficiaryName ?? "",
+          transaction.primaryBeneficiaryId ?? "",
+          transaction.tag ?? "",
+          transaction.remark ?? "",
+          transaction.state,
+          String(transaction.totalAmount.value)
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(searchTerm);
 
       const matchesState =
         transactionStateFilter.length === 0 ||
         transaction.state === transactionStateFilter;
 
-      const matchesTag =
-        tagTerm.length === 0 ||
-        (transaction.tag ?? "").toLowerCase().includes(tagTerm);
+      const matchesDate = matchesDateRangeFilter(transactionDate, transactionDateFilter);
 
-      return matchesSearch && matchesState && matchesTag;
-    });
-  }, [transactionSearch, transactionStateFilter, transactionTagFilter, transactions]);
+      return matchesSearch && matchesState && matchesDate;
+    })
+      .sort(
+        (left, right) =>
+          compareDateDesc(left.createdAt, right.createdAt) ||
+          right.batchId.localeCompare(left.batchId)
+      );
+  }, [
+    transactionDateFilter,
+    transactionSearch,
+    transactionStateFilter,
+    transactions
+  ]);
+
+  const fileUploadRows = useMemo(() => {
+    return fileUploads
+      .filter((fileUpload) => {
+        const searchTerm = fileUploadSearch.trim().toLowerCase();
+        const statusTerm = fileUploadStatusFilter.trim().toLowerCase();
+        const uploadDate = normalizeDateOnly(fileUpload.uploadedAt);
+
+        const matchesSearch =
+          searchTerm.length === 0 ||
+          [
+            fileUpload.fileName,
+            fileUpload.uploadedByName ?? "",
+            fileUpload.uploadedByUserId,
+            fileUpload.status,
+            fileUpload.remark ?? "",
+            String(fileUpload.totalRows),
+            String(fileUpload.createdCount),
+            String(fileUpload.rejectedCount)
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(searchTerm);
+
+        const matchesDate = matchesDateRangeFilter(uploadDate, fileUploadDateFilter);
+
+        const matchesStatus =
+          statusTerm.length === 0 || fileUpload.status.toLowerCase() === statusTerm;
+
+        return matchesSearch && matchesDate && matchesStatus;
+      })
+      .sort(
+        (left, right) =>
+          compareDateDesc(left.uploadedAt, right.uploadedAt) ||
+          right.uploadId.localeCompare(left.uploadId)
+      );
+  }, [fileUploadDateFilter, fileUploadSearch, fileUploadStatusFilter, fileUploads]);
 
   const approvalEntries = useMemo<ApprovalEntry[]>(() => {
     return [
@@ -1564,7 +1661,6 @@ export function OperationsDashboard({
   }
 
   function navigateToSection(section: SectionId) {
-    setActiveSection(section);
     router.push(`/operations/${section}`);
   }
 
@@ -1861,9 +1957,6 @@ export function OperationsDashboard({
               <div className="ops-panel-head">
                 <div>
                   <h3>Transactions</h3>
-                  <p className="ops-meta">
-                    Every payout transaction with state tracking, timeline visibility, and clean filters.
-                  </p>
                 </div>
                 <div className="ops-actions">
                   {isTransactionMaker ? (
@@ -1972,10 +2065,10 @@ export function OperationsDashboard({
 
               <div className="ops-toolbar ops-fields three">
                 <label>
-                  Search
+                  Smart search
                   <input
                     onChange={(event) => setTransactionSearch(event.target.value)}
-                    placeholder="Search by transaction reference or txn UUID"
+                    placeholder="Search by reference, beneficiary, amount, status, or remark"
                     value={transactionSearch}
                   />
                 </label>
@@ -1997,12 +2090,50 @@ export function OperationsDashboard({
                   </select>
                 </label>
                 <label>
-                  Tag
-                  <input
-                    onChange={(event) => setTransactionTagFilter(event.target.value)}
-                    placeholder="Filter by tag"
-                    value={transactionTagFilter}
-                  />
+                  Date
+                  <div className="ops-date-filter">
+                    <select
+                      onChange={(event) =>
+                        setTransactionDateFilter(
+                          createDateRangeFilterFromPreset(event.target.value as DateRangePreset)
+                        )
+                      }
+                      value={transactionDateFilter.preset}
+                    >
+                      <option value="">All dates</option>
+                      <option value="today">Today</option>
+                      <option value="yesterday">Yesterday</option>
+                      <option value="this_week">This week</option>
+                      <option value="this_month">This month</option>
+                      <option value="custom">Custom range</option>
+                    </select>
+                    {transactionDateFilter.preset === "custom" ? (
+                      <div className="ops-date-range">
+                        <input
+                          onChange={(event) =>
+                            setTransactionDateFilter((current) => ({
+                              preset: "custom",
+                              from: event.target.value,
+                              to: current.to
+                            }))
+                          }
+                          type="date"
+                          value={transactionDateFilter.from}
+                        />
+                        <input
+                          onChange={(event) =>
+                            setTransactionDateFilter((current) => ({
+                              preset: "custom",
+                              from: current.from,
+                              to: event.target.value
+                            }))
+                          }
+                          type="date"
+                          value={transactionDateFilter.to}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
                 </label>
               </div>
 
@@ -2080,9 +2211,6 @@ export function OperationsDashboard({
               <div className="ops-panel-head">
                 <div>
                   <h3>File Uploads</h3>
-                  <p className="ops-meta">
-                    Track every bulk transaction file with file-level status, uploader details, and rejection remarks.
-                  </p>
                 </div>
                 <div className="ops-actions">
                   {isTransactionMaker ? (
@@ -2124,6 +2252,77 @@ export function OperationsDashboard({
                 </div>
               ) : null}
 
+              <div className="ops-toolbar ops-fields three">
+                <label>
+                  Smart search
+                  <input
+                    onChange={(event) => setFileUploadSearch(event.target.value)}
+                    placeholder="Search by file, uploader, status, remark, or row count"
+                    value={fileUploadSearch}
+                  />
+                </label>
+                <label>
+                  Status
+                  <select
+                    onChange={(event) => setFileUploadStatusFilter(event.target.value)}
+                    value={fileUploadStatusFilter}
+                  >
+                    <option value="">All statuses</option>
+                    <option value="processing">Processing</option>
+                    <option value="successful">Successful</option>
+                    <option value="partially_successful">Partially successful</option>
+                    <option value="failed">Failed</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                </label>
+                <label>
+                  Date
+                  <div className="ops-date-filter">
+                    <select
+                      onChange={(event) =>
+                        setFileUploadDateFilter(
+                          createDateRangeFilterFromPreset(event.target.value as DateRangePreset)
+                        )
+                      }
+                      value={fileUploadDateFilter.preset}
+                    >
+                      <option value="">All dates</option>
+                      <option value="today">Today</option>
+                      <option value="yesterday">Yesterday</option>
+                      <option value="this_week">This week</option>
+                      <option value="this_month">This month</option>
+                      <option value="custom">Custom range</option>
+                    </select>
+                    {fileUploadDateFilter.preset === "custom" ? (
+                      <div className="ops-date-range">
+                        <input
+                          onChange={(event) =>
+                            setFileUploadDateFilter((current) => ({
+                              preset: "custom",
+                              from: event.target.value,
+                              to: current.to
+                            }))
+                          }
+                          type="date"
+                          value={fileUploadDateFilter.from}
+                        />
+                        <input
+                          onChange={(event) =>
+                            setFileUploadDateFilter((current) => ({
+                              preset: "custom",
+                              from: current.from,
+                              to: event.target.value
+                            }))
+                          }
+                          type="date"
+                          value={fileUploadDateFilter.to}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                </label>
+              </div>
+
               <div className="ops-table-shell">
                 <table className="ops-table">
                   <thead>
@@ -2136,8 +2335,8 @@ export function OperationsDashboard({
                     </tr>
                   </thead>
                   <tbody>
-                    {fileUploads.length > 0 ? (
-                      fileUploads.map((fileUpload) => (
+                    {fileUploadRows.length > 0 ? (
+                      fileUploadRows.map((fileUpload) => (
                         <tr key={fileUpload.uploadId}>
                           <td>{fileUpload.fileName}</td>
                           <td>{formatDateTime(fileUpload.uploadedAt)}</td>
@@ -2159,7 +2358,7 @@ export function OperationsDashboard({
                     ) : (
                       <tr>
                         <td className="ops-empty-row" colSpan={5}>
-                          No files uploaded yet.
+                          No file uploads match the current filters.
                         </td>
                       </tr>
                     )}
@@ -2176,9 +2375,6 @@ export function OperationsDashboard({
               <div className="ops-panel-head">
                 <div>
                   <h3>Beneficiaries</h3>
-                  <p className="ops-meta">
-                    Searchable directory with maker-owned activation controls and clean approval visibility.
-                  </p>
                 </div>
                 <div className="ops-actions">
                   {isBeneficiaryMaker ? (
@@ -2240,10 +2436,10 @@ export function OperationsDashboard({
 
               <div className="ops-toolbar ops-fields three">
                 <label>
-                  Search
+                  Smart search
                   <input
                     onChange={(event) => setBeneficiarySearch(event.target.value)}
-                    placeholder="Search by bene ID, name, or account"
+                    placeholder="Search by bene ID, name, account, IFSC, bank, phone, tag, or status"
                     value={beneficiarySearch}
                   />
                 </label>
@@ -2259,12 +2455,50 @@ export function OperationsDashboard({
                   </select>
                 </label>
                 <label>
-                  Category
-                  <input
-                    onChange={(event) => setBeneficiaryCategoryFilter(event.target.value)}
-                    placeholder="Filter by category"
-                    value={beneficiaryCategoryFilter}
-                  />
+                  Date
+                  <div className="ops-date-filter">
+                    <select
+                      onChange={(event) =>
+                        setBeneficiaryDateFilter(
+                          createDateRangeFilterFromPreset(event.target.value as DateRangePreset)
+                        )
+                      }
+                      value={beneficiaryDateFilter.preset}
+                    >
+                      <option value="">All dates</option>
+                      <option value="today">Today</option>
+                      <option value="yesterday">Yesterday</option>
+                      <option value="this_week">This week</option>
+                      <option value="this_month">This month</option>
+                      <option value="custom">Custom range</option>
+                    </select>
+                    {beneficiaryDateFilter.preset === "custom" ? (
+                      <div className="ops-date-range">
+                        <input
+                          onChange={(event) =>
+                            setBeneficiaryDateFilter((current) => ({
+                              preset: "custom",
+                              from: event.target.value,
+                              to: current.to
+                            }))
+                          }
+                          type="date"
+                          value={beneficiaryDateFilter.from}
+                        />
+                        <input
+                          onChange={(event) =>
+                            setBeneficiaryDateFilter((current) => ({
+                              preset: "custom",
+                              from: current.from,
+                              to: event.target.value
+                            }))
+                          }
+                          type="date"
+                          value={beneficiaryDateFilter.to}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
                 </label>
               </div>
 
@@ -3668,6 +3902,105 @@ function formatDateTime(value: string | null) {
   });
 }
 
+function normalizeDateOnly(value: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toISOString().slice(0, 10);
+}
+
+function compareDateDesc(left: string | null, right: string | null) {
+  const leftTime = left ? new Date(left).getTime() : Number.NEGATIVE_INFINITY;
+  const rightTime = right ? new Date(right).getTime() : Number.NEGATIVE_INFINITY;
+
+  if (Number.isNaN(leftTime) && Number.isNaN(rightTime)) {
+    return 0;
+  }
+
+  if (Number.isNaN(leftTime)) {
+    return 1;
+  }
+
+  if (Number.isNaN(rightTime)) {
+    return -1;
+  }
+
+  return rightTime - leftTime;
+}
+
+function createEmptyDateRangeFilter(): DateRangeFilter {
+  return {
+    preset: "",
+    from: "",
+    to: ""
+  };
+}
+
+function createDateRangeFilterFromPreset(preset: DateRangePreset): DateRangeFilter {
+  if (!preset) {
+    return createEmptyDateRangeFilter();
+  }
+
+  if (preset === "custom") {
+    return {
+      preset,
+      from: "",
+      to: ""
+    };
+  }
+
+  const today = new Date();
+  const start = new Date(today);
+  const end = new Date(today);
+
+  if (preset === "yesterday") {
+    start.setDate(start.getDate() - 1);
+    end.setDate(end.getDate() - 1);
+  }
+
+  if (preset === "this_week") {
+    const currentDay = start.getDay();
+    const diffToMonday = currentDay === 0 ? 6 : currentDay - 1;
+    start.setDate(start.getDate() - diffToMonday);
+  }
+
+  if (preset === "this_month") {
+    start.setDate(1);
+  }
+
+  return {
+    preset,
+    from: normalizeDateOnly(start.toISOString()),
+    to: normalizeDateOnly(end.toISOString())
+  };
+}
+
+function matchesDateRangeFilter(value: string, filter: DateRangeFilter) {
+  if (!value) {
+    return false;
+  }
+
+  if (!filter.from && !filter.to) {
+    return true;
+  }
+
+  if (filter.from && value < filter.from) {
+    return false;
+  }
+
+  if (filter.to && value > filter.to) {
+    return false;
+  }
+
+  return true;
+}
+
 function maskAccountNumber(value: string) {
   if (value.length <= 4) {
     return value;
@@ -3678,6 +4011,20 @@ function maskAccountNumber(value: string) {
 
 function createSimpleId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+}
+
+function resolveSectionFromPathname(pathname: string | null) {
+  if (!pathname) {
+    return null;
+  }
+
+  const match = pathname.match(/\/operations\/([^/]+)$/);
+  if (!match) {
+    return null;
+  }
+
+  const section = match[1] as SectionId;
+  return SECTIONS.some((item) => item.id === section) ? section : null;
 }
 
 function cryptoAvailableUuid() {

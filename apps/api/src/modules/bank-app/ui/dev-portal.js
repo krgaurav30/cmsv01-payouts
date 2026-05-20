@@ -244,6 +244,41 @@ const apiKeyForm = document.getElementById("api-key-form");
 const apiKeyOutput = document.getElementById("api-key-output");
 const apiDetailPanel = document.querySelector('[data-dev-section="api-detail"]');
 const apiKeysPanel = document.querySelector('[data-dev-section="api-keys"]');
+const webhooksPanel = document.querySelector('[data-dev-section="webhooks"]');
+const webhookForm = document.getElementById("webhook-form");
+const webhookOutput = document.getElementById("webhook-output");
+const webhookList = document.getElementById("webhook-list");
+const webhookDeliveryList = document.getElementById("webhook-delivery-list");
+const webhookEventSelect = document.getElementById("webhook-event-select");
+const webhookAddEventButton = document.getElementById("webhook-add-event");
+const webhookSelectedEvents = document.getElementById("webhook-selected-events");
+
+let supportedWebhookEvents = [];
+let selectedWebhookPresets = [];
+
+const webhookEventPresets = [
+  {
+    key: "beneficiary",
+    label: "Beneficiary",
+    eventTypes: ["beneficiary.created", "beneficiary.authorized"]
+  },
+  {
+    key: "payments",
+    label: "Payments",
+    eventTypes: ["transaction.created"]
+      .concat([
+        "transaction.authorized",
+        "transaction.sent_to_bank",
+        "transaction.paid",
+        "transaction.failed"
+      ])
+  },
+  {
+    key: "file-upload",
+    label: "File Upload",
+    eventTypes: ["file.upload.processed"]
+  }
+];
 
 function renderSection(sectionKey) {
   document.querySelectorAll("[data-api-link]").forEach((link) => {
@@ -257,6 +292,22 @@ function renderSection(sectionKey) {
     if (apiKeysPanel) {
       apiKeysPanel.hidden = false;
     }
+    if (webhooksPanel) {
+      webhooksPanel.hidden = true;
+    }
+    return;
+  }
+
+  if (sectionKey === "webhooks") {
+    if (apiDetailPanel) {
+      apiDetailPanel.hidden = true;
+    }
+    if (apiKeysPanel) {
+      apiKeysPanel.hidden = true;
+    }
+    if (webhooksPanel) {
+      webhooksPanel.hidden = false;
+    }
     return;
   }
 
@@ -265,6 +316,9 @@ function renderSection(sectionKey) {
   }
   if (apiKeysPanel) {
     apiKeysPanel.hidden = true;
+  }
+  if (webhooksPanel) {
+    webhooksPanel.hidden = true;
   }
 
   const definition = apiDefinitions[sectionKey];
@@ -291,6 +345,54 @@ function renderSection(sectionKey) {
     .join("");
 
   apiNotes.innerHTML = definition.notes.map((note) => `<li>${note}</li>`).join("");
+}
+
+function renderWebhookEventOptions(events) {
+  supportedWebhookEvents = Array.isArray(events) ? events : [];
+  if (!webhookEventSelect) {
+    return;
+  }
+
+  const visiblePresets =
+    supportedWebhookEvents.length > 0
+      ? webhookEventPresets.filter((preset) =>
+          preset.eventTypes.every((eventType) => supportedWebhookEvents.includes(eventType))
+        )
+      : webhookEventPresets;
+
+  webhookEventSelect.innerHTML =
+    `<option value="">Choose a category</option>` +
+    visiblePresets
+      .map((preset) => `<option value="${preset.key}">${preset.label}</option>`)
+      .join("");
+
+  renderSelectedWebhookEvents();
+}
+
+function renderSelectedWebhookEvents() {
+  if (!webhookSelectedEvents) {
+    return;
+  }
+
+  if (selectedWebhookPresets.length === 0) {
+    webhookSelectedEvents.innerHTML = `<div class="empty-state">No categories selected yet.</div>`;
+    return;
+  }
+
+  webhookSelectedEvents.innerHTML = selectedWebhookPresets
+    .map((key) => {
+      const preset = webhookEventPresets.find((item) => item.key === key);
+      if (!preset) {
+        return "";
+      }
+
+      return `
+        <button type="button" class="selected-chip" data-remove-webhook-event="${preset.key}">
+          <span>${preset.label}</span>
+          <strong>×</strong>
+        </button>`;
+    })
+    .join("");
 }
 
 async function loadApiKeys() {
@@ -356,6 +458,179 @@ async function generateApiKey(event) {
   await loadApiKeys();
 }
 
+function renderWebhookList(items) {
+  if (!webhookList) {
+    return;
+  }
+
+  if (!items?.length) {
+    webhookList.innerHTML = `<div class="empty-state">No webhooks registered yet.</div>`;
+    return;
+  }
+
+  webhookList.innerHTML = items
+    .map(
+      (item) => `
+        <article class="key-card">
+          <div class="key-card-row">
+            <strong>${item.label}</strong>
+            <span class="state-pill">${item.status}</span>
+          </div>
+          <p class="queue-meta">${item.webhookUrl}</p>
+          <p class="queue-meta">Subscriptions: ${summarizeWebhookSubscriptions(item.eventTypes)}</p>
+          <p class="queue-meta">Secret: ${item.maskedSigningSecret}</p>
+          <p class="queue-meta">Last delivery: ${
+            item.lastDeliveryStatus
+              ? `${item.lastDeliveryStatus}${item.lastDeliveryHttpStatus ? ` (${item.lastDeliveryHttpStatus})` : ""}`
+              : "No delivery yet"
+          }</p>
+          <div class="action-buttons compact-actions">
+            <button
+              type="button"
+              class="mini-button"
+              data-webhook-status-id="${item.webhookId}"
+              data-webhook-status-value="${item.status === "active" ? "inactive" : "active"}"
+            >
+              ${item.status === "active" ? "Deactivate" : "Activate"}
+            </button>
+          </div>
+        </article>`
+    )
+    .join("");
+}
+
+function summarizeWebhookSubscriptions(eventTypes) {
+  const activeLabels = webhookEventPresets
+    .filter((preset) => preset.eventTypes.every((eventType) => eventTypes.includes(eventType)))
+    .map((preset) => preset.label);
+
+  return activeLabels.join(", ") || "None selected";
+}
+
+function renderWebhookDeliveries(items) {
+  if (!webhookDeliveryList) {
+    return;
+  }
+
+  if (!items?.length) {
+    webhookDeliveryList.innerHTML = `<div class="empty-state">No delivery attempts yet.</div>`;
+    return;
+  }
+
+  webhookDeliveryList.innerHTML = items
+    .map(
+      (item) => `
+        <article class="key-card">
+          <div class="key-card-row">
+            <strong>${item.eventType}</strong>
+            <span class="state-pill">${item.status}</span>
+          </div>
+          <p class="queue-meta">${item.targetUrl}</p>
+          <p class="queue-meta">Webhook: ${item.webhookId}</p>
+          <p class="queue-meta">Response: ${item.responseStatus ?? "N/A"}${item.responseBody ? ` | ${item.responseBody}` : ""}</p>
+          <p class="queue-meta">Attempted: ${item.attemptedAt ?? "Unknown"}</p>
+        </article>`
+    )
+    .join("");
+}
+
+async function loadWebhooks() {
+  if (webhookList) {
+    webhookList.innerHTML = `<div class="empty-state">Loading webhooks...</div>`;
+  }
+  if (webhookDeliveryList) {
+    webhookDeliveryList.innerHTML = `<div class="empty-state">Loading delivery logs...</div>`;
+  }
+
+  renderWebhookEventOptions([]);
+
+  const [webhooksResponse, deliveriesResponse] = await Promise.all([
+    fetch("/bank/dev-portal/webhooks"),
+    fetch("/bank/dev-portal/webhook-deliveries")
+  ]);
+
+  const webhooksData = await webhooksResponse.json();
+  const deliveriesData = await deliveriesResponse.json();
+
+  if (!webhooksResponse.ok) {
+    if (webhookList) {
+      webhookList.innerHTML = `<div class="empty-state">Unable to load webhooks.</div>`;
+    }
+    renderWebhookEventOptions([]);
+  } else {
+    renderWebhookEventOptions(webhooksData.supportedEvents ?? []);
+    renderWebhookList(webhooksData.items ?? []);
+  }
+
+  if (!deliveriesResponse.ok) {
+    if (webhookDeliveryList) {
+      webhookDeliveryList.innerHTML = `<div class="empty-state">Unable to load delivery logs.</div>`;
+    }
+  } else {
+    renderWebhookDeliveries(deliveriesData.items ?? []);
+  }
+}
+
+async function registerWebhook(event) {
+  event.preventDefault();
+
+  if (!webhookForm || !webhookOutput) {
+    return;
+  }
+
+  const formData = new FormData(webhookForm);
+  const selectedEventTypes = selectedWebhookPresets.flatMap((key) => {
+    const preset = webhookEventPresets.find((item) => item.key === key);
+    return preset ? preset.eventTypes : [];
+  });
+
+  const payload = {
+    label: String(formData.get("label") ?? "").trim(),
+    webhookUrl: String(formData.get("webhookUrl") ?? "").trim(),
+    description: String(formData.get("description") ?? "").trim(),
+    eventTypes: [...new Set(selectedEventTypes)]
+  };
+
+  webhookOutput.textContent = "Registering webhook...";
+
+  const response = await fetch("/bank/dev-portal/webhooks", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await response.json();
+  webhookOutput.textContent = JSON.stringify(data, null, 2);
+
+  if (!response.ok) {
+    return;
+  }
+
+  webhookForm.reset();
+  selectedWebhookPresets = [];
+  renderWebhookEventOptions(supportedWebhookEvents);
+  await loadWebhooks();
+}
+
+async function toggleWebhookStatus(webhookId, status) {
+  const response = await fetch(`/bank/dev-portal/webhooks/${encodeURIComponent(webhookId)}/status`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ status })
+  });
+
+  const data = await response.json();
+  if (webhookOutput) {
+    webhookOutput.textContent = JSON.stringify(data, null, 2);
+  }
+
+  await loadWebhooks();
+}
+
 apiMenu?.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) {
@@ -372,6 +647,64 @@ apiMenu?.addEventListener("click", (event) => {
 });
 
 apiKeyForm?.addEventListener("submit", generateApiKey);
+webhookForm?.addEventListener("submit", registerWebhook);
+webhookAddEventButton?.addEventListener("click", () => {
+  if (!(webhookEventSelect instanceof HTMLSelectElement)) {
+    return;
+  }
+
+  const selectedKey = webhookEventSelect.value;
+  if (!selectedKey) {
+    return;
+  }
+
+  if (!selectedWebhookPresets.includes(selectedKey)) {
+    selectedWebhookPresets = [...selectedWebhookPresets, selectedKey];
+    renderSelectedWebhookEvents();
+  }
+
+  webhookEventSelect.value = "";
+});
+webhookSelectedEvents?.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const button = target.closest("[data-remove-webhook-event]");
+  if (!button) {
+    return;
+  }
+
+  const key = button.getAttribute("data-remove-webhook-event");
+  if (!key) {
+    return;
+  }
+
+  selectedWebhookPresets = selectedWebhookPresets.filter((item) => item !== key);
+  renderSelectedWebhookEvents();
+});
+webhookList?.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const button = target.closest("[data-webhook-status-id]");
+  if (!button) {
+    return;
+  }
+
+  const webhookId = button.getAttribute("data-webhook-status-id");
+  const status = button.getAttribute("data-webhook-status-value");
+  if (!webhookId || !status) {
+    return;
+  }
+
+  void toggleWebhookStatus(webhookId, status);
+});
 
 renderSection("create-beneficiary");
+renderWebhookEventOptions([]);
 loadApiKeys();
+loadWebhooks();

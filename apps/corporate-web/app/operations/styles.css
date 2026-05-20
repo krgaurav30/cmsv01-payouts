@@ -12,9 +12,9 @@
 .ops-hero,
 .ops-topbar {
   border: 1px solid var(--line);
-  border-radius: var(--radius-xl);
+  border-radius: 18px;
   background: var(--surface);
-  box-shadow: var(--shadow);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
 }
 
 .ops-copy {
@@ -40,10 +40,10 @@
 }
 
 .ops-topbar {
-  padding: 18px 20px;
+  padding: 10px 14px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 16px;
+  gap: 12px;
   align-items: center;
 }
 
@@ -51,45 +51,47 @@
 .ops-topbar-right {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
 }
 
 .ops-logo {
-  width: 52px;
-  height: 52px;
+  width: 40px;
+  height: 40px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 18px;
+  border-radius: 14px;
   background: linear-gradient(180deg, #9dffd9 0%, #7ef8c7 100%);
   color: #07130f;
-  font-weight: 900;
-  letter-spacing: 0.08em;
+  font-weight: 800;
+  letter-spacing: 0.06em;
   box-shadow: var(--shadow-soft);
 }
 
 .ops-product-title {
   margin: 0;
-  font-size: 24px;
+  font-size: 16px;
+  line-height: 1.15;
 }
 
 .ops-topnav {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   justify-content: center;
   flex-wrap: nowrap;
   min-width: 0;
 }
 
 .ops-topnav button {
-  min-height: 44px;
-  padding: 0 14px;
+  min-height: 36px;
+  padding: 0 12px;
   white-space: nowrap;
-  border-radius: 14px;
+  border-radius: 10px;
   background: transparent;
   color: var(--muted);
-  font-weight: 700;
+  font-weight: 600;
+  font-size: 14px;
 }
 
 .ops-topnav button:hover,
@@ -104,13 +106,14 @@
 
 .ops-other-trigger {
   list-style: none;
-  min-height: 44px;
-  padding: 0 14px;
+  min-height: 36px;
+  padding: 0 12px;
   white-space: nowrap;
-  border-radius: 14px;
+  border-radius: 10px;
   background: transparent;
   color: var(--muted);
-  font-weight: 700;
+  font-weight: 600;
+  font-size: 14px;
   display: inline-flex;
   align-items: center;
   cursor: pointer;
@@ -166,8 +169,8 @@
 
 .ops-notification-trigger {
   list-style: none;
-  width: 46px;
-  height: 46px;
+  width: 38px;
+  height: 38px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface);
@@ -183,7 +186,7 @@
 }
 
 .ops-notification-icon {
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .ops-notification-badge {
@@ -249,12 +252,13 @@
 
 .ops-context-trigger {
   list-style: none;
-  min-height: 44px;
-  padding: 0 16px;
-  border-radius: 14px;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
   background: var(--accent-soft);
   color: var(--navy);
-  font-weight: 700;
+  font-weight: 600;
+  font-size: 14px;
   display: inline-flex;
   align-items: center;
   cursor: pointer;
@@ -284,12 +288,12 @@
 }
 
 .ops-avatar-button {
-  width: 46px;
-  height: 46px;
+  width: 40px;
+  height: 40px;
   border-radius: 999px;
   background: linear-gradient(180deg, #9dffd9 0%, #7ef8c7 100%);
   color: #07130f;
-  font-weight: 900;
+  font-weight: 800;
   box-shadow: var(--shadow-soft);
 }
 
@@ -314,11 +318,11 @@
 }
 
 .ops-logout {
-  min-height: 42px;
-  border-radius: 14px;
+  min-height: 36px;
+  border-radius: 10px;
   background: var(--accent-soft);
   color: var(--navy);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .ops-main {
@@ -392,7 +396,7 @@
 
 .ops-page {
   display: none;
-  gap: 24px;
+  gap: 18px;
 }
 
 .ops-page.active {
@@ -455,7 +459,7 @@
 .ops-grid,
 .ops-home-grid {
   display: grid;
-  gap: 20px;
+  gap: 16px;
 }
 
 .ops-grid {
@@ -499,7 +503,7 @@
 
 .ops-panel {
   min-width: 0;
-  padding: 22px;
+  padding: 16px;
 }
 
 .ops-fieldset {
@@ -537,26 +541,27 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 14px;
-  margin-bottom: 16px;
+  gap: 12px;
+  margin-bottom: 10px;
 }
 
 .ops-actions,
 .ops-row-actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .ops-filter-tabs {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .ops-button {
-  min-height: 44px;
-  padding: 0 16px;
-  border-radius: 14px;
-  font-weight: 700;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13px;
 }
 
 .ops-button.primary {
@@ -578,14 +583,15 @@
 
 .ops-mini,
 .ops-kebab {
-  min-height: 38px;
-  padding: 0 14px;
-  border-radius: 12px;
-  font-weight: 700;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 12px;
 }
 
 .ops-kebab {
-  min-width: 38px;
+  min-width: 28px;
 }
 
 .ops-button:hover,
@@ -606,18 +612,19 @@
 .ops-form,
 .ops-stack {
   display: grid;
-  gap: 16px;
+  gap: 10px;
 }
 
 .ops-toolbar {
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 
 .ops-fields.two,
 .ops-fields.three,
+.ops-fields.four,
 .ops-toolbar {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 
 .ops-fields.two {
@@ -628,15 +635,31 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.ops-fields.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .ops-fields.one {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 
 .ops-panel label {
   display: grid;
-  gap: 8px;
+  gap: 4px;
   font-weight: 600;
+  font-size: 12px;
+}
+
+.ops-date-filter {
+  display: grid;
+  gap: 8px;
+}
+
+.ops-date-range {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .ops-toggle {
@@ -689,17 +712,18 @@
 .ops-panel select,
 .ops-panel textarea {
   width: 100%;
-  min-height: 46px;
-  padding: 0 14px;
-  border-radius: 14px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
   border: 1px solid var(--line);
-  background: var(--surface-strong);
+  background: #fff;
   color: var(--ink);
+  font-size: 13px;
 }
 
 .ops-panel textarea {
-  min-height: 110px;
-  padding: 14px;
+  min-height: 84px;
+  padding: 10px;
   resize: vertical;
 }
 
@@ -720,19 +744,19 @@
 
 .ops-context-dropdown select {
   width: 100%;
-  min-height: 46px;
-  padding: 0 14px;
-  border-radius: 14px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
   border: 1px solid var(--line);
-  background: var(--surface-strong);
+  background: #fff;
   color: var(--ink);
 }
 
 .ops-drawer {
-  margin-bottom: 18px;
-  padding: 18px;
-  border-radius: 20px;
-  background: var(--surface-soft);
+  margin-bottom: 12px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #fbfffd;
   border: 1px solid var(--line);
 }
 
@@ -794,8 +818,8 @@
   width: 100%;
   max-width: 100%;
   border: 1px solid var(--line);
-  border-radius: 22px;
-  background: var(--surface-strong);
+  border-radius: 12px;
+  background: #fff;
 }
 
 .ops-table {
@@ -807,21 +831,22 @@
 
 .ops-table th,
 .ops-table td {
-  padding: 12px 14px;
+  padding: 8px 10px;
   text-align: left;
   border-bottom: 1px solid var(--line);
   vertical-align: top;
-  font-size: 13px;
+  font-size: 12px;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
 .ops-table th {
-  background: #f7fffb;
+  background: #fcfdfd;
   color: var(--muted-strong);
-  font-size: 11px;
+  font-size: 9px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.05em;
+  font-weight: 700;
 }
 
 .ops-table tr:hover {
@@ -831,12 +856,12 @@
 .ops-status {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
+  min-height: 20px;
+  padding: 0 7px;
   border-radius: 999px;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .ops-status.active,

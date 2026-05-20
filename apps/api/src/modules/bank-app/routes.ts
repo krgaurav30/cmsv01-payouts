@@ -7,6 +7,10 @@ import type { FastifyPluginAsync } from "fastify";
 import { loadConfig } from "@cmsv01/shared/config";
 
 import { PartnerApiKeyService } from "../partner-api-keys/service.js";
+import {
+  PARTNER_WEBHOOK_EVENTS,
+  WebhookManagementService
+} from "../webhook-management/service.js";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const assetsDir = path.join(moduleDir, "ui");
@@ -249,6 +253,7 @@ function buildSwaggerSpec() {
 
 export const bankAppRoutes: FastifyPluginAsync = async (app) => {
   const partnerApiKeyService = new PartnerApiKeyService(loadConfig());
+  const webhookManagementService = new WebhookManagementService();
 
   app.get("/bank/dev-portal", async (_request, reply) => {
     const html = await loadAsset("dev-portal.html");
@@ -285,6 +290,92 @@ export const bankAppRoutes: FastifyPluginAsync = async (app) => {
     });
 
     return reply.status(201).send(apiKey);
+  });
+
+  app.get("/bank/dev-portal/webhooks", async () => {
+    return {
+      items: await webhookManagementService.listWebhooks(),
+      supportedEvents: [...PARTNER_WEBHOOK_EVENTS]
+    };
+  });
+
+  app.post("/bank/dev-portal/webhooks", async (request, reply) => {
+    const body = (request.body ?? {}) as {
+      label?: string;
+      webhookUrl?: string;
+      description?: string;
+      eventTypes?: string[];
+      status?: "active" | "inactive";
+      createdBy?: string;
+    };
+
+    const result = await webhookManagementService.createWebhook(body);
+
+    if ("error" in result) {
+      if (result.error === "missing_webhook_url") {
+        return reply.status(400).send({
+          message: "Webhook URL is required"
+        });
+      }
+
+      if (result.error === "missing_event_types") {
+        return reply.status(400).send({
+          message: "At least one webhook event must be selected"
+        });
+      }
+
+      if (result.error === "invalid_webhook_url") {
+        return reply.status(400).send({
+          message: "Webhook URL must be a valid http or https URL"
+        });
+      }
+
+      if (result.error === "invalid_event_types") {
+        return reply.status(400).send({
+          message: "Some webhook events are not supported",
+          eventTypes: result.eventTypes
+        });
+      }
+    }
+
+    return reply.status(201).send(result.data);
+  });
+
+  app.post("/bank/dev-portal/webhooks/:webhookId/status", async (request, reply) => {
+    const params = request.params as { webhookId?: string };
+    const body = (request.body ?? {}) as { status?: "active" | "inactive" };
+
+    if (!params.webhookId) {
+      return reply.status(400).send({
+        message: "webhookId is required"
+      });
+    }
+
+    if (!body.status || !["active", "inactive"].includes(body.status)) {
+      return reply.status(400).send({
+        message: "status must be active or inactive"
+      });
+    }
+
+    const webhook = await webhookManagementService.updateWebhookStatus(
+      params.webhookId,
+      body.status
+    );
+
+    if (!webhook) {
+      return reply.status(404).send({
+        message: "Webhook not found"
+      });
+    }
+
+    return webhook;
+  });
+
+  app.get("/bank/dev-portal/webhook-deliveries", async (request) => {
+    const query = request.query as { webhookId?: string };
+    return {
+      items: await webhookManagementService.listDeliveries(query.webhookId)
+    };
   });
 
   app.get("/bank/onboarding-review", async (_request, reply) => {
@@ -376,6 +467,26 @@ export const bankAppRoutes: FastifyPluginAsync = async (app) => {
               name: "Get Transaction Status",
               method: "GET",
               path: "/v1/partner/payments/transactions/:batchId/status"
+            }
+          ]
+        },
+        {
+          name: "Webhooks",
+          apis: [
+            {
+              name: "Register Webhook",
+              method: "POST",
+              path: "/bank/dev-portal/webhooks"
+            },
+            {
+              name: "List Webhooks",
+              method: "GET",
+              path: "/bank/dev-portal/webhooks"
+            },
+            {
+              name: "Update Webhook Status",
+              method: "POST",
+              path: "/bank/dev-portal/webhooks/:webhookId/status"
             }
           ]
         }
