@@ -1,4 +1,5 @@
 import { loadConfig } from "@cmsv01/shared/config";
+import { signJwt } from "@cmsv01/shared/crypto";
 import { getDatabasePool } from "@cmsv01/shared/db";
 import type { DomainEventEnvelope } from "@cmsv01/shared/events";
 import { createKafkaClient } from "@cmsv01/shared/kafka";
@@ -464,12 +465,22 @@ async function handleDomainEvent(event: DomainEventEnvelope) {
 }
 
 async function postToApi(path: string, body?: Record<string, unknown>) {
+  const token = signJwt({
+    userId: "system-worker",
+    role: "system",
+    tenantScope: "system"
+  });
+
   const requestInit: RequestInit = {
-    method: "POST"
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`
+    }
   };
 
   if (body) {
     requestInit.headers = {
+      ...requestInit.headers,
       "Content-Type": "application/json"
     };
     requestInit.body = JSON.stringify(body);

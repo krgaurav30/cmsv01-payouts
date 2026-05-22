@@ -7,17 +7,20 @@ export const beneficiaryApprovalStateSchema = z.enum([
 ]);
 
 export const beneficiaryStatusSchema = z.enum(["active", "inactive"]);
+export const beneficiaryTypeSchema = z.enum(["vendor", "employee", "statutory"]);
 
 export const beneficiaryCreateSchema = z.object({
   createdByUserId: z.string().min(3),
   bankTenantId: z.string().min(3),
   corporateTenantId: z.string().min(3),
   corporateId: z.string().min(3),
+  beneficiaryId: z.string().min(3).max(40),
   name: z.string().min(2),
   accountNumber: z.string().min(6),
   ifsc: z.string().min(5),
   phoneNumber: z.string().min(10),
-  category: z.string().min(2).optional(),
+  beneficiaryType: beneficiaryTypeSchema.default("vendor"),
+  packageCodes: z.array(z.string().min(2)).min(1),
   tags: z.array(z.string().min(1)).default([])
 });
 
@@ -26,11 +29,13 @@ export const publishedBeneficiaryCreateSchema = z.object({
   corporateTenantId: z.string().min(3),
   corporateId: z.string().min(3),
   actorUsername: z.string().min(3),
+  beneId: z.string().min(3).max(40),
   beneName: z.string().min(2),
   beneBankAccountNumber: z.string().min(6),
   beneIfscCode: z.string().min(5),
   benePhoneNumber: z.string().min(10),
-  beneCategory: z.string().min(2).optional(),
+  beneType: beneficiaryTypeSchema.default("vendor"),
+  benePackageCodes: z.array(z.string().min(2)).min(1),
   tags: z.array(z.string().min(1)).default([])
 });
 
@@ -40,12 +45,17 @@ export const publishedBeneficiaryApprovalSchema = z.object({
   comment: z.string().min(2).max(500).optional()
 });
 
-export const beneficiaryUpdateSchema = beneficiaryCreateSchema.omit({
-  createdByUserId: true,
-  bankTenantId: true,
-  corporateTenantId: true,
-  corporateId: true
-});
+export const beneficiaryUpdateSchema = beneficiaryCreateSchema
+  .omit({
+    createdByUserId: true,
+    bankTenantId: true,
+    corporateTenantId: true,
+    corporateId: true,
+    beneficiaryId: true
+  })
+  .extend({
+    actedByUserId: z.string().min(3)
+  });
 
 export const beneficiaryApprovalActionSchema = z.object({
   action: z.enum(["approve", "reject"]),
@@ -61,6 +71,7 @@ export const beneficiaryStatusActionSchema = z.object({
 
 export type BeneficiaryApprovalState = z.infer<typeof beneficiaryApprovalStateSchema>;
 export type BeneficiaryStatus = z.infer<typeof beneficiaryStatusSchema>;
+export type BeneficiaryType = z.infer<typeof beneficiaryTypeSchema>;
 export type BeneficiaryCreateRequest = z.infer<typeof beneficiaryCreateSchema>;
 export type PublishedBeneficiaryCreateRequest = z.infer<
   typeof publishedBeneficiaryCreateSchema
@@ -76,6 +87,13 @@ export type BeneficiaryStatusActionRequest = z.infer<
   typeof beneficiaryStatusActionSchema
 >;
 
+export type BeneficiaryPackageAssignment = {
+  packageId: string;
+  packageCode: string;
+  displayName: string;
+  ownerType: "bank" | "corporate";
+};
+
 export type Beneficiary = {
   beneficiaryId: string;
   bankTenantId: string;
@@ -86,7 +104,8 @@ export type Beneficiary = {
   ifsc: string;
   bankName: string;
   phoneNumber: string | null;
-  category: string | null;
+  beneficiaryType: BeneficiaryType;
+  assignedPackages: BeneficiaryPackageAssignment[];
   tags: string[];
   status: BeneficiaryStatus;
   approvalState: BeneficiaryApprovalState;

@@ -2,19 +2,25 @@
   "name": "cmsv01-banking-platform",
   "version": "0.1.0",
   "private": true,
-  "description": "Bank-embedded payouts platform prototype",
+  "description": "Multi-surface banking platform with corporate web, bank ops web, unified BFF, core backend, and workers",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
     "build": "tsc -b",
+    "build:bank-ops-web": "npm run build --workspace bank-ops-web",
+    "build:bff": "tsc -b apps/bff --pretty false",
     "build:corporate-web": "npm run build --workspace corporate-web",
     "db:migrate": "node --dns-result-order=ipv4first --env-file=.env --import tsx scripts/db/migrate.ts",
     "db:seed": "node --dns-result-order=ipv4first --env-file=.env --import tsx scripts/db/seed.ts",
-    "dev:api": "node --dns-result-order=ipv4first --watch --env-file=.env --import tsx apps/api/src/main.ts",
-    "dev:corporate-web": "npm run dev --workspace corporate-web",
-    "dev:worker": "node --dns-result-order=ipv4first --watch --env-file=.env --import tsx apps/worker/src/main.ts",
+    "dev": "node scripts/dev/start-all.cjs",
+    "dev:all": "node scripts/dev/start-all.cjs",
+    "dev:api": "node scripts/dev/run-service.cjs api",
+    "dev:bank-ops-web": "node scripts/dev/run-service.cjs bank-ops-web",
+    "dev:bff": "node scripts/dev/run-service.cjs bff",
+    "dev:corporate-web": "node scripts/dev/run-service.cjs corporate-web",
+    "dev:worker": "node scripts/dev/run-service.cjs worker",
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {

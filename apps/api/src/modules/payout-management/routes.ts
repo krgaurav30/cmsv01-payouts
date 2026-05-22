@@ -34,6 +34,8 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
       corporateTenantId?: string;
       bankTenantId?: string;
       corporateId?: string;
+      subscriptionId?: string;
+      packageCode?: string;
       state?: string;
       search?: string;
     };
@@ -43,6 +45,8 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
         corporateTenantId: query.corporateTenantId,
         bankTenantId: query.bankTenantId,
         corporateId: query.corporateId,
+        subscriptionId: query.subscriptionId,
+        packageCode: query.packageCode,
         state: query.state,
         search: query.search
       })
@@ -74,7 +78,7 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
 
     const result = await payoutManagementService.createBatch(parsed.data);
 
-    if ("error" in result) {
+    if (!("data" in result)) {
       if (result.error === "forbidden") {
         return reply.status(403).send({
           message: "Only an approved maker can create payout transactions"
@@ -99,9 +103,21 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
         });
       }
 
+      if (result.error === "beneficiary_package_not_assigned") {
+        return reply.status(409).send({
+          message: `Beneficiary ${result.beneficiaryId} is not assigned to package ${result.packageCode}`
+        });
+      }
+
       if (result.error === "beneficiary_corporate_mismatch") {
         return reply.status(409).send({
           message: `Beneficiary does not belong to the selected child corporate: ${result.beneficiaryId}`
+        });
+      }
+
+      if (result.error === "beneficiary_type_not_allowed") {
+        return reply.status(409).send({
+          message: `Beneficiary type ${result.beneficiaryType} is not allowed for package ${result.packageCode ?? "this selection"}`
         });
       }
 
@@ -118,6 +134,18 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
         });
       }
 
+      if (result.error === "subscription_not_found") {
+        return reply.status(404).send({
+          message: "No active package subscription was found for this transaction context"
+        });
+      }
+
+      if (result.error === "subscription_scope_mismatch") {
+        return reply.status(409).send({
+          message: "The selected package subscription does not belong to this corporate context"
+        });
+      }
+
       if (result.error === "single_transaction_limit_exceeded") {
         return reply.status(409).send({
           message: `This transaction exceeds the single transaction limit of INR ${result.limit.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
@@ -130,6 +158,28 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
           message: `This transaction would exceed the daily cumulative transaction limit of INR ${result.limit.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
           limit: result.limit,
           currentTotal: result.currentTotal
+        });
+      }
+
+      if (result.error === "payment_method_required") {
+        return reply.status(409).send({
+          message: `Select a payment method. Allowed methods: ${result.allowedPaymentMethodCodes.join(", ")}`
+        });
+      }
+
+      if (result.error === "payment_method_not_allowed") {
+        return reply.status(409).send({
+          message: `Payment method ${result.paymentMethodCode} is not allowed for the selected package`
+        });
+      }
+
+      if (result.error === "payment_method_amount_out_of_range") {
+        return reply.status(409).send({
+          message: `This amount is outside the allowed range for ${result.paymentMethodCode}`,
+          paymentMethodCode: result.paymentMethodCode,
+          minAmount: result.minAmount,
+          maxAmount: result.maxAmount,
+          amount: result.amount
         });
       }
 
@@ -154,18 +204,128 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    const result = await payoutManagementService.acceptTransactionCommand(parsed.data, "ui");
+    const result = await payoutManagementService.createAndSubmitBatch(parsed.data);
 
-    if ("error" in result) {
+    if (!("data" in result)) {
       if (result.error === "forbidden") {
         return reply.status(403).send({
           message: "Only an approved maker can create payout transactions"
         });
       }
 
+      if (result.error === "beneficiary_not_found") {
+        return reply.status(404).send({
+          message: `Beneficiary not found: ${result.beneficiaryId}`
+        });
+      }
+
+      if (result.error === "beneficiary_not_approved") {
+        return reply.status(409).send({
+          message: `Beneficiary is still waiting for checker approval: ${result.beneficiaryId}`
+        });
+      }
+
+      if (result.error === "beneficiary_inactive") {
+        return reply.status(409).send({
+          message: `Beneficiary is inactive and cannot be used for payout creation: ${result.beneficiaryId}`
+        });
+      }
+
+      if (result.error === "beneficiary_package_not_assigned") {
+        return reply.status(409).send({
+          message: `Beneficiary ${result.beneficiaryId} is not assigned to package ${result.packageCode}`
+        });
+      }
+
+      if (result.error === "beneficiary_corporate_mismatch") {
+        return reply.status(409).send({
+          message: `Beneficiary does not belong to the selected child corporate: ${result.beneficiaryId}`
+        });
+      }
+
+      if (result.error === "beneficiary_type_not_allowed") {
+        return reply.status(409).send({
+          message: `Beneficiary type ${result.beneficiaryType} is not allowed for package ${result.packageCode ?? "this selection"}`
+        });
+      }
+
       if (result.error === "child_corporate_not_found") {
         return reply.status(404).send({
           message: "Linked child corporate not found"
+        });
+      }
+
+      if (result.error === "duplicate_transaction_reference") {
+        return reply.status(409).send({
+          message: `Transaction reference already exists and was processed earlier: ${result.transactionReference}`,
+          existingState: result.existingState
+        });
+      }
+
+      if (result.error === "subscription_not_found") {
+        return reply.status(404).send({
+          message: "No active package subscription was found for this transaction context"
+        });
+      }
+
+      if (result.error === "subscription_scope_mismatch") {
+        return reply.status(409).send({
+          message: "The selected package subscription does not belong to this corporate context"
+        });
+      }
+
+      if (result.error === "single_transaction_limit_exceeded") {
+        return reply.status(409).send({
+          message: `This transaction exceeds the single transaction limit of INR ${result.limit.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          limit: result.limit
+        });
+      }
+
+      if (result.error === "daily_cumulative_limit_exceeded") {
+        return reply.status(409).send({
+          message: `This transaction would exceed the daily cumulative transaction limit of INR ${result.limit.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          limit: result.limit,
+          currentTotal: result.currentTotal
+        });
+      }
+
+      if (result.error === "payment_method_required") {
+        return reply.status(409).send({
+          message: `Select a payment method. Allowed methods: ${result.allowedPaymentMethodCodes.join(", ")}`
+        });
+      }
+
+      if (result.error === "payment_method_not_allowed") {
+        return reply.status(409).send({
+          message: `Payment method ${result.paymentMethodCode} is not allowed for the selected package`
+        });
+      }
+
+      if (result.error === "payment_method_amount_out_of_range") {
+        return reply.status(409).send({
+          message: `This amount is outside the allowed range for ${result.paymentMethodCode}`,
+          paymentMethodCode: result.paymentMethodCode,
+          minAmount: result.minAmount,
+          maxAmount: result.maxAmount,
+          amount: result.amount
+        });
+      }
+
+      if (result.error === "debit_account_required") {
+        return reply.status(409).send({
+          message: "No debit account is available for this role and package"
+        });
+      }
+
+      if (result.error === "debit_account_not_allowed") {
+        return reply.status(409).send({
+          message: `Debit account is not allowed for this role and package: ${result.debitAccountId}`
+        });
+      }
+
+      if (result.error === "default_debit_account_not_configured") {
+        return reply.status(409).send({
+          message: "A default debit account is not configured for this package"
         });
       }
 
@@ -177,10 +337,7 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    return reply.status(202).send({
-      message: "Transaction accepted for background processing",
-      ...result.data
-    });
+    return reply.status(201).send(result.data);
   });
 
   app.post("/v1/payouts/batches/bulk", async (request, reply) => {
@@ -195,7 +352,7 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
 
     const result = await payoutManagementService.createBulkBatches(parsed.data);
 
-    if ("error" in result) {
+    if (!("data" in result)) {
       if (result.error === "duplicate_file_name") {
         return reply.status(409).send({
           message: `A file with this name was already uploaded earlier: ${result.fileName}`,
@@ -208,6 +365,18 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
           message: `This file exceeds the maximum allowed rows for bulk upload: ${result.limit}`,
           limit: result.limit,
           fileUpload: result.fileUpload ?? null
+        });
+      }
+
+      if (result.error === "subscription_not_found") {
+        return reply.status(404).send({
+          message: "No active package subscription was found for this file upload context"
+        });
+      }
+
+      if (result.error === "subscription_scope_mismatch") {
+        return reply.status(409).send({
+          message: "The selected package subscription does not belong to this corporate context"
         });
       }
 
@@ -231,7 +400,7 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
 
     const result = await payoutManagementService.acceptBulkFileUpload(parsed.data);
 
-    if ("error" in result) {
+    if (!("data" in result)) {
       if (result.error === "duplicate_file_name") {
         return reply.status(409).send({
           message: `A file with this name was already uploaded earlier: ${result.fileName}`,
@@ -244,6 +413,18 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
           message: `This file exceeds the maximum allowed rows for bulk upload: ${result.limit}`,
           limit: result.limit,
           fileUpload: result.fileUpload ?? null
+        });
+      }
+
+      if (result.error === "subscription_not_found") {
+        return reply.status(404).send({
+          message: "No active package subscription was found for this file upload context"
+        });
+      }
+
+      if (result.error === "subscription_scope_mismatch") {
+        return reply.status(409).send({
+          message: "The selected package subscription does not belong to this corporate context"
         });
       }
 
@@ -273,14 +454,33 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
       corporateTenantId?: string;
       corporateId?: string;
       bankTenantId?: string;
+      subscriptionId?: string;
+      packageCode?: string;
     };
 
     return {
       items: await payoutManagementService.listFileUploads({
         corporateTenantId: query.corporateTenantId,
         corporateId: query.corporateId,
-        bankTenantId: query.bankTenantId
+        bankTenantId: query.bankTenantId,
+        subscriptionId: query.subscriptionId,
+        packageCode: query.packageCode
       })
+    };
+  });
+
+  app.get("/v1/payouts/file-uploads/:uploadId/batches", async (request, reply) => {
+    const params = request.params as { uploadId: string };
+    const upload = await payoutManagementService.getFileUpload(params.uploadId);
+
+    if (!upload) {
+      return reply.status(404).send({
+        message: "Payout file upload not found"
+      });
+    }
+
+    return {
+      items: await payoutManagementService.listBatchesBySourceUpload(params.uploadId)
     };
   });
 
@@ -296,13 +496,50 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
 
     const result = await payoutManagementService.recordFileUpload(parsed.data);
 
-    if ("error" in result) {
+    if (!("data" in result)) {
       return reply.status(403).send({
         message: "Only a signed-in corporate user can record file uploads"
       });
     }
 
     return reply.status(201).send(result.data);
+  });
+
+  app.post("/v1/payouts/file-uploads/:uploadId/actions", async (request, reply) => {
+    const params = request.params as { uploadId: string };
+    const parsed = payoutApprovalActionSchema.safeParse(request.body);
+
+    if (!parsed.success || parsed.data.action === "submit") {
+      return reply.status(400).send({
+        message: "Invalid bulk file approval payload",
+        issues: parsed.success ? undefined : parsed.error.flatten()
+      });
+    }
+
+    const result = await payoutManagementService.applyFileUploadApprovalAction(
+      params.uploadId,
+      parsed.data
+    );
+
+    if (!("data" in result)) {
+      if (result.error === "upload_not_found") {
+        return reply.status(404).send({
+          message: "Payout file upload not found"
+        });
+      }
+
+      if (result.error === "no_actionable_batches") {
+        return reply.status(409).send({
+          message: "No transactions in this file are waiting for approval"
+        });
+      }
+
+      return reply.status(409).send({
+        message: "The file approval action could not be completed"
+      });
+    }
+
+    return result.data;
   });
 
   app.post("/v1/partner/payments/transactions", async (request, reply) => {
@@ -325,7 +562,7 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
 
     const result = await payoutManagementService.createPublishedTransaction(parsed.data);
 
-    if ("error" in result) {
+    if (!("data" in result)) {
       if (result.error === "actor_not_found") {
         return reply.status(404).send({
           message: "Actor username not found"
@@ -592,13 +829,17 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
       corporateTenantId?: string;
       batchId?: string;
       corporateId?: string;
+      subscriptionId?: string;
+      packageCode?: string;
     };
 
     return {
       items: await payoutManagementService.listRefunds({
         corporateTenantId: query.corporateTenantId,
         batchId: query.batchId,
-        corporateId: query.corporateId
+        corporateId: query.corporateId,
+        subscriptionId: query.subscriptionId,
+        packageCode: query.packageCode
       })
     };
   });

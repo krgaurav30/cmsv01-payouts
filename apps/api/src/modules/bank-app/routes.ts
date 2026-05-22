@@ -1,7 +1,3 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
 import type { FastifyPluginAsync } from "fastify";
 
 import { loadConfig } from "@cmsv01/shared/config";
@@ -11,13 +7,6 @@ import {
   PARTNER_WEBHOOK_EVENTS,
   WebhookManagementService
 } from "../webhook-management/service.js";
-
-const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-const assetsDir = path.join(moduleDir, "ui");
-
-async function loadAsset(fileName: string) {
-  return readFile(path.join(assetsDir, fileName), "utf8");
-}
 
 function buildSwaggerSpec() {
   return {
@@ -255,21 +244,6 @@ export const bankAppRoutes: FastifyPluginAsync = async (app) => {
   const partnerApiKeyService = new PartnerApiKeyService(loadConfig());
   const webhookManagementService = new WebhookManagementService();
 
-  app.get("/bank/dev-portal", async (_request, reply) => {
-    const html = await loadAsset("dev-portal.html");
-    return reply.type("text/html; charset=utf-8").send(html);
-  });
-
-  app.get("/bank/dev-portal/styles.css", async (_request, reply) => {
-    const css = await loadAsset("styles.css");
-    return reply.type("text/css; charset=utf-8").send(css);
-  });
-
-  app.get("/bank/dev-portal/app.js", async (_request, reply) => {
-    const js = await loadAsset("dev-portal.js");
-    return reply.type("application/javascript; charset=utf-8").send(js);
-  });
-
   app.get("/bank/dev-portal/api-keys", async () => {
     return {
       items: await partnerApiKeyService.listActiveKeys()
@@ -376,36 +350,6 @@ export const bankAppRoutes: FastifyPluginAsync = async (app) => {
     return {
       items: await webhookManagementService.listDeliveries(query.webhookId)
     };
-  });
-
-  app.get("/bank/onboarding-review", async (_request, reply) => {
-    const html = await loadAsset("index.html");
-    return reply.type("text/html; charset=utf-8").send(html);
-  });
-
-  app.get("/bank/onboarding-review/styles.css", async (_request, reply) => {
-    const css = await loadAsset("styles.css");
-    return reply.type("text/css; charset=utf-8").send(css);
-  });
-
-  app.get("/bank/onboarding-review/app.js", async (_request, reply) => {
-    const js = await loadAsset("app.js");
-    return reply.type("application/javascript; charset=utf-8").send(js);
-  });
-
-  app.get("/bank/payout-operations", async (_request, reply) => {
-    const html = await loadAsset("payout-operations.html");
-    return reply.type("text/html; charset=utf-8").send(html);
-  });
-
-  app.get("/bank/payout-operations/styles.css", async (_request, reply) => {
-    const css = await loadAsset("styles.css");
-    return reply.type("text/css; charset=utf-8").send(css);
-  });
-
-  app.get("/bank/payout-operations/app.js", async (_request, reply) => {
-    const js = await loadAsset("payout-operations.js");
-    return reply.type("application/javascript; charset=utf-8").send(js);
   });
 
   app.get("/bank/dev-portal/openapi/beneficiaries", async (_request) => {

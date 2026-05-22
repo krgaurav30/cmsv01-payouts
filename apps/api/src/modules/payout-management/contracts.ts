@@ -35,6 +35,11 @@ export const payoutBatchCreateSchema = z.object({
   bankTenantId: z.string().min(3),
   corporateTenantId: z.string().min(3),
   corporateId: z.string().min(3),
+  sourceUploadId: z.string().min(3).optional(),
+  subscriptionId: z.string().min(3).optional(),
+  packageCode: z.string().min(2).optional(),
+  debitAccountId: z.string().min(2).optional(),
+  paymentMethodCode: z.string().min(2).optional(),
   createdByUserId: z.string().min(3),
   title: z.string().min(2),
   tag: z.string().min(1).optional(),
@@ -43,8 +48,10 @@ export const payoutBatchCreateSchema = z.object({
 });
 
 export const payoutBulkRowSchema = z.object({
+  paymentMethodCode: z.string().min(2).optional(),
   transactionReference: z.string().min(2),
-  beneficiaryName: z.string().min(2),
+  beneficiaryId: z.string().min(3),
+  debitAccountNumber: z.string().min(6).optional(),
   amount: z.number().positive(),
   tag: z.string().min(1).optional(),
   remark: z.string().min(1).optional()
@@ -54,6 +61,8 @@ export const payoutBulkCreateSchema = z.object({
   bankTenantId: z.string().min(3),
   corporateTenantId: z.string().min(3),
   corporateId: z.string().min(3),
+  subscriptionId: z.string().min(3).optional(),
+  packageCode: z.string().min(2).optional(),
   createdByUserId: z.string().min(3),
   fileName: z.string().min(1),
   rows: z.array(payoutBulkRowSchema).min(1)
@@ -72,6 +81,8 @@ export const payoutFileUploadCreateSchema = z.object({
   bankTenantId: z.string().min(3),
   corporateTenantId: z.string().min(3),
   corporateId: z.string().min(3),
+  subscriptionId: z.string().min(3).optional(),
+  packageCode: z.string().min(2).optional(),
   fileName: z.string().min(1),
   uploadedByUserId: z.string().min(3),
   status: payoutFileUploadStatusSchema,
@@ -86,6 +97,9 @@ export const publishedPayoutCreateSchema = z.object({
   bankTenantId: z.string().min(3),
   corporateTenantId: z.string().min(3),
   corporateId: z.string().min(3),
+  packageCode: z.string().min(2).optional(),
+  debitAccountId: z.string().min(2).optional(),
+  paymentMethodCode: z.string().min(2).optional(),
   actorUsername: z.string().min(3),
   txnTitle: z.string().min(2),
   beneficiaryId: z.string().min(3),
@@ -130,6 +144,8 @@ export const payoutRefundCreateSchema = z.object({
   bankTenantId: z.string().min(3),
   corporateTenantId: z.string().min(3),
   corporateId: z.string().min(3),
+  subscriptionId: z.string().min(3).optional(),
+  packageCode: z.string().min(2).optional(),
   requestedByUserId: z.string().min(3),
   amount: z.number().positive(),
   reason: z.string().min(5).max(500)
@@ -169,6 +185,11 @@ export type PayoutBatch = {
   bankTenantId: string;
   corporateTenantId: string;
   corporateId: string | null;
+  sourceUploadId: string | null;
+  subscriptionId: string | null;
+  packageCode: string | null;
+  debitAccountId: string | null;
+  paymentMethodCode: string | null;
   primaryBeneficiaryId: string | null;
   primaryBeneficiaryName: string | null;
   createdByUserId: string;
@@ -208,8 +229,13 @@ export type PayoutItem = PayoutItemInput & {
   processedAt: string | null;
 };
 
-export type PayoutRefund = Omit<PayoutRefundCreateRequest, "corporateId"> & {
+export type PayoutRefund = Omit<
+  PayoutRefundCreateRequest,
+  "corporateId" | "subscriptionId" | "packageCode"
+> & {
   corporateId: string | null;
+  subscriptionId: string | null;
+  packageCode: string | null;
   state: PayoutRefundState;
   createdAt: string | null;
   processedAt: string | null;
@@ -220,6 +246,9 @@ export type PayoutFileUpload = {
   bankTenantId: string;
   corporateTenantId: string;
   corporateId: string | null;
+  subscriptionId: string | null;
+  packageCode: string | null;
+  debitAccountId: string | null;
   fileName: string;
   uploadedByUserId: string;
   uploadedByRole: string | null;

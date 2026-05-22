@@ -31,7 +31,6 @@ export const beneficiaryManagementRoutes: FastifyPluginAsync = async (app) => {
       corporateTenantId?: string;
       corporateId?: string;
       status?: "active" | "inactive";
-      category?: string;
       search?: string;
     };
 
@@ -40,7 +39,6 @@ export const beneficiaryManagementRoutes: FastifyPluginAsync = async (app) => {
         corporateTenantId: query.corporateTenantId,
         corporateId: query.corporateId,
         status: query.status,
-        category: query.category,
         search: query.search
       })
     };
@@ -90,6 +88,19 @@ export const beneficiaryManagementRoutes: FastifyPluginAsync = async (app) => {
         return reply.status(409).send({
           message: "A beneficiary with the same name and bank account number already exists",
           beneficiaryId: result.beneficiaryId
+        });
+      }
+
+      if (result.error === "duplicate_beneficiary_id") {
+        return reply.status(409).send({
+          message: "This Bene ID already exists. Choose a different Bene ID.",
+          beneficiaryId: result.beneficiaryId
+        });
+      }
+
+      if (result.error === "invalid_package_assignments") {
+        return reply.status(409).send({
+          message: `These packages are not active in the current workspace: ${result.packageCodes.join(", ")}`
         });
       }
 
@@ -149,6 +160,19 @@ export const beneficiaryManagementRoutes: FastifyPluginAsync = async (app) => {
         return reply.status(409).send({
           message: "A beneficiary with the same name and bank account number already exists",
           beneficiaryId: result.beneficiaryId
+        });
+      }
+
+      if (result.error === "duplicate_beneficiary_id") {
+        return reply.status(409).send({
+          message: "This Bene ID already exists. Choose a different Bene ID.",
+          beneficiaryId: result.beneficiaryId
+        });
+      }
+
+      if (result.error === "invalid_package_assignments") {
+        return reply.status(409).send({
+          message: `These packages are not active in the current workspace: ${result.packageCodes.join(", ")}`
         });
       }
 
@@ -314,6 +338,18 @@ export const beneficiaryManagementRoutes: FastifyPluginAsync = async (app) => {
     );
 
     if ("error" in result) {
+      if (result.error === "forbidden") {
+        return reply.status(403).send({
+          message: "Only an approved maker can edit beneficiaries"
+        });
+      }
+
+      if (result.error === "invalid_package_assignments") {
+        return reply.status(409).send({
+          message: `These packages are not active in the current workspace: ${result.packageCodes.join(", ")}`
+        });
+      }
+
       return reply.status(404).send({
         message: "Beneficiary not found"
       });

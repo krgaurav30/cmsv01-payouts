@@ -13,7 +13,7 @@ export function getDatabasePool(config: AppConfig) {
     pool = new Pool({
       connectionString: config.databaseUrl,
       ssl: {
-        rejectUnauthorized: false
+        rejectUnauthorized: config.dbSslRejectUnauthorized
       }
     });
   }

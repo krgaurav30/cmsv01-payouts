@@ -13,9 +13,11 @@ import { appendOutboxEvent } from "@cmsv01/shared/outbox";
 
 import { ApprovalMatrixManagementService } from "../approval-matrix-management/service.js";
 import { BeneficiaryManagementService } from "../beneficiary-management/service.js";
+import { EffectiveSettingsResolverService } from "../effective-settings-resolver/service.js";
 import { IdentityAccessService } from "../identity-access/service.js";
 import { NotificationsService } from "../notifications/service.js";
 import { SettingsManagementService } from "../settings-management/service.js";
+import { SubscriptionManagementService } from "../subscription-management/service.js";
 import { TenantManagementService } from "../tenant-management/service.js";
 
 import type {
@@ -34,12 +36,18 @@ import type {
   PayoutSimulationRequest,
   PayoutTimelineEvent
 } from "./contracts.js";
+import type { EffectiveSettingsSnapshot } from "../effective-settings-resolver/contracts.js";
 
 type PayoutBatchRow = {
   batch_id: string;
   bank_tenant_id: string;
   corporate_tenant_id: string;
   corporate_id: string | null;
+  source_upload_id?: string | null;
+  subscription_id: string | null;
+  package_code: string | null;
+  debit_account_id?: string | null;
+  payment_method_code?: string | null;
   primary_beneficiary_id?: string | null;
   primary_beneficiary_name?: string | null;
   created_by_user_id: string;
@@ -89,6 +97,8 @@ type PayoutRefundRow = {
   bank_tenant_id: string;
   corporate_tenant_id: string;
   corporate_id: string | null;
+  subscription_id: string | null;
+  package_code: string | null;
   requested_by_user_id: string;
   amount: string;
   reason: string;
@@ -102,6 +112,9 @@ type PayoutFileUploadRow = {
   bank_tenant_id: string;
   corporate_tenant_id: string;
   corporate_id: string | null;
+  subscription_id: string | null;
+  package_code: string | null;
+  debit_account_id?: string | null;
   file_name: string;
   uploaded_by_user_id: string;
   uploaded_by_role: string | null;
@@ -112,8 +125,10 @@ type PayoutFileUploadRow = {
   rejected_count: number;
   uploaded_at: Date | null;
   payload_json?: Array<{
+    paymentMethodCode: string;
     transactionReference: string;
-    beneficiaryName: string;
+    beneficiaryId: string;
+    debitAccountNumber?: string | null;
     amount: number;
     tag?: string | null;
     remark?: string | null;
@@ -143,6 +158,9 @@ type TransactionCommandRow = {
   bank_tenant_id: string;
   corporate_tenant_id: string;
   corporate_id: string;
+  subscription_id: string | null;
+  package_code: string | null;
+  debit_account_id?: string | null;
   actor_user_id: string;
   transaction_reference: string;
   payload_json: PayoutBatchCreateRequest;
@@ -152,6 +170,21 @@ type TransactionCommandRow = {
   received_at: Date | null;
   processed_at: Date | null;
 };
+
+type ResolvedSubscriptionContext = {
+  subscriptionId: string | null;
+  packageCode: string | null;
+  effectiveSettings: EffectiveSettingsSnapshot | null;
+};
+
+type ResolvedDebitAccountContext = {
+  debitAccountId: string;
+  accountNumber: string;
+};
+
+type SubscriptionScopeError =
+  | { error: "subscription_not_found" }
+  | { error: "subscription_scope_mismatch" };
 
 export class PayoutManagementService {
   private readonly config = loadConfig();
@@ -164,13 +197,17 @@ export class PayoutManagementService {
     private readonly beneficiaryManagementService = new BeneficiaryManagementService(),
     private readonly identityAccessService = new IdentityAccessService(loadConfig()),
     private readonly settingsManagementService = new SettingsManagementService(),
-    private readonly notificationsService = new NotificationsService()
+    private readonly notificationsService = new NotificationsService(),
+    private readonly subscriptionManagementService = new SubscriptionManagementService(),
+    private readonly effectiveSettingsResolverService = new EffectiveSettingsResolverService()
   ) {}
 
   async listBatches(filters?: {
     corporateTenantId?: string;
     bankTenantId?: string;
     corporateId?: string;
+    subscriptionId?: string;
+    packageCode?: string;
     state?: string;
     search?: string;
   }) {
@@ -192,6 +229,16 @@ export class PayoutManagementService {
       clauses.push(`corporate_id = $${params.length}`);
     }
 
+    if (filters?.subscriptionId) {
+      params.push(filters.subscriptionId);
+      clauses.push(`subscription_id = $${params.length}`);
+    }
+
+    if (filters?.packageCode) {
+      params.push(filters.packageCode);
+      clauses.push(`package_code = $${params.length}`);
+    }
+
     if (filters?.state) {
       params.push(filters.state);
       clauses.push(`state = $${params.length}`);
@@ -202,52 +249,9 @@ export class PayoutManagementService {
       clauses.push(`(lower(title) like $${params.length} or lower(batch_id) like $${params.length})`);
     }
 
-    const projectionWhereClauses = clauses.map((clause) =>
-      clause
-        .replaceAll("corporate_tenant_id", "tlp.corporate_tenant_id")
-        .replaceAll("bank_tenant_id", "tlp.bank_tenant_id")
-        .replaceAll("corporate_id", "tlp.corporate_id")
-        .replaceAll("state", "tlp.state")
-        .replaceAll("title", "tlp.title")
-        .replaceAll("batch_id", "tlp.batch_id")
-    );
-
-    const projectionResult =
-      params.length > 0
-        ? await this.db.query<TransactionListProjectionRow>(
-            `select batch_id, bank_tenant_id, corporate_tenant_id, corporate_id,
-                    primary_beneficiary_id, primary_beneficiary_name, created_by_user_id,
-                    created_by_role, title, tag, remark, state, total_amount,
-                    approval_comment, bank_reference, created_at, submitted_at,
-                    submitted_by_user_id, submitted_by_role, approved_at,
-                    approved_by_user_id, approved_by_role, rejected_at,
-                    rejected_by_user_id, rejected_by_role, dispatched_at,
-                    completed_at, failure_reason, approval_levels_required,
-                    current_approval_level, roles_by_level, matched_matrix_ids
-             from transaction_list_projection tlp
-             where ${projectionWhereClauses.join(" and ")}
-             order by tlp.created_at desc nulls last, tlp.batch_id desc`,
-            params
-          )
-        : await this.db.query<TransactionListProjectionRow>(
-            `select batch_id, bank_tenant_id, corporate_tenant_id, corporate_id,
-                    primary_beneficiary_id, primary_beneficiary_name, created_by_user_id,
-                    created_by_role, title, tag, remark, state, total_amount,
-                    approval_comment, bank_reference, created_at, submitted_at,
-                    submitted_by_user_id, submitted_by_role, approved_at,
-                    approved_by_user_id, approved_by_role, rejected_at,
-                    rejected_by_user_id, rejected_by_role, dispatched_at,
-                    completed_at, failure_reason, approval_levels_required,
-                    current_approval_level, roles_by_level, matched_matrix_ids
-             from transaction_list_projection tlp
-             order by tlp.created_at desc nulls last, tlp.batch_id desc`
-          );
-
-    if (projectionResult.rows.length > 0) {
-      return projectionResult.rows.map((row) => this.mapBatchListRow(row));
-    }
-
-    const baseQuery = `select pb.batch_id, pb.bank_tenant_id, pb.corporate_tenant_id, pb.corporate_id,
+    const baseQuery = `select pb.batch_id, pb.bank_tenant_id, pb.corporate_tenant_id,
+                              pb.corporate_id, pb.source_upload_id, pb.subscription_id, pb.package_code,
+                              pb.debit_account_id, pb.payment_method_code,
                               first_item.beneficiary_id as primary_beneficiary_id,
                               first_item.beneficiary_name as primary_beneficiary_name,
                               pb.created_by_user_id, pb.created_by_role, pb.title, pb.tag, pb.remark,
@@ -278,6 +282,8 @@ export class PayoutManagementService {
                    .replaceAll("corporate_tenant_id", "pb.corporate_tenant_id")
                    .replaceAll("bank_tenant_id", "pb.bank_tenant_id")
                    .replaceAll("corporate_id", "pb.corporate_id")
+                   .replaceAll("subscription_id", "pb.subscription_id")
+                   .replaceAll("package_code", "pb.package_code")
                    .replaceAll("state", "pb.state")
                    .replaceAll("title", "pb.title")
                    .replaceAll("batch_id", "pb.batch_id")
@@ -296,10 +302,11 @@ export class PayoutManagementService {
 
   async getBatch(batchId: string) {
     const result = await this.db.query<PayoutBatchRow>(
-      `select batch_id, bank_tenant_id, corporate_tenant_id, corporate_id, created_by_user_id,
-              created_by_role, title, tag, remark, state, total_amount, approval_comment,
-              bank_reference, created_at, submitted_at, submitted_by_user_id, submitted_by_role,
-              approved_at, approved_by_user_id, approved_by_role, rejected_at,
+      `select batch_id, bank_tenant_id, corporate_tenant_id, corporate_id, subscription_id,
+              source_upload_id, package_code, debit_account_id, payment_method_code, created_by_user_id, created_by_role, title, tag, remark, state,
+              total_amount, approval_comment, bank_reference, created_at, submitted_at,
+              submitted_by_user_id, submitted_by_role, approved_at, approved_by_user_id,
+              approved_by_role, rejected_at,
               rejected_by_user_id, rejected_by_role, dispatched_at, completed_at,
               failure_reason
        from payout_batches
@@ -349,6 +356,18 @@ export class PayoutManagementService {
       };
     }
 
+    const resolvedSubscription = await this.resolveSubscriptionContext({
+      bankTenantId: payload.bankTenantId,
+      corporateTenantId: payload.corporateTenantId,
+      corporateId: payload.corporateId,
+      subscriptionId: payload.subscriptionId,
+      packageCode: payload.packageCode
+    });
+
+    if ("error" in resolvedSubscription) {
+      return resolvedSubscription;
+    }
+
     const settings = await this.settingsManagementService.getSettingsForCorporateTenant(
       payload.corporateTenantId
     );
@@ -371,6 +390,34 @@ export class PayoutManagementService {
         };
       }
     }
+
+    const selectedPaymentMethod = this.resolveSelectedPaymentMethod(
+      resolvedSubscription.effectiveSettings,
+      payload.paymentMethodCode
+    );
+
+    if (selectedPaymentMethod && "error" in selectedPaymentMethod) {
+      return selectedPaymentMethod;
+    }
+
+    const selectedPaymentMethodCode = selectedPaymentMethod?.paymentMethodCode ?? null;
+
+    const resolvedDebitAccount = await this.resolveSelectedDebitAccount(
+      payload.corporateTenantId,
+      actor.role,
+      resolvedSubscription.subscriptionId,
+      payload.debitAccountId
+    );
+
+    if ("error" in resolvedDebitAccount) {
+      return resolvedDebitAccount;
+    }
+
+    const allowedBeneficiaryTypes = new Set(
+      (resolvedSubscription.effectiveSettings?.allowedBeneficiaryTypes ?? []).map((type) =>
+        type.toLowerCase()
+      )
+    );
 
     for (const item of payload.items) {
       const beneficiary = await this.beneficiaryManagementService.getBeneficiary(
@@ -404,6 +451,59 @@ export class PayoutManagementService {
           beneficiaryId: item.beneficiaryId
         };
       }
+
+      if (
+        allowedBeneficiaryTypes.size > 0 &&
+        !allowedBeneficiaryTypes.has(beneficiary.beneficiaryType.toLowerCase())
+      ) {
+        return {
+          error: "beneficiary_type_not_allowed" as const,
+          beneficiaryId: item.beneficiaryId,
+          beneficiaryType: beneficiary.beneficiaryType,
+          packageCode: resolvedSubscription.packageCode ?? payload.packageCode ?? null
+        };
+      }
+
+      if (
+        resolvedSubscription.packageCode &&
+        !beneficiary.assignedPackages.some(
+          (assignedPackage) => assignedPackage.packageCode === resolvedSubscription.packageCode
+        )
+      ) {
+        return {
+          error: "beneficiary_package_not_assigned" as const,
+          beneficiaryId: item.beneficiaryId,
+          packageCode: resolvedSubscription.packageCode
+        };
+      }
+
+      if (
+        selectedPaymentMethod &&
+        selectedPaymentMethod.minAmount !== null &&
+        item.amount.value < selectedPaymentMethod.minAmount
+      ) {
+        return {
+          error: "payment_method_amount_out_of_range" as const,
+          paymentMethodCode: selectedPaymentMethod.paymentMethodCode,
+          minAmount: selectedPaymentMethod.minAmount,
+          maxAmount: selectedPaymentMethod.maxAmount,
+          amount: item.amount.value
+        };
+      }
+
+      if (
+        selectedPaymentMethod &&
+        selectedPaymentMethod.maxAmount !== null &&
+        item.amount.value > selectedPaymentMethod.maxAmount
+      ) {
+        return {
+          error: "payment_method_amount_out_of_range" as const,
+          paymentMethodCode: selectedPaymentMethod.paymentMethodCode,
+          minAmount: selectedPaymentMethod.minAmount,
+          maxAmount: selectedPaymentMethod.maxAmount,
+          amount: item.amount.value
+        };
+      }
     }
 
     const totalAmount = payload.items.reduce((sum, item) => sum + item.amount.value, 0);
@@ -433,19 +533,25 @@ export class PayoutManagementService {
       await client.query(
         `insert into payout_batches (
            batch_id, bank_tenant_id, corporate_tenant_id, corporate_id, created_by_user_id,
-           created_by_role, title, tag, remark, state, total_amount, approval_comment,
+           source_upload_id, subscription_id, package_code, debit_account_id, payment_method_code, created_by_role, title, tag, remark, state,
+           total_amount, approval_comment,
            bank_reference, created_at, submitted_at, submitted_by_user_id, submitted_by_role,
            approved_at, approved_by_user_id, approved_by_role, rejected_at,
            rejected_by_user_id, rejected_by_role, dispatched_at, completed_at,
            failure_reason
          )
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft', $10, null, null, now(),
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'draft', $15, null, null, now(),
                  null, null, null, null, null, null, null, null, null, null, null, null)
          on conflict (batch_id) do update
          set bank_tenant_id = excluded.bank_tenant_id,
              corporate_tenant_id = excluded.corporate_tenant_id,
              corporate_id = excluded.corporate_id,
              created_by_user_id = excluded.created_by_user_id,
+             source_upload_id = excluded.source_upload_id,
+             subscription_id = excluded.subscription_id,
+             package_code = excluded.package_code,
+             debit_account_id = excluded.debit_account_id,
+             payment_method_code = excluded.payment_method_code,
              created_by_role = excluded.created_by_role,
              title = excluded.title,
              tag = excluded.tag,
@@ -457,6 +563,11 @@ export class PayoutManagementService {
           payload.corporateTenantId,
           payload.corporateId,
           payload.createdByUserId,
+          payload.sourceUploadId ?? null,
+          resolvedSubscription.subscriptionId,
+          resolvedSubscription.packageCode,
+          resolvedDebitAccount.debitAccountId,
+          selectedPaymentMethodCode,
           actor.role,
           payload.title,
           payload.tag ?? null,
@@ -490,6 +601,9 @@ export class PayoutManagementService {
         bankTenantId: payload.bankTenantId,
         corporateTenantId: payload.corporateTenantId,
         corporateId: payload.corporateId,
+        subscriptionId: resolvedSubscription.subscriptionId,
+        packageCode: resolvedSubscription.packageCode,
+        debitAccountId: resolvedDebitAccount.debitAccountId,
         transactionReference: payload.title,
         totalAmount: {
           value: totalAmount,
@@ -526,6 +640,17 @@ export class PayoutManagementService {
       payload.corporateTenantId
     );
     const effectiveBulkRowLimit = settings?.maxBulkUploadRows ?? 100;
+    const resolvedSubscription = await this.resolveSubscriptionContext({
+      bankTenantId: payload.bankTenantId,
+      corporateTenantId: payload.corporateTenantId,
+      corporateId: payload.corporateId,
+      subscriptionId: payload.subscriptionId,
+      packageCode: payload.packageCode
+    });
+
+    if ("error" in resolvedSubscription) {
+      return resolvedSubscription;
+    }
 
     const existingFileUpload = await this.findFileUploadByName(
       payload.corporateTenantId,
@@ -539,6 +664,8 @@ export class PayoutManagementService {
         bankTenantId: payload.bankTenantId,
         corporateTenantId: payload.corporateTenantId,
         corporateId: payload.corporateId,
+        subscriptionId: resolvedSubscription.subscriptionId ?? undefined,
+        packageCode: resolvedSubscription.packageCode ?? undefined,
         fileName: payload.fileName,
         uploadedByUserId: payload.createdByUserId,
         status: "rejected",
@@ -561,6 +688,8 @@ export class PayoutManagementService {
         bankTenantId: payload.bankTenantId,
         corporateTenantId: payload.corporateTenantId,
         corporateId: payload.corporateId,
+        subscriptionId: resolvedSubscription.subscriptionId ?? undefined,
+        packageCode: resolvedSubscription.packageCode ?? undefined,
         fileName: payload.fileName,
         uploadedByUserId: payload.createdByUserId,
         status: "rejected",
@@ -584,7 +713,10 @@ export class PayoutManagementService {
     });
 
     const beneficiaryMap = new Map(
-      beneficiaries.map((beneficiary) => [beneficiary.name.trim().toLowerCase(), beneficiary])
+      beneficiaries.map((beneficiary) => [
+        beneficiary.beneficiaryId.trim().toUpperCase(),
+        beneficiary
+      ])
     );
 
     const created: PayoutBatch[] = [];
@@ -611,12 +743,46 @@ export class PayoutManagementService {
         referencesSeen.add(normalizedReference);
       }
 
-      const beneficiary = beneficiaryMap.get(row.beneficiaryName.trim().toLowerCase());
+      const beneficiary = beneficiaryMap.get(row.beneficiaryId.trim().toUpperCase());
       if (!beneficiary) {
         rejected.push({
           rowNumber,
           transactionReference,
-          reason: `Beneficiary not found: ${row.beneficiaryName}`
+          reason: `Beneficiary not found: ${row.beneficiaryId}`
+        });
+        continue;
+      }
+
+      let debitAccountId: string | undefined;
+      if (row.debitAccountNumber) {
+        const resolvedDebitAccountId = resolvedSubscription.subscriptionId
+          ? await this.resolveDebitAccountIdByNumber(
+              resolvedSubscription.subscriptionId,
+              row.debitAccountNumber
+            )
+          : null;
+        debitAccountId = resolvedDebitAccountId ?? undefined;
+
+        if (!debitAccountId) {
+          rejected.push({
+            rowNumber,
+            transactionReference,
+            reason: `Debit account not found for this package: ${row.debitAccountNumber}`
+          });
+          continue;
+        }
+      }
+
+      const resolvedPaymentMethod = this.resolveSelectedPaymentMethod(
+        resolvedSubscription.effectiveSettings,
+        row.paymentMethodCode
+      );
+
+      if (resolvedPaymentMethod && "error" in resolvedPaymentMethod) {
+        rejected.push({
+          rowNumber,
+          transactionReference,
+          reason: mapBulkCreateErrorToMessage(resolvedPaymentMethod)
         });
         continue;
       }
@@ -626,6 +792,13 @@ export class PayoutManagementService {
         bankTenantId: payload.bankTenantId,
         corporateTenantId: payload.corporateTenantId,
         corporateId: payload.corporateId,
+        subscriptionId: resolvedSubscription.subscriptionId ?? undefined,
+        packageCode: resolvedSubscription.packageCode ?? undefined,
+        debitAccountId,
+        paymentMethodCode:
+          resolvedPaymentMethod && !("error" in resolvedPaymentMethod)
+            ? resolvedPaymentMethod.paymentMethodCode
+            : undefined,
         createdByUserId: payload.createdByUserId,
         title: transactionReference,
         tag: row.tag,
@@ -643,7 +816,7 @@ export class PayoutManagementService {
         ]
       });
 
-      if ("error" in createResult) {
+      if (!("data" in createResult)) {
         rejected.push({
           rowNumber,
           transactionReference,
@@ -695,6 +868,8 @@ export class PayoutManagementService {
       bankTenantId: payload.bankTenantId,
       corporateTenantId: payload.corporateTenantId,
       corporateId: payload.corporateId,
+      subscriptionId: resolvedSubscription.subscriptionId ?? undefined,
+      packageCode: resolvedSubscription.packageCode ?? undefined,
       fileName: payload.fileName,
       uploadedByUserId: payload.createdByUserId,
       status,
@@ -736,6 +911,17 @@ export class PayoutManagementService {
       payload.corporateTenantId
     );
     const effectiveBulkRowLimit = settings?.maxBulkUploadRows ?? 100;
+    const resolvedSubscription = await this.resolveSubscriptionContext({
+      bankTenantId: payload.bankTenantId,
+      corporateTenantId: payload.corporateTenantId,
+      corporateId: payload.corporateId,
+      subscriptionId: payload.subscriptionId,
+      packageCode: payload.packageCode
+    });
+
+    if ("error" in resolvedSubscription) {
+      return resolvedSubscription;
+    }
     const existingFileUpload = await this.findFileUploadByName(
       payload.corporateTenantId,
       payload.corporateId,
@@ -748,6 +934,8 @@ export class PayoutManagementService {
         bankTenantId: payload.bankTenantId,
         corporateTenantId: payload.corporateTenantId,
         corporateId: payload.corporateId,
+        subscriptionId: resolvedSubscription.subscriptionId ?? undefined,
+        packageCode: resolvedSubscription.packageCode ?? undefined,
         fileName: payload.fileName,
         uploadedByUserId: payload.createdByUserId,
         status: "rejected",
@@ -770,6 +958,8 @@ export class PayoutManagementService {
         bankTenantId: payload.bankTenantId,
         corporateTenantId: payload.corporateTenantId,
         corporateId: payload.corporateId,
+        subscriptionId: resolvedSubscription.subscriptionId ?? undefined,
+        packageCode: resolvedSubscription.packageCode ?? undefined,
         fileName: payload.fileName,
         uploadedByUserId: payload.createdByUserId,
         status: "rejected",
@@ -795,6 +985,8 @@ export class PayoutManagementService {
           bankTenantId: payload.bankTenantId,
           corporateTenantId: payload.corporateTenantId,
           corporateId: payload.corporateId,
+          subscriptionId: resolvedSubscription.subscriptionId ?? undefined,
+          packageCode: resolvedSubscription.packageCode ?? undefined,
           fileName: payload.fileName,
           uploadedByUserId: payload.createdByUserId,
           status: "processing",
@@ -823,6 +1015,8 @@ export class PayoutManagementService {
             bankTenantId: payload.bankTenantId,
             corporateTenantId: payload.corporateTenantId,
             corporateId: payload.corporateId,
+            subscriptionId: resolvedSubscription.subscriptionId,
+            packageCode: resolvedSubscription.packageCode,
             fileName: payload.fileName,
             uploadedByUserId: payload.createdByUserId,
             rowCount: payload.rows.length,
@@ -867,6 +1061,9 @@ export class PayoutManagementService {
         bankTenantId: payload.bankTenantId,
         corporateTenantId: payload.corporateTenantId,
         corporateId: payload.corporateId,
+        packageCode: payload.packageCode,
+        debitAccountId: payload.debitAccountId,
+        paymentMethodCode: payload.paymentMethodCode,
         createdByUserId: actor.userId,
         title: payload.txnTitle,
         tag: payload.tag,
@@ -939,6 +1136,24 @@ export class PayoutManagementService {
       };
     }
 
+    const resolvedSubscription = await this.resolveSubscriptionContext({
+      bankTenantId: payload.bankTenantId,
+      corporateTenantId: payload.corporateTenantId,
+      corporateId: payload.corporateId,
+      subscriptionId: payload.subscriptionId,
+      packageCode: payload.packageCode
+    });
+
+    if ("error" in resolvedSubscription) {
+      return resolvedSubscription;
+    }
+
+    const commandPayload: PayoutBatchCreateRequest = {
+      ...payload,
+      subscriptionId: resolvedSubscription.subscriptionId ?? undefined,
+      packageCode: resolvedSubscription.packageCode ?? undefined
+    };
+
     const commandId = `cmd-${Date.now()}-${Math.floor(Math.random() * 100000)
       .toString()
       .padStart(5, "0")}`;
@@ -947,19 +1162,23 @@ export class PayoutManagementService {
       await client.query(
         `insert into transaction_commands (
            command_id, channel, bank_tenant_id, corporate_tenant_id, corporate_id,
-           actor_user_id, transaction_reference, payload_json, status, batch_id,
-           error_message, received_at, processed_at
+           subscription_id, package_code, debit_account_id, payment_method_code, actor_user_id, transaction_reference, payload_json,
+           status, batch_id, error_message, received_at, processed_at
          )
-         values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, 'accepted', null, null, now(), null)`,
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, 'accepted', null, null, now(), null)`,
         [
           commandId,
           channel,
           payload.bankTenantId,
           payload.corporateTenantId,
           payload.corporateId,
+          resolvedSubscription.subscriptionId,
+          resolvedSubscription.packageCode,
+          payload.debitAccountId ?? null,
+          payload.paymentMethodCode ?? null,
           payload.createdByUserId,
           payload.title,
-          JSON.stringify(payload)
+          JSON.stringify(commandPayload)
         ]
       );
 
@@ -976,6 +1195,9 @@ export class PayoutManagementService {
             bankTenantId: payload.bankTenantId,
             corporateTenantId: payload.corporateTenantId,
             corporateId: payload.corporateId,
+            subscriptionId: resolvedSubscription.subscriptionId,
+            packageCode: resolvedSubscription.packageCode,
+            debitAccountId: payload.debitAccountId ?? null,
             actorUserId: payload.createdByUserId,
             transactionReference: payload.title,
             occurredAt: new Date().toISOString()
@@ -989,6 +1211,8 @@ export class PayoutManagementService {
         commandId,
         status: "accepted" as const,
         transactionReference: payload.title,
+        subscriptionId: resolvedSubscription.subscriptionId,
+        packageCode: resolvedSubscription.packageCode,
         acceptedAt: new Date().toISOString()
       }
     };
@@ -997,8 +1221,8 @@ export class PayoutManagementService {
   async processAcceptedTransactionCommand(commandId: string) {
     const commandResult = await this.db.query<TransactionCommandRow>(
       `select command_id, channel, bank_tenant_id, corporate_tenant_id, corporate_id,
-              actor_user_id, transaction_reference, payload_json, status, batch_id,
-              error_message, received_at, processed_at
+              subscription_id, package_code, debit_account_id, actor_user_id, transaction_reference,
+              payload_json, status, batch_id, error_message, received_at, processed_at
        from transaction_commands
        where command_id = $1
        for update`,
@@ -1019,7 +1243,7 @@ export class PayoutManagementService {
 
     const processResult = await this.createAndSubmitBatch(command.payload_json);
 
-    if ("error" in processResult) {
+    if (!("data" in processResult)) {
       const message = mapBulkCreateErrorToMessage(processResult as never);
       await this.db.query(
         `update transaction_commands
@@ -1107,6 +1331,19 @@ export class PayoutManagementService {
       };
     }
 
+    if (
+      ["approve", "reject"].includes(payload.action) &&
+      batch?.subscriptionId &&
+      !(await this.identityAccessService.userHasActiveSubscriptionAccess(
+        batch.subscriptionId,
+        payload.actedByUserId
+      ))
+    ) {
+      return {
+        error: "forbidden" as const
+      };
+    }
+
     if (!batch) {
       return {
         error: "batch_not_found" as const
@@ -1138,6 +1375,8 @@ export class PayoutManagementService {
         await this.initializeApprovalContext(
           batchId,
           batch.corporateTenantId,
+          batch.subscriptionId,
+          batch.debitAccountId,
           batch.totalAmount.value,
           client
         );
@@ -1461,6 +1700,8 @@ export class PayoutManagementService {
     corporateTenantId?: string;
     batchId?: string;
     corporateId?: string;
+    subscriptionId?: string;
+    packageCode?: string;
   }) {
     const clauses: string[] = [];
     const params: string[] = [];
@@ -1480,19 +1721,31 @@ export class PayoutManagementService {
       clauses.push(`corporate_id = $${params.length}`);
     }
 
+    if (filters?.subscriptionId) {
+      params.push(filters.subscriptionId);
+      clauses.push(`subscription_id = $${params.length}`);
+    }
+
+    if (filters?.packageCode) {
+      params.push(filters.packageCode);
+      clauses.push(`package_code = $${params.length}`);
+    }
+
     const result =
       params.length > 0
         ? await this.db.query<PayoutRefundRow>(
-            `select refund_id, batch_id, bank_tenant_id, corporate_tenant_id, corporate_id, requested_by_user_id,
-                    amount, reason, state, created_at, processed_at
+            `select refund_id, batch_id, bank_tenant_id, corporate_tenant_id, corporate_id,
+                    subscription_id, package_code, requested_by_user_id, amount, reason,
+                    state, created_at, processed_at
              from payout_refunds
              where ${clauses.join(" and ")}
              order by refund_id desc`,
             params
           )
         : await this.db.query<PayoutRefundRow>(
-            `select refund_id, batch_id, bank_tenant_id, corporate_tenant_id, corporate_id, requested_by_user_id,
-                    amount, reason, state, created_at, processed_at
+            `select refund_id, batch_id, bank_tenant_id, corporate_tenant_id, corporate_id,
+                    subscription_id, package_code, requested_by_user_id, amount, reason,
+                    state, created_at, processed_at
              from payout_refunds
              order by refund_id desc`
           );
@@ -1504,6 +1757,8 @@ export class PayoutManagementService {
     corporateTenantId?: string;
     corporateId?: string;
     bankTenantId?: string;
+    subscriptionId?: string;
+    packageCode?: string;
   }) {
     const clauses: string[] = [];
     const params: string[] = [];
@@ -1518,6 +1773,16 @@ export class PayoutManagementService {
       clauses.push(`corporate_id = $${params.length}`);
     }
 
+    if (filters?.subscriptionId) {
+      params.push(filters.subscriptionId);
+      clauses.push(`subscription_id = $${params.length}`);
+    }
+
+    if (filters?.packageCode) {
+      params.push(filters.packageCode);
+      clauses.push(`package_code = $${params.length}`);
+    }
+
     if (filters?.bankTenantId) {
       params.push(filters.bankTenantId);
       clauses.push(`bank_tenant_id = $${params.length}`);
@@ -1526,18 +1791,20 @@ export class PayoutManagementService {
     const projectionResult =
       params.length > 0
         ? await this.db.query<PayoutFileUploadRow>(
-            `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, file_name,
-                    uploaded_by_user_id, uploaded_by_role, status, remark, total_rows,
-                    created_count, rejected_count, uploaded_at
+            `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id,
+                    subscription_id, package_code, file_name, uploaded_by_user_id,
+                    uploaded_by_role, status, remark, total_rows, created_count,
+                    rejected_count, uploaded_at
              from file_upload_projection
              where ${clauses.join(" and ")}
              order by uploaded_at desc nulls last, upload_id desc`,
             params
           )
         : await this.db.query<PayoutFileUploadRow>(
-            `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, file_name,
-                    uploaded_by_user_id, uploaded_by_role, status, remark, total_rows,
-                    created_count, rejected_count, uploaded_at
+            `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id,
+                    subscription_id, package_code, file_name, uploaded_by_user_id,
+                    uploaded_by_role, status, remark, total_rows, created_count,
+                    rejected_count, uploaded_at
              from file_upload_projection
              order by uploaded_at desc nulls last, upload_id desc`
           );
@@ -1546,18 +1813,20 @@ export class PayoutManagementService {
       ? projectionResult
       : params.length > 0
         ? await this.db.query<PayoutFileUploadRow>(
-            `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, file_name,
-                    uploaded_by_user_id, uploaded_by_role, status, remark, total_rows,
-                    created_count, rejected_count, uploaded_at
+            `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id,
+                    subscription_id, package_code, file_name, uploaded_by_user_id,
+                    uploaded_by_role, status, remark, total_rows, created_count,
+                    rejected_count, uploaded_at
              from payout_file_uploads
              where ${clauses.join(" and ")}
              order by uploaded_at desc nulls last, upload_id desc`,
             params
           )
         : await this.db.query<PayoutFileUploadRow>(
-            `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, file_name,
-                    uploaded_by_user_id, uploaded_by_role, status, remark, total_rows,
-                    created_count, rejected_count, uploaded_at
+            `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id,
+                    subscription_id, package_code, file_name, uploaded_by_user_id,
+                    uploaded_by_role, status, remark, total_rows, created_count,
+                    rejected_count, uploaded_at
              from payout_file_uploads
              order by uploaded_at desc nulls last, upload_id desc`
           );
@@ -1572,9 +1841,9 @@ export class PayoutManagementService {
 
   async getFileUpload(uploadId: string) {
     const result = await this.db.query<PayoutFileUploadRow>(
-      `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, file_name,
-              uploaded_by_user_id, uploaded_by_role, status, remark, total_rows,
-              created_count, rejected_count, uploaded_at, payload_json,
+      `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, subscription_id,
+              package_code, debit_account_id, file_name, uploaded_by_user_id, uploaded_by_role, status, remark,
+              total_rows, created_count, rejected_count, uploaded_at, payload_json,
               processing_started_at, processed_at
        from payout_file_uploads
        where upload_id = $1`,
@@ -1583,6 +1852,104 @@ export class PayoutManagementService {
 
     const row = result.rows[0];
     return row ? this.mapFileUploadRow(row) : null;
+  }
+
+  async listBatchesBySourceUpload(uploadId: string) {
+    const result = await this.db.query<PayoutBatchRow>(
+      `select pb.batch_id, pb.bank_tenant_id, pb.corporate_tenant_id,
+              pb.corporate_id, pb.source_upload_id, pb.subscription_id, pb.package_code,
+              pb.debit_account_id, pb.payment_method_code,
+              first_item.beneficiary_id as primary_beneficiary_id,
+              first_item.beneficiary_name as primary_beneficiary_name,
+              pb.created_by_user_id, pb.created_by_role, pb.title, pb.tag, pb.remark,
+              pb.state, pb.total_amount, pb.approval_comment, pb.bank_reference,
+              pb.created_at, pb.submitted_at, pb.submitted_by_user_id, pb.submitted_by_role,
+              pb.approved_at, pb.approved_by_user_id, pb.approved_by_role, pb.rejected_at,
+              pb.rejected_by_user_id, pb.rejected_by_role, pb.dispatched_at, pb.completed_at,
+              pb.failure_reason, pac.approval_levels_required, pac.current_approval_level,
+              pac.roles_by_level, pac.matched_matrix_ids
+       from payout_batches pb
+       left join payout_batch_approval_contexts pac on pac.batch_id = pb.batch_id
+       left join lateral (
+         select pi.beneficiary_id, b.name as beneficiary_name
+         from payout_items pi
+         left join beneficiaries b on b.beneficiary_id = pi.beneficiary_id
+         where pi.batch_id = pb.batch_id
+         order by pi.item_id
+         limit 1
+       ) first_item on true
+       where pb.source_upload_id = $1
+       order by pb.created_at asc, pb.batch_id asc`,
+      [uploadId]
+    );
+
+    return result.rows.map((row) => this.mapBatchListRow(row));
+  }
+
+  async applyFileUploadApprovalAction(
+    uploadId: string,
+    payload: PayoutApprovalActionRequest
+  ) {
+    const upload = await this.getFileUpload(uploadId);
+
+    if (!upload) {
+      return {
+        error: "upload_not_found" as const
+      };
+    }
+
+    const batches = await this.listBatchesBySourceUpload(uploadId);
+    const actionableBatches = batches.filter((batch) =>
+      batch.state === "pending_approval" || batch.state === "partially_approved"
+    );
+
+    if (actionableBatches.length === 0) {
+      return {
+        error: "no_actionable_batches" as const
+      };
+    }
+
+    const results: Array<{
+      batchId: string;
+      status: "approved" | "rejected" | "skipped";
+      state: PayoutBatch["state"] | null;
+      message?: string;
+    }> = [];
+
+    for (const batch of actionableBatches) {
+      const result = await this.applyApprovalAction(batch.batchId, payload);
+
+      if ("data" in result) {
+        results.push({
+          batchId: batch.batchId,
+          status: payload.action === "approve" ? "approved" : "rejected",
+          state: result.data?.state ?? batch.state
+        });
+      } else {
+        results.push({
+          batchId: batch.batchId,
+          status: "skipped",
+          state: batch.state,
+          message: mapBulkFileApprovalErrorToMessage(result as never)
+        });
+      }
+    }
+
+    const refreshedUpload = await this.getFileUpload(uploadId);
+    const refreshedBatches = await this.listBatchesBySourceUpload(uploadId);
+
+    return {
+      data: {
+        fileUpload: refreshedUpload ?? upload,
+        batches: refreshedBatches,
+        summary: {
+          total: actionableBatches.length,
+          processed: results.filter((item) => item.status !== "skipped").length,
+          skipped: results.filter((item) => item.status === "skipped").length
+        },
+        results
+      }
+    };
   }
 
   async recordFileUpload(
@@ -1599,15 +1966,18 @@ export class PayoutManagementService {
 
     const result = await executor.query<PayoutFileUploadRow>(
       `insert into payout_file_uploads (
-         upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, file_name,
-         uploaded_by_user_id, uploaded_by_role, status, remark, total_rows,
-         created_count, rejected_count, uploaded_at, payload_json
+         upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, subscription_id,
+         package_code, debit_account_id, file_name, uploaded_by_user_id, uploaded_by_role, status, remark,
+         total_rows, created_count, rejected_count, uploaded_at, payload_json
        )
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13::jsonb)
+       values ($1, $2, $3, $4, $5, $6, null, $7, $8, $9, $10, $11, $12, $13, $14, now(), $15::jsonb)
        on conflict (upload_id) do update
        set bank_tenant_id = excluded.bank_tenant_id,
            corporate_tenant_id = excluded.corporate_tenant_id,
            corporate_id = excluded.corporate_id,
+           subscription_id = excluded.subscription_id,
+           package_code = excluded.package_code,
+           debit_account_id = excluded.debit_account_id,
            file_name = excluded.file_name,
            uploaded_by_user_id = excluded.uploaded_by_user_id,
            uploaded_by_role = excluded.uploaded_by_role,
@@ -1617,15 +1987,17 @@ export class PayoutManagementService {
            created_count = excluded.created_count,
            rejected_count = excluded.rejected_count,
            payload_json = excluded.payload_json
-       returning upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, file_name,
-                 uploaded_by_user_id, uploaded_by_role, status, remark, total_rows,
-                 created_count, rejected_count, uploaded_at, payload_json,
+       returning upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, subscription_id,
+                 package_code, debit_account_id, file_name, uploaded_by_user_id, uploaded_by_role, status, remark,
+                 total_rows, created_count, rejected_count, uploaded_at, payload_json,
                  processing_started_at, processed_at`,
       [
         payload.uploadId,
         payload.bankTenantId,
         payload.corporateTenantId,
         payload.corporateId,
+        payload.subscriptionId ?? null,
+        payload.packageCode ?? null,
         payload.fileName,
         payload.uploadedByUserId,
         actor.role,
@@ -1640,15 +2012,18 @@ export class PayoutManagementService {
 
     await executor.query(
       `insert into file_upload_projection (
-         upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, file_name,
-         uploaded_by_user_id, uploaded_by_role, status, remark, total_rows,
-         created_count, rejected_count, uploaded_at, updated_at
+         upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, subscription_id,
+         package_code, debit_account_id, file_name, uploaded_by_user_id, uploaded_by_role, status, remark,
+         total_rows, created_count, rejected_count, uploaded_at, updated_at
        )
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), now())
+       values ($1, $2, $3, $4, $5, $6, null, $7, $8, $9, $10, $11, $12, $13, $14, now(), now())
        on conflict (upload_id) do update
        set bank_tenant_id = excluded.bank_tenant_id,
            corporate_tenant_id = excluded.corporate_tenant_id,
            corporate_id = excluded.corporate_id,
+           subscription_id = excluded.subscription_id,
+           package_code = excluded.package_code,
+           debit_account_id = excluded.debit_account_id,
            file_name = excluded.file_name,
            uploaded_by_user_id = excluded.uploaded_by_user_id,
            uploaded_by_role = excluded.uploaded_by_role,
@@ -1664,6 +2039,8 @@ export class PayoutManagementService {
         payload.bankTenantId,
         payload.corporateTenantId,
         payload.corporateId,
+        payload.subscriptionId ?? null,
+        payload.packageCode ?? null,
         payload.fileName,
         payload.uploadedByUserId,
         actor.role,
@@ -1682,9 +2059,9 @@ export class PayoutManagementService {
 
   async processAcceptedFileUpload(uploadId: string) {
     const result = await this.db.query<PayoutFileUploadRow>(
-      `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, file_name,
-              uploaded_by_user_id, uploaded_by_role, status, remark, total_rows,
-              created_count, rejected_count, uploaded_at, payload_json,
+      `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, subscription_id,
+              package_code, debit_account_id, file_name, uploaded_by_user_id, uploaded_by_role, status, remark,
+              total_rows, created_count, rejected_count, uploaded_at, payload_json,
               processing_started_at, processed_at
        from payout_file_uploads
        where upload_id = $1
@@ -1715,8 +2092,20 @@ export class PayoutManagementService {
       corporateTenantId: upload.corporate_tenant_id,
       corporateId: upload.corporate_id ?? undefined
     });
+    const uploadEffectiveSettingsResult = upload.subscription_id
+      ? await this.effectiveSettingsResolverService.resolveForSubscription(
+          upload.subscription_id
+        )
+      : null;
+    const uploadEffectiveSettings =
+      uploadEffectiveSettingsResult && "data" in uploadEffectiveSettingsResult
+        ? (uploadEffectiveSettingsResult.data ?? null)
+        : null;
     const beneficiaryMap = new Map(
-      beneficiaries.map((beneficiary) => [beneficiary.name.trim().toLowerCase(), beneficiary])
+      beneficiaries.map((beneficiary) => [
+        beneficiary.beneficiaryId.trim().toUpperCase(),
+        beneficiary
+      ])
     );
 
     for (const [index, row] of rows.entries()) {
@@ -1740,12 +2129,46 @@ export class PayoutManagementService {
         referencesSeen.add(normalizedReference);
       }
 
-      const beneficiary = beneficiaryMap.get(row.beneficiaryName.trim().toLowerCase());
+      const beneficiary = beneficiaryMap.get(row.beneficiaryId.trim().toUpperCase());
       if (!beneficiary) {
         rejected.push({
           rowNumber,
           transactionReference,
-          reason: `Beneficiary not found: ${row.beneficiaryName}`
+          reason: `Beneficiary not found: ${row.beneficiaryId}`
+        });
+        continue;
+      }
+
+      let debitAccountId: string | undefined;
+      if (row.debitAccountNumber) {
+        const resolvedDebitAccountId = upload.subscription_id
+          ? await this.resolveDebitAccountIdByNumber(
+              upload.subscription_id,
+              row.debitAccountNumber
+            )
+          : null;
+        debitAccountId = resolvedDebitAccountId ?? undefined;
+
+        if (!debitAccountId) {
+          rejected.push({
+            rowNumber,
+            transactionReference,
+            reason: `Debit account not found for this package: ${row.debitAccountNumber}`
+          });
+          continue;
+        }
+      }
+
+      const resolvedPaymentMethod = this.resolveSelectedPaymentMethod(
+        uploadEffectiveSettings,
+        row.paymentMethodCode
+      );
+
+      if (resolvedPaymentMethod && "error" in resolvedPaymentMethod) {
+        rejected.push({
+          rowNumber,
+          transactionReference,
+          reason: mapBulkCreateErrorToMessage(resolvedPaymentMethod)
         });
         continue;
       }
@@ -1755,6 +2178,14 @@ export class PayoutManagementService {
         bankTenantId: upload.bank_tenant_id,
         corporateTenantId: upload.corporate_tenant_id,
         corporateId: upload.corporate_id ?? "",
+        sourceUploadId: uploadId,
+        subscriptionId: upload.subscription_id ?? undefined,
+        packageCode: upload.package_code ?? undefined,
+        debitAccountId,
+        paymentMethodCode:
+          resolvedPaymentMethod && !("error" in resolvedPaymentMethod)
+            ? resolvedPaymentMethod.paymentMethodCode
+            : undefined,
         createdByUserId: upload.uploaded_by_user_id,
         title: transactionReference,
         tag: row.tag ?? undefined,
@@ -1772,7 +2203,7 @@ export class PayoutManagementService {
         ]
       });
 
-      if ("error" in createResult) {
+      if (!("data" in createResult)) {
         rejected.push({
           rowNumber,
           transactionReference,
@@ -1915,26 +2346,31 @@ export class PayoutManagementService {
 
     const result = await this.db.query<PayoutRefundRow>(
       `insert into payout_refunds (
-         refund_id, batch_id, bank_tenant_id, corporate_tenant_id, corporate_id, requested_by_user_id,
-         amount, reason, state, created_at, processed_at
+         refund_id, batch_id, bank_tenant_id, corporate_tenant_id, corporate_id, subscription_id,
+         package_code, requested_by_user_id, amount, reason, state, created_at, processed_at
        )
-       values ($1, $2, $3, $4, $5, $6, $7, $8, 'requested', now(), null)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'requested', now(), null)
        on conflict (refund_id) do update
        set batch_id = excluded.batch_id,
            bank_tenant_id = excluded.bank_tenant_id,
            corporate_tenant_id = excluded.corporate_tenant_id,
            corporate_id = excluded.corporate_id,
+           subscription_id = excluded.subscription_id,
+           package_code = excluded.package_code,
            requested_by_user_id = excluded.requested_by_user_id,
            amount = excluded.amount,
            reason = excluded.reason
-       returning refund_id, batch_id, bank_tenant_id, corporate_tenant_id, corporate_id, requested_by_user_id,
-                 amount, reason, state, created_at, processed_at`,
+       returning refund_id, batch_id, bank_tenant_id, corporate_tenant_id, corporate_id,
+                 subscription_id, package_code, requested_by_user_id, amount, reason, state,
+                 created_at, processed_at`,
       [
         payload.refundId,
         payload.batchId,
         payload.bankTenantId,
         payload.corporateTenantId,
         payload.corporateId,
+        batch.subscriptionId,
+        batch.packageCode,
         payload.requestedByUserId,
         payload.amount,
         payload.reason
@@ -2079,6 +2515,11 @@ export class PayoutManagementService {
       bankTenantId: row.bank_tenant_id,
       corporateTenantId: row.corporate_tenant_id,
       corporateId: row.corporate_id,
+      sourceUploadId: row.source_upload_id ?? null,
+      subscriptionId: row.subscription_id,
+      packageCode: row.package_code,
+      debitAccountId: row.debit_account_id ?? null,
+      paymentMethodCode: row.payment_method_code ?? null,
       primaryBeneficiaryId: row.primary_beneficiary_id ?? null,
       primaryBeneficiaryName: row.primary_beneficiary_name ?? null,
       createdByUserId: row.created_by_user_id,
@@ -2138,6 +2579,11 @@ export class PayoutManagementService {
       bankTenantId: row.bank_tenant_id,
       corporateTenantId: row.corporate_tenant_id,
       corporateId: row.corporate_id,
+      sourceUploadId: row.source_upload_id ?? null,
+      subscriptionId: row.subscription_id,
+      packageCode: row.package_code,
+      debitAccountId: row.debit_account_id ?? null,
+      paymentMethodCode: row.payment_method_code ?? null,
       primaryBeneficiaryId: itemsResult.rows[0]?.beneficiary_id ?? null,
       primaryBeneficiaryName: null,
       createdByUserId: row.created_by_user_id,
@@ -2240,6 +2686,9 @@ export class PayoutManagementService {
       bankTenantId: row.bank_tenant_id,
       corporateTenantId: row.corporate_tenant_id,
       corporateId: row.corporate_id,
+      subscriptionId: row.subscription_id,
+      packageCode: row.package_code,
+      debitAccountId: row.debit_account_id ?? null,
       fileName: row.file_name,
       uploadedByUserId: row.uploaded_by_user_id,
       uploadedByRole: row.uploaded_by_role,
@@ -2259,9 +2708,9 @@ export class PayoutManagementService {
     fileName: string
   ) {
     const result = await this.db.query<PayoutFileUploadRow>(
-      `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, file_name,
-              uploaded_by_user_id, uploaded_by_role, status, remark, total_rows,
-              created_count, rejected_count, uploaded_at
+      `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, subscription_id,
+              package_code, debit_account_id, file_name, uploaded_by_user_id, uploaded_by_role, status, remark,
+              total_rows, created_count, rejected_count, uploaded_at
        from payout_file_uploads
        where corporate_tenant_id = $1
          and corporate_id = $2
@@ -2286,10 +2735,11 @@ export class PayoutManagementService {
     transactionReference: string
   ) {
     const result = await this.db.query<PayoutBatchRow>(
-      `select batch_id, bank_tenant_id, corporate_tenant_id, corporate_id, created_by_user_id,
-              created_by_role, title, tag, remark, state, total_amount, approval_comment,
-              bank_reference, created_at, submitted_at, submitted_by_user_id, submitted_by_role,
-              approved_at, approved_by_user_id, approved_by_role, rejected_at,
+      `select batch_id, bank_tenant_id, corporate_tenant_id, corporate_id, subscription_id,
+              source_upload_id, package_code, debit_account_id, payment_method_code, created_by_user_id, created_by_role, title, tag, remark, state,
+              total_amount, approval_comment, bank_reference, created_at, submitted_at,
+              submitted_by_user_id, submitted_by_role, approved_at, approved_by_user_id,
+              approved_by_role, rejected_at,
               rejected_by_user_id, rejected_by_role, dispatched_at, completed_at,
               failure_reason
        from payout_batches
@@ -2333,15 +2783,122 @@ export class PayoutManagementService {
     return Number(result.rows[0]?.total_amount ?? 0);
   }
 
+  private async resolveSelectedDebitAccount(
+    corporateTenantId: string,
+    roleName: string,
+    subscriptionId: string | null,
+    requestedDebitAccountId?: string
+  ): Promise<
+    | ResolvedDebitAccountContext
+    | { error: "debit_account_required"; subscriptionId: string | null }
+    | { error: "debit_account_not_allowed"; debitAccountId: string }
+    | { error: "default_debit_account_not_configured"; subscriptionId: string | null }
+  > {
+    if (!subscriptionId) {
+      return {
+        error: "default_debit_account_not_configured",
+        subscriptionId: null
+      };
+    }
+
+    const subscription = await this.subscriptionManagementService.getSubscription(subscriptionId);
+    if (!subscription) {
+      return {
+        error: "default_debit_account_not_configured",
+        subscriptionId
+      };
+    }
+
+    const roleAllowedDebitAccountIds =
+      await this.identityAccessService.getAllowedDebitAccountIdsForRole(
+        corporateTenantId,
+        roleName
+      );
+
+    const selectableAccounts = subscription.debitAccounts.filter(
+      (account) =>
+        account.status === "active" &&
+        roleAllowedDebitAccountIds.includes(account.debitAccountId)
+    );
+
+    if (selectableAccounts.length === 0) {
+      return {
+        error: "debit_account_required",
+        subscriptionId
+      };
+    }
+
+    const normalizedRequestedDebitAccountId = requestedDebitAccountId?.trim() ?? "";
+    if (normalizedRequestedDebitAccountId) {
+      const requestedAccount = selectableAccounts.find(
+        (account) => account.debitAccountId === normalizedRequestedDebitAccountId
+      );
+
+      if (!requestedAccount) {
+        return {
+          error: "debit_account_not_allowed",
+          debitAccountId: normalizedRequestedDebitAccountId
+        };
+      }
+
+      return {
+        debitAccountId: requestedAccount.debitAccountId,
+        accountNumber: requestedAccount.accountNumber
+      };
+    }
+
+    const defaultAccount =
+      selectableAccounts.find((account) => account.isDefault) ?? selectableAccounts[0] ?? null;
+
+    if (!defaultAccount) {
+      return {
+        error: "default_debit_account_not_configured",
+        subscriptionId
+      };
+    }
+
+    return {
+      debitAccountId: defaultAccount.debitAccountId,
+      accountNumber: defaultAccount.accountNumber
+    };
+  }
+
+  private async resolveDebitAccountIdByNumber(
+    subscriptionId: string,
+    accountNumber: string
+  ) {
+    const normalizedAccountNumber = accountNumber.trim();
+    if (!normalizedAccountNumber) {
+      return null;
+    }
+
+    const result = await this.db.query<{ debit_account_id: string }>(
+      `select sda.debit_account_id
+       from subscription_debit_accounts sda
+       inner join corporate_debit_accounts cda on cda.debit_account_id = sda.debit_account_id
+       where sda.subscription_id = $1
+         and sda.status = 'active'
+         and cda.account_number = $2
+       limit 1`,
+      [subscriptionId, normalizedAccountNumber]
+    );
+
+    return result.rows[0]?.debit_account_id ?? null;
+  }
+
   private async initializeApprovalContext(
     batchId: string,
     corporateTenantId: string,
+    subscriptionId: string | null,
+    debitAccountId: string | null,
     amount: number,
     executor: DatabaseExecutor = this.db
   ) {
     const snapshot = await this.approvalMatrixManagementService.buildTransactionApprovalPlan(
       corporateTenantId,
-      amount
+      amount,
+      subscriptionId,
+      debitAccountId
     );
 
     await executor.query(
@@ -2367,6 +2924,121 @@ export class PayoutManagementService {
         snapshot.matchedApprovalMatrixIds
       ]
     );
+  }
+
+  private async resolveSubscriptionContext(input: {
+    bankTenantId: string;
+    corporateTenantId: string;
+    corporateId: string;
+    subscriptionId?: string;
+    packageCode?: string;
+  }): Promise<ResolvedSubscriptionContext | SubscriptionScopeError> {
+    let subscription = null;
+
+    if (input.subscriptionId) {
+      subscription = await this.subscriptionManagementService.getSubscription(
+        input.subscriptionId
+      );
+    } else if (input.packageCode) {
+      subscription = await this.subscriptionManagementService.findActiveSubscription(
+        input.corporateId,
+        input.packageCode
+      );
+    } else {
+      const subscriptions = await this.subscriptionManagementService.listSubscriptions({
+        corporateTenantId: input.corporateTenantId,
+        corporateId: input.corporateId,
+        status: "active"
+      });
+      subscription = subscriptions[0] ?? null;
+    }
+
+    if (!subscription) {
+      return input.subscriptionId || input.packageCode
+        ? ({ error: "subscription_not_found" } as const)
+        : ({
+            subscriptionId: null,
+            packageCode: null,
+            effectiveSettings: null
+          } satisfies ResolvedSubscriptionContext);
+    }
+
+    if (
+      subscription.bankTenantId !== input.bankTenantId ||
+      subscription.corporateTenantId !== input.corporateTenantId ||
+      subscription.corporateId !== input.corporateId ||
+      subscription.status !== "active"
+    ) {
+      return {
+        error: "subscription_scope_mismatch" as const
+      };
+    }
+
+    const effectiveSettingsResult =
+      await this.effectiveSettingsResolverService.resolveForSubscription(
+        subscription.subscriptionId
+      );
+
+    const effectiveSettings =
+      "data" in effectiveSettingsResult ? (effectiveSettingsResult.data ?? null) : null;
+
+    return {
+      subscriptionId: subscription.subscriptionId,
+      packageCode: subscription.packageCode,
+      effectiveSettings
+    } satisfies ResolvedSubscriptionContext;
+  }
+
+  private resolveSelectedPaymentMethod(
+    effectiveSettings: EffectiveSettingsSnapshot | null,
+    requestedPaymentMethodCode?: string
+  ) {
+    const allowedPaymentMethods = effectiveSettings?.paymentMethods ?? [];
+
+    if (allowedPaymentMethods.length === 0) {
+      return null;
+    }
+
+    const normalizedRequestedCode = requestedPaymentMethodCode?.trim().toUpperCase() ?? "";
+    if (!normalizedRequestedCode) {
+      const defaultPaymentMethodCode =
+        effectiveSettings?.defaultPaymentMethodCode?.trim().toUpperCase() ?? "";
+
+      if (defaultPaymentMethodCode) {
+        const defaultPaymentMethod =
+          allowedPaymentMethods.find(
+            (method) => method.paymentMethodCode.toUpperCase() === defaultPaymentMethodCode
+          ) ?? null;
+
+        if (defaultPaymentMethod) {
+          return defaultPaymentMethod;
+        }
+      }
+
+      if (allowedPaymentMethods.length === 1) {
+        return allowedPaymentMethods[0] ?? null;
+      }
+
+      return {
+        error: "payment_method_required" as const,
+        allowedPaymentMethodCodes: allowedPaymentMethods.map((method) => method.paymentMethodCode)
+      };
+    }
+
+    const selectedPaymentMethod =
+      allowedPaymentMethods.find(
+        (method) => method.paymentMethodCode.toUpperCase() === normalizedRequestedCode
+      ) ?? null;
+
+    if (!selectedPaymentMethod) {
+      return {
+        error: "payment_method_not_allowed" as const,
+        paymentMethodCode: normalizedRequestedCode,
+        allowedPaymentMethodCodes: allowedPaymentMethods.map((method) => method.paymentMethodCode)
+      };
+    }
+
+    return selectedPaymentMethod;
   }
 
   private async getApprovalContextRow(
@@ -2424,6 +3096,17 @@ function mapBulkCreateErrorToMessage(
     | { error: "beneficiary_not_approved"; beneficiaryId: string }
     | { error: "beneficiary_inactive"; beneficiaryId: string }
     | {
+        error: "beneficiary_package_not_assigned";
+        beneficiaryId: string;
+        packageCode: string;
+      }
+    | {
+        error: "beneficiary_type_not_allowed";
+        beneficiaryId: string;
+        beneficiaryType: string;
+        packageCode: string | null;
+      }
+    | {
         error: "duplicate_transaction_reference";
         transactionReference: string;
         existingState: string;
@@ -2434,6 +3117,27 @@ function mapBulkCreateErrorToMessage(
         limit: number;
         currentTotal: number;
       }
+    | {
+        error: "payment_method_required";
+        allowedPaymentMethodCodes: string[];
+      }
+    | {
+        error: "payment_method_not_allowed";
+        paymentMethodCode: string;
+        allowedPaymentMethodCodes: string[];
+      }
+    | {
+        error: "payment_method_amount_out_of_range";
+        paymentMethodCode: string;
+        minAmount: number | null;
+        maxAmount: number | null;
+        amount: number;
+      }
+    | { error: "debit_account_required"; subscriptionId: string | null }
+    | { error: "debit_account_not_allowed"; debitAccountId: string }
+    | { error: "default_debit_account_not_configured"; subscriptionId: string | null }
+    | { error: "subscription_not_found" }
+    | { error: "subscription_scope_mismatch" }
     | { error: "forbidden" }
 ) {
   switch (error.error) {
@@ -2451,14 +3155,50 @@ function mapBulkCreateErrorToMessage(
       return `Beneficiary is waiting for approval: ${error.beneficiaryId}`;
     case "beneficiary_inactive":
       return `Beneficiary is inactive: ${error.beneficiaryId}`;
+    case "beneficiary_package_not_assigned":
+      return `Beneficiary ${error.beneficiaryId} is not assigned to package ${error.packageCode}`;
+    case "beneficiary_type_not_allowed":
+      return `Beneficiary type ${error.beneficiaryType} is not allowed for package ${error.packageCode ?? "this selection"}`;
     case "duplicate_transaction_reference":
       return `Transaction reference already used earlier (${error.existingState})`;
     case "single_transaction_limit_exceeded":
       return `Transaction exceeds the single transaction limit of INR ${formatCurrency(error.limit)}`;
     case "daily_cumulative_limit_exceeded":
       return `Daily cumulative limit of INR ${formatCurrency(error.limit)} would be exceeded`;
+    case "payment_method_required":
+      return `Select a payment method. Allowed methods: ${error.allowedPaymentMethodCodes.join(", ")}`;
+    case "payment_method_not_allowed":
+      return `Payment method ${error.paymentMethodCode} is not allowed for the selected package`;
+    case "payment_method_amount_out_of_range":
+      return `Payment amount INR ${formatCurrency(error.amount)} is outside the allowed range for ${error.paymentMethodCode}`;
+    case "debit_account_required":
+      return "No debit account is available for this role and package";
+    case "debit_account_not_allowed":
+      return `Debit account is not allowed for this role and package: ${error.debitAccountId}`;
+    case "default_debit_account_not_configured":
+      return "A default debit account is not configured for this package";
+    case "subscription_not_found":
+      return "No active package subscription was found for this transaction context";
+    case "subscription_scope_mismatch":
+      return "The selected package subscription does not belong to this corporate context";
     case "forbidden":
       return "Only an approved transaction maker can upload transactions";
+  }
+}
+
+function mapBulkFileApprovalErrorToMessage(
+  error:
+    | { error: "forbidden" }
+    | { error: "batch_not_found" }
+    | { error: "invalid_transition"; currentState: string }
+) {
+  switch (error.error) {
+    case "forbidden":
+      return "You are not allowed to take approval action on one or more transactions in this file";
+    case "batch_not_found":
+      return "A transaction linked to this file could not be found";
+    case "invalid_transition":
+      return `A transaction is already in ${error.currentState} state`;
   }
 }
 
@@ -2498,6 +3238,8 @@ function mapRefundRow(row: PayoutRefundRow) {
     bankTenantId: row.bank_tenant_id,
     corporateTenantId: row.corporate_tenant_id,
     corporateId: row.corporate_id,
+    subscriptionId: row.subscription_id,
+    packageCode: row.package_code,
     requestedByUserId: row.requested_by_user_id,
     amount: Number(row.amount),
     reason: row.reason,

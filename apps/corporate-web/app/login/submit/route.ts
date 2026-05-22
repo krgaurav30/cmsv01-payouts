@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { resolveApiBase } from "../../../lib/api-base";
+import { resolveBffBase } from "../../../lib/api-base";
 import { SESSION_COOKIE } from "../../../lib/session-cookie";
 
 export async function POST(request: NextRequest) {
@@ -8,8 +8,8 @@ export async function POST(request: NextRequest) {
   const password = String(formData.get("password") ?? "");
 
   try {
-    const apiUrl = resolveApiBase(request.nextUrl.origin);
-    const response = await fetch(`${apiUrl}/v1/auth/login`, {
+    const bffUrl = resolveBffBase(request.nextUrl.origin);
+    const response = await fetch(`${bffUrl}/bff/auth/login`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     const redirectResponse = NextResponse.redirect(new URL("/operations", request.url), {
       status: 303
     });
-    redirectResponse.cookies.set(SESSION_COOKIE, encodeURIComponent(JSON.stringify(data.session)), {
+    redirectResponse.cookies.set(SESSION_COOKIE, JSON.stringify(data.session), {
       httpOnly: false,
       sameSite: "lax",
       path: "/",

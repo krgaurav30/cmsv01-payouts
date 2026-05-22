@@ -61,6 +61,22 @@ export const corporateRoleCreateSchema = z.object({
   status: userStatusSchema.default("inactive")
 });
 
+export const corporateRoleUpdateSchema = z.object({
+  actedByUserId: z.string().min(3),
+  corporateTenantId: z.string().min(3),
+  name: corporateRoleNameSchema,
+  description: z.string().min(2).optional(),
+  permissions: z.array(corporatePermissionSchema).min(1),
+  status: userStatusSchema
+});
+
+export const roleDebitAccountAccessUpdateSchema = z.object({
+  actedByUserId: z.string().min(3),
+  corporateTenantId: z.string().min(3),
+  roleName: corporateRoleNameSchema,
+  debitAccountIds: z.array(z.string().min(3))
+});
+
 export const approvalActionSchema = z.object({
   action: z.enum(["approve", "reject"]),
   actedByUserId: z.string().min(3),
@@ -75,7 +91,19 @@ export type UserStatus = z.infer<typeof userStatusSchema>;
 export type ApprovalState = z.infer<typeof approvalStateSchema>;
 export type CorporateUserCreateRequest = z.infer<typeof corporateUserCreateSchema>;
 export type CorporateRoleCreateRequest = z.infer<typeof corporateRoleCreateSchema>;
+export type CorporateRoleUpdateRequest = z.infer<typeof corporateRoleUpdateSchema>;
+export type RoleDebitAccountAccessUpdateRequest = z.infer<typeof roleDebitAccountAccessUpdateSchema>;
 export type ApprovalActionRequest = z.infer<typeof approvalActionSchema>;
+
+export type RoleDebitAccountAccess = {
+  accessId: string;
+  corporateTenantId: string;
+  roleName: string;
+  debitAccountId: string;
+  status: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
 
 export type AuthenticatedUser = {
   userId: string;
@@ -88,6 +116,7 @@ export type AuthenticatedUser = {
   corporateId: string | null;
   status: "active";
   permissions: CorporatePermission[];
+  token?: string;
 };
 
 export type CorporateUser = {

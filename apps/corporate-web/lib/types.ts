@@ -62,6 +62,7 @@ export type CorporateTenantSettings = {
 
 export type ApprovalMatrix = {
   matrixId: string;
+  name: string;
   corporateTenantId: string;
   entityType: "transaction";
   amountFrom: number;
@@ -99,6 +100,7 @@ export type Beneficiary = {
   approvalState: "pending_approval" | "approved" | "rejected";
   reviewComment: string | null;
   lastUpdatedAt: string | null;
+  assignedPackages: BeneficiaryPackageAssignment[];
 };
 
 export type PayoutTimelineEvent = {
@@ -142,6 +144,10 @@ export type PayoutBatch = {
   bankTenantId: string;
   corporateTenantId: string;
   corporateId: string | null;
+  sourceUploadId?: string | null;
+  subscriptionId?: string | null;
+  debitAccountId?: string | null;
+  paymentMethodCode?: string | null;
   primaryBeneficiaryId: string | null;
   primaryBeneficiaryName: string | null;
   createdByUserId: string;
@@ -172,6 +178,7 @@ export type PayoutBatch = {
   matchedApprovalMatrixIds: string[];
   timeline: PayoutTimelineEvent[];
   items: PayoutItem[];
+  packageCode?: string | null;
 };
 
 export type PayoutFileUpload = {
@@ -229,6 +236,136 @@ export type CorporateUser = {
   reviewedByRole: string | null;
 };
 
+export type CorporateDebitAccount = {
+  debitAccountId: string;
+  bankTenantId: string;
+  corporateTenantId: string;
+  corporateId: string;
+  accountName: string;
+  accountNumber: string;
+  ifsc: string;
+  isDefault: boolean;
+  status: "active" | "inactive";
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type PackagePaymentMethod = {
+  paymentMethodCode: string;
+  minAmountOverride: number | null;
+  maxAmountOverride: number | null;
+  pricingOverrides: Record<string, unknown>;
+};
+
+export type PackageCatalogEntry = {
+  packageId: string;
+  ownerType: "bank" | "corporate";
+  bankTenantId: string;
+  corporateTenantId: string | null;
+  corporateId: string | null;
+  basePackageCode: string | null;
+  packageCode: string;
+  name: string;
+  useCase: string;
+  description: string | null;
+  allowedBeneficiaryTypes: string[];
+  bulkApproveEnabled: boolean;
+  debitModesAllowed: string[];
+  defaultDebitMode: string;
+  fileRejectionModesAllowed: string[];
+  defaultFileRejectionMode: string;
+  defaultPaymentMethodCode: string | null;
+  debitAccountIds: string[];
+  defaultDebitAccountId: string | null;
+  maxPaymentsPerBatch: number;
+  pricingDefaults: Record<string, unknown>;
+  status: "active" | "inactive";
+  paymentMethods: PackagePaymentMethod[];
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type SubscriptionDebitAccountAccess = {
+  debitAccountId: string;
+  accountName: string;
+  accountNumber: string;
+  ifsc: string;
+  allowedPaymentMethodCodes: string[];
+  isDefault: boolean;
+  status: "active" | "inactive";
+};
+
+export type SubscriptionUserAccess = {
+  accessId: string;
+  userId: string;
+  username: string;
+  displayName: string;
+  roleName: string;
+  status: "active" | "inactive";
+};
+
+export type CorporateSubscription = {
+  subscriptionId: string;
+  bankTenantId: string;
+  corporateTenantId: string;
+  corporateId: string;
+  packageId: string;
+  packageCode: string;
+  displayName: string;
+  status: "draft" | "active" | "suspended" | "terminated";
+  startedAt: string | null;
+  suspendedAt: string | null;
+  terminatedAt: string | null;
+  createdBy: string | null;
+  updatedBy: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  debitAccounts: SubscriptionDebitAccountAccess[];
+  userAccess: SubscriptionUserAccess[];
+};
+
+export type EffectivePackagePaymentMethod = {
+  paymentMethodCode: string;
+  minAmount: number | null;
+  maxAmount: number | null;
+  pricing: Record<string, unknown>;
+};
+
+export type EffectiveSettingsSnapshot = {
+  subscriptionId: string;
+  corporateId: string;
+  corporateTenantId: string;
+  bankTenantId: string;
+  packageId: string;
+  packageCode: string;
+  subscriptionStatus: string;
+  allowedBeneficiaryTypes: string[];
+  bulkApproveEnabled: boolean;
+  debitModesAllowed: string[];
+  defaultDebitMode: string;
+  effectiveDebitMode: string;
+  fileRejectionModesAllowed: string[];
+  defaultFileRejectionMode: string;
+  effectiveFileRejectionMode: string;
+  maxPaymentsPerBatch: number;
+  paymentMethods: EffectivePackagePaymentMethod[];
+  defaultPaymentMethodCode: string | null;
+  defaultDebitAccountId: string | null;
+  activeOverrideKeys: string[];
+};
+
+export type ActiveSubscriptionContext = {
+  subscription: CorporateSubscription;
+  effectiveSettings: EffectiveSettingsSnapshot | null;
+};
+
+export type BeneficiaryPackageAssignment = {
+  packageId: string;
+  packageCode: string;
+  displayName: string;
+  ownerType: "bank" | "corporate";
+};
+
 export type OperationsInitialData = {
   selectedCorporateId: string;
   bankTenants: BankTenant[];
@@ -241,6 +378,9 @@ export type OperationsInitialData = {
   roles: CorporateRole[];
   users: CorporateUser[];
   settings: CorporateTenantSettings | null;
+  debitAccounts: CorporateDebitAccount[];
+  subscriptions: CorporateSubscription[];
+  activeSubscription: ActiveSubscriptionContext | null;
 };
 
 export type Notification = {

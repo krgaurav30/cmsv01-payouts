@@ -4,8 +4,11 @@ export const approvalMatrixStatusSchema = z.enum(["active", "inactive"]);
 
 export const approvalMatrixCreateSchema = z.object({
   matrixId: z.string().min(3).optional(),
+  name: z.string().min(2),
   corporateTenantId: z.string().min(3),
+  subscriptionId: z.string().min(3),
   createdByUserId: z.string().min(3),
+  debitAccountIds: z.array(z.string().min(1)).min(1),
   amountFrom: z.number().nonnegative(),
   amountTo: z.number().positive(),
   approvalLevels: z.number().int().min(1).max(3),
@@ -13,12 +16,22 @@ export const approvalMatrixCreateSchema = z.object({
   status: approvalMatrixStatusSchema.default("active")
 });
 
+export const approvalMatrixUpdateSchema = approvalMatrixCreateSchema.omit({
+  matrixId: true
+});
+
 export type ApprovalMatrixStatus = z.infer<typeof approvalMatrixStatusSchema>;
 export type ApprovalMatrixCreateRequest = z.infer<typeof approvalMatrixCreateSchema>;
+export type ApprovalMatrixUpdateRequest = z.infer<typeof approvalMatrixUpdateSchema>;
 
 export type ApprovalMatrix = {
   matrixId: string;
+  name: string;
   corporateTenantId: string;
+  subscriptionId: string | null;
+  packageCode: string | null;
+  packageDisplayName: string | null;
+  debitAccountIds: string[];
   entityType: "transaction";
   amountFrom: number;
   amountTo: number;
@@ -36,6 +49,7 @@ export type ApprovalPlanSnapshot = {
   currentApprovalLevel: number;
   approvalRoles: string[];
   matchedApprovalMatrixIds: string[];
+  debitAccountId: string | null;
   rolesByLevel: Array<{
     level: number;
     roles: string[];

@@ -1,5 +1,6 @@
 import { loadConfig } from "../../packages/shared/src/config.js";
 import { getDatabasePool } from "../../packages/shared/src/db.js";
+import { hashPassword } from "../../packages/shared/src/crypto.js";
 
 const config = loadConfig();
 const db = getDatabasePool(config);
@@ -380,7 +381,15 @@ async function main() {
          'maker',
          'Can create and submit payout transactions',
          'active',
-         array['transaction.create','transaction.submit','beneficiary.create','role.create','user.create'],
+         array[
+           'transaction.make',
+           'beneficiary.make',
+           'roles.make',
+           'user.make',
+           'devportal.view',
+           'settings.view',
+           'settings.edit'
+         ],
          'approved',
          'Seeded maker role'
        ),
@@ -390,7 +399,15 @@ async function main() {
          'checker',
          'Can review and approve maker requests',
          'active',
-         array['transaction.approve','beneficiary.approve','role.approve','user.approve'],
+         array[
+           'transaction.checker',
+           'beneficiary.checker',
+           'roles.checker',
+           'user.checker',
+           'devportal.view',
+           'settings.view',
+           'settings.edit'
+         ],
          'approved',
          'Seeded checker role'
        )
@@ -406,6 +423,99 @@ async function main() {
   );
 
   await db.query(
+    `insert into payment_methods (
+       payment_method_code, name, rail_family, settlement_mode, weekend_support,
+       min_amount, max_amount, status, created_at, updated_at
+     )
+     values
+       ('NEFT', 'National Electronic Funds Transfer', 'bank_transfer', 'batch', true, 1, 500000000, 'active', now(), now()),
+       ('RTGS', 'Real Time Gross Settlement', 'bank_transfer', 'real_time', false, 200000, 500000000, 'active', now(), now()),
+       ('IMPS', 'Immediate Payment Service', 'real_time_transfer', 'real_time', true, 1, 500000, 'active', now(), now()),
+       ('UPI', 'Unified Payments Interface', 'real_time_transfer', 'real_time', true, 1, 100000, 'active', now(), now()),
+       ('NACH', 'National Automated Clearing House', 'batch_debit', 'batch', false, 1, 10000000, 'active', now(), now())
+     on conflict (payment_method_code) do update
+     set name = excluded.name,
+         rail_family = excluded.rail_family,
+         settlement_mode = excluded.settlement_mode,
+         weekend_support = excluded.weekend_support,
+         min_amount = excluded.min_amount,
+         max_amount = excluded.max_amount,
+         status = excluded.status,
+         updated_at = now()`
+  );
+
+  await db.query(
+    `insert into packages (
+       package_id, owner_type, bank_tenant_id, corporate_tenant_id, corporate_id, base_package_code,
+       package_code, name, use_case, description,
+       allowed_beneficiary_types, bulk_approve_enabled, debit_modes_allowed,
+       default_debit_mode, file_rejection_modes_allowed, default_file_rejection_mode,
+       default_payment_method_code, max_payments_per_batch, pricing_defaults_json, status, created_at, updated_at
+     )
+     values
+       (
+         'pkg-bank-alpha-venpay',
+         'bank',
+         'bank-alpha',
+         null,
+         null,
+         null,
+         'VENPAY',
+         'Venpay',
+         'vendor_payments',
+         'Vendor payments package for accounts payable workflows.',
+         array['vendor'],
+         false,
+         array['single'],
+         'single',
+         array['fail_full_file', 'reject_invalid_rows'],
+         'fail_full_file',
+         'NEFT',
+         1000,
+         '{"platformFee":"0","transactionFees":{"NEFT":"2.5","RTGS":"15","IMPS":"5"}}'::jsonb,
+         'active',
+         now(),
+         now()
+       )
+     on conflict (package_id) do update
+     set owner_type = excluded.owner_type,
+         bank_tenant_id = excluded.bank_tenant_id,
+         corporate_tenant_id = excluded.corporate_tenant_id,
+         corporate_id = excluded.corporate_id,
+         base_package_code = excluded.base_package_code,
+         name = excluded.name,
+         use_case = excluded.use_case,
+         description = excluded.description,
+         allowed_beneficiary_types = excluded.allowed_beneficiary_types,
+         bulk_approve_enabled = excluded.bulk_approve_enabled,
+         debit_modes_allowed = excluded.debit_modes_allowed,
+         default_debit_mode = excluded.default_debit_mode,
+         file_rejection_modes_allowed = excluded.file_rejection_modes_allowed,
+         default_file_rejection_mode = excluded.default_file_rejection_mode,
+         default_payment_method_code = excluded.default_payment_method_code,
+         max_payments_per_batch = excluded.max_payments_per_batch,
+         pricing_defaults_json = excluded.pricing_defaults_json,
+         status = excluded.status,
+         updated_at = now()`
+  );
+
+  await db.query(
+    `insert into package_payment_methods (
+       package_id, payment_method_code, min_amount_override, max_amount_override,
+       pricing_overrides_json, created_at
+     )
+     values
+       ('pkg-bank-alpha-venpay', 'NEFT', 1, 500000000, '{"priority":"standard"}'::jsonb, now()),
+       ('pkg-bank-alpha-venpay', 'RTGS', 200000, 500000000, '{"priority":"high_value"}'::jsonb, now()),
+       ('pkg-bank-alpha-venpay', 'IMPS', 1, 500000, '{"priority":"instant"}'::jsonb, now()),
+       ('pkg-bank-alpha-venpay', 'UPI', 1, 100000, '{"priority":"low_value"}'::jsonb, now())
+     on conflict (package_id, payment_method_code) do update
+     set min_amount_override = excluded.min_amount_override,
+         max_amount_override = excluded.max_amount_override,
+         pricing_overrides_json = excluded.pricing_overrides_json`
+  );
+
+  await db.query(
     `insert into corporate_users (
        user_id, username, password, display_name, role, bank_tenant_id,
        corporate_tenant_id, corporate_id, status, approval_state, review_comment
@@ -414,7 +524,7 @@ async function main() {
        (
          'user-maya-maker-001',
          'grvmaker',
-         '9771',
+         $4,
          'GRV Maker',
          'maker',
          $1,
@@ -427,7 +537,7 @@ async function main() {
        (
          'user-maya-checker-001',
          'grvchecker',
-         '9771',
+         $5,
          'GRV Checker',
          'checker',
          $1,
@@ -447,7 +557,173 @@ async function main() {
          status = excluded.status,
          approval_state = excluded.approval_state,
          review_comment = excluded.review_comment`,
+    [
+      mayaBankTenantId,
+      mayaCorporateTenantId,
+      mayaCorporateId,
+      hashPassword("9771"),
+      hashPassword("9771")
+    ]
+  );
+
+  await db.query(
+    `insert into corporate_subscriptions (
+       subscription_id, bank_tenant_id, corporate_tenant_id, corporate_id, package_id,
+       package_code, display_name, status, started_at, suspended_at, terminated_at,
+       created_by, updated_by, created_at, updated_at
+     )
+     values
+       (
+         'sub-maya-venpay-001',
+         $1,
+         $2,
+         $3,
+         'pkg-bank-alpha-venpay',
+         'VENPAY',
+         'Maya Pharma Venpay',
+         'active',
+         now(),
+         null,
+         null,
+         'system',
+         'system',
+         now(),
+         now()
+       )
+     on conflict (subscription_id) do update
+     set bank_tenant_id = excluded.bank_tenant_id,
+         corporate_tenant_id = excluded.corporate_tenant_id,
+         corporate_id = excluded.corporate_id,
+         package_id = excluded.package_id,
+         package_code = excluded.package_code,
+         display_name = excluded.display_name,
+         status = excluded.status,
+         started_at = excluded.started_at,
+         suspended_at = excluded.suspended_at,
+         terminated_at = excluded.terminated_at,
+         updated_by = excluded.updated_by,
+         updated_at = now()`,
     [mayaBankTenantId, mayaCorporateTenantId, mayaCorporateId]
+  );
+
+  // Clear any existing default debit accounts for this corporate to avoid constraint violation
+  await db.query(
+    `update corporate_debit_accounts 
+     set is_default = false 
+     where bank_tenant_id = $1 and corporate_tenant_id = $2 and corporate_id = $3`,
+    [mayaBankTenantId, mayaCorporateTenantId, mayaCorporateId]
+  );
+
+  await db.query(
+    `insert into corporate_debit_accounts (
+       debit_account_id, bank_tenant_id, corporate_tenant_id, corporate_id, account_name,
+       account_number, ifsc, status, is_default, created_at, updated_at
+     )
+     values
+       (
+         'debit-maya-main-001',
+         $1,
+         $2,
+         $3,
+         'Maya Pharma Operating Account',
+         '401234567890',
+         'HDFC0001234',
+         'active',
+         true,
+         now(),
+         now()
+       )
+     on conflict (debit_account_id) do update
+     set bank_tenant_id = excluded.bank_tenant_id,
+         corporate_tenant_id = excluded.corporate_tenant_id,
+         corporate_id = excluded.corporate_id,
+         account_name = excluded.account_name,
+         account_number = excluded.account_number,
+         ifsc = excluded.ifsc,
+         status = excluded.status,
+         is_default = excluded.is_default,
+         updated_at = now()`,
+    [mayaBankTenantId, mayaCorporateTenantId, mayaCorporateId]
+  );
+
+  await db.query(
+    `insert into subscription_debit_accounts (
+       subscription_id, debit_account_id, allowed_payment_method_codes, status, is_default, created_at
+     )
+     values
+       (
+         'sub-maya-venpay-001',
+         'debit-maya-main-001',
+         array['NEFT','RTGS','IMPS','UPI'],
+         'active',
+         true,
+         now()
+       )
+     on conflict (subscription_id, debit_account_id) do update
+     set allowed_payment_method_codes = excluded.allowed_payment_method_codes,
+         status = excluded.status,
+         is_default = excluded.is_default`
+  );
+
+  await db.query(
+    `insert into corporate_subscription_preferences (
+       subscription_id, preferred_debit_mode, preferred_file_rejection_mode,
+       default_debit_account_id, payment_method_preferences_json, created_at, updated_at
+     )
+     values
+       (
+         'sub-maya-venpay-001',
+         'single',
+         'fail_full_file',
+         'debit-maya-main-001',
+         '{"preferredOrder":["IMPS","NEFT","RTGS","UPI"]}'::jsonb,
+         now(),
+         now()
+       )
+     on conflict (subscription_id) do update
+     set preferred_debit_mode = excluded.preferred_debit_mode,
+         preferred_file_rejection_mode = excluded.preferred_file_rejection_mode,
+         default_debit_account_id = excluded.default_debit_account_id,
+         payment_method_preferences_json = excluded.payment_method_preferences_json,
+         updated_at = now()`
+  );
+
+  // Deactivate any existing active subscription user access records for these users to avoid constraint violation
+  await db.query(
+    `update subscription_user_access 
+     set status = 'inactive' 
+     where user_id in ('user-maya-maker-001', 'user-maya-checker-001')`
+  );
+
+  await db.query(
+    `insert into subscription_user_access (
+       access_id, subscription_id, user_id, role_name, status, created_at, updated_at
+     )
+     values
+       (
+         'sub-maya-venpay-maker-001',
+         'sub-maya-venpay-001',
+         'user-maya-maker-001',
+         'maker',
+         'active',
+         now(),
+         now()
+       ),
+       (
+         'sub-maya-venpay-checker-001',
+         'sub-maya-venpay-001',
+         'user-maya-checker-001',
+         'checker',
+         'active',
+         now(),
+         now()
+       )
+     on conflict (access_id) do update
+     set subscription_id = excluded.subscription_id,
+         user_id = excluded.user_id,
+         role_name = excluded.role_name,
+         status = excluded.status,
+         updated_at = now()`
   );
 
   await db.query(

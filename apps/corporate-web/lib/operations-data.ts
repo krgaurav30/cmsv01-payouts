@@ -1,117 +1,41 @@
-import type {
-  ApprovalMatrix,
-  BankTenant,
-  Beneficiary,
-  Corporate,
-  CorporateSession,
-  CorporateRole,
-  CorporateTenant,
-  CorporateTenantSettings,
-  CorporateUser,
-  OperationsInitialData,
-  PayoutBatch,
-  PayoutFileUpload
-} from "./types";
-import { resolveApiBase } from "./api-base";
+import type { CorporateSession, OperationsInitialData } from "./types";
+import { resolveBffBase } from "./api-base";
 
 export async function loadOperationsInitialData(
   session: CorporateSession,
   selectedCorporateCookieValue?: string | null,
   requestOrigin?: string | null
 ): Promise<OperationsInitialData> {
-  const apiBase = resolveApiBase(requestOrigin);
-  const [bankTenants, corporateTenants, corporates] = await Promise.all([
-    fetchApi<{ items: BankTenant[] }>(apiBase, "/v1/tenants/banks", { items: [] }),
-    fetchApi<{ items: CorporateTenant[] }>(
-      apiBase,
-      `/v1/tenants/corporates?status=active&bankTenantId=${encodeURIComponent(session.bankTenantId)}`
-    , { items: [] }),
-    fetchApi<{ items: Corporate[] }>(
-      apiBase,
-      `/v1/corporates?status=active&corporateTenantId=${encodeURIComponent(session.corporateTenantId)}`
-    , { items: [] })
-  ]);
+  const bffBase = resolveBffBase(requestOrigin);
+  const query = new URLSearchParams({
+    bankTenantId: session.bankTenantId,
+    corporateTenantId: session.corporateTenantId,
+    userId: session.userId,
+    sessionCorporateId: session.corporateId ?? "",
+    selectedCorporateId: normalizeCookieValue(selectedCorporateCookieValue) ?? "",
+    includeSettings: String(session.permissions.includes("settings.view"))
+  });
 
-  const availableCorporates = corporates.items ?? [];
-  const selectedCorporateId =
-    normalizeCookieValue(selectedCorporateCookieValue) ??
-    session.corporateId ??
-    availableCorporates[0]?.corporateId ??
-    "";
-
-  if (!selectedCorporateId) {
-    return {
+  return fetchApi<OperationsInitialData>(
+    bffBase,
+    `/bff/corporate/operations/initial-data?${query.toString()}`,
+    {
       selectedCorporateId: "",
-      bankTenants: bankTenants.items ?? [],
-      corporateTenants: corporateTenants.items ?? [],
-      corporates: availableCorporates,
+      bankTenants: [],
+      corporateTenants: [],
+      corporates: [],
+      subscriptions: [],
+      activeSubscription: null,
       beneficiaries: [],
       transactions: [],
       fileUploads: [],
       approvalMatrices: [],
       roles: [],
       users: [],
-      settings: null
-    };
-  }
-
-  const settingsRequest = session.permissions.includes("settings.view")
-    ? fetchApi<CorporateTenantSettings | null>(
-        apiBase,
-        `/v1/settings/corporate-tenant?corporateTenantId=${encodeURIComponent(session.corporateTenantId)}&actedByUserId=${encodeURIComponent(session.userId)}`,
-        null
-      )
-    : Promise.resolve(null);
-
-  const [
-    transactions,
-    fileUploads,
-    beneficiaries,
-    approvalMatrices,
-    roles,
-    users,
-    settings
-  ] = await Promise.all([
-    fetchApi<{ items: PayoutBatch[] }>(
-      apiBase,
-      `/v1/payouts/batches?corporateTenantId=${encodeURIComponent(session.corporateTenantId)}&corporateId=${encodeURIComponent(selectedCorporateId)}`
-    , { items: [] }),
-    fetchApi<{ items: PayoutFileUpload[] }>(
-      apiBase,
-      `/v1/payouts/file-uploads?corporateTenantId=${encodeURIComponent(session.corporateTenantId)}&corporateId=${encodeURIComponent(selectedCorporateId)}`
-    , { items: [] }),
-    fetchApi<{ items: Beneficiary[] }>(
-      apiBase,
-      `/v1/beneficiaries?corporateTenantId=${encodeURIComponent(session.corporateTenantId)}&corporateId=${encodeURIComponent(selectedCorporateId)}`
-    , { items: [] }),
-    fetchApi<{ items: ApprovalMatrix[] }>(
-      apiBase,
-      `/v1/approval-matrices?corporateTenantId=${encodeURIComponent(session.corporateTenantId)}`
-    , { items: [] }),
-    fetchApi<{ items: CorporateRole[] }>(
-      apiBase,
-      `/v1/auth/corporate-roles?corporateTenantId=${encodeURIComponent(session.corporateTenantId)}`
-    , { items: [] }),
-    fetchApi<{ items: CorporateUser[] }>(
-      apiBase,
-      `/v1/auth/users?corporateTenantId=${encodeURIComponent(session.corporateTenantId)}&corporateId=${encodeURIComponent(selectedCorporateId)}`
-    , { items: [] }),
-    settingsRequest
-  ]);
-
-  return {
-    selectedCorporateId,
-    bankTenants: bankTenants.items ?? [],
-    corporateTenants: corporateTenants.items ?? [],
-    corporates: availableCorporates,
-    beneficiaries: beneficiaries.items ?? [],
-    transactions: transactions.items ?? [],
-    fileUploads: fileUploads.items ?? [],
-    approvalMatrices: approvalMatrices.items ?? [],
-    roles: roles.items ?? [],
-    users: users.items ?? [],
-    settings
-  };
+      settings: null,
+      debitAccounts: []
+    }
+  );
 }
 
 async function fetchApi<T>(apiBase: string, path: string, fallback: T): Promise<T> {

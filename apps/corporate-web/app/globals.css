@@ -1,47 +1,109 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* ─── Design Tokens: Option C — Refined Green ─── */
 :root {
-  --bg: #fbfffd;
-  --surface: rgba(255, 255, 255, 0.94);
-  --surface-strong: #ffffff;
-  --surface-muted: #f3fff9;
-  --surface-soft: #f7fffb;
-  --line: rgba(15, 23, 42, 0.08);
-  --line-strong: rgba(0, 0, 0, 0.16);
-  --ink: #0a0a0a;
-  --muted: #5e6a67;
-  --muted-strong: #1e2c28;
-  --navy: #0a0a0a;
-  --navy-soft: #111111;
-  --accent: #7ef8c7;
-  --accent-soft: rgba(126, 248, 199, 0.22);
-  --success: #0f9f72;
-  --success-soft: rgba(126, 248, 199, 0.2);
-  --warning: #9a6700;
-  --warning-soft: rgba(255, 236, 143, 0.34);
-  --danger: #c22f4b;
-  --danger-soft: rgba(255, 126, 169, 0.16);
-  --shadow: 0 20px 50px rgba(0, 0, 0, 0.06);
-  --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.04);
-  --radius-xl: 28px;
-  --radius-lg: 20px;
-  --radius-md: 14px;
+  /* Backgrounds */
+  --bg:              #FFFFFF;
+  --surface:         #FFFFFF;
+  --surface-raised:  #FFFFFF;
+  --surface-subtle:  #F9FAFB;
+
+  /* Borders */
+  --border:          #E5E7EB;
+  --border-strong:   #D1D5DB;
+  --border-focus:    #15803D;
+
+  /* Text */
+  --text-primary:    #111827;
+  --text-secondary:  #6B7280;
+  --text-tertiary:   #9CA3AF;
+  --text-inverse:    #FFFFFF;
+
+  /* ── Keep old token names as aliases so existing code doesn't break ── */
+  --ink:             #111827;
+  --muted:           #6B7280;
+  --muted-strong:    #374151;
+  --navy:            #111827;
+  --navy-soft:       #1F2937;
+  --line:            #E5E7EB;
+  --line-strong:     #D1D5DB;
+
+  /* Action (primary button) — Option C: refined green */
+  --action-bg:       #F0FDF4;
+  --action-text:     #15803D;
+  --action-border:   #BBF7D0;
+  --action-hover-bg: #DCFCE7;
+
+  /* Semantic: Success */
+  --success:         #16A34A;
+  --success-soft:    #F0FDF4;
+  --success-border:  #BBF7D0;
+
+  /* Semantic: Warning */
+  --warning:         #D97706;
+  --warning-soft:    #FFFBEB;
+  --warning-border:  #FDE68A;
+
+  /* Semantic: Danger */
+  --danger:          #DC2626;
+  --danger-soft:     #FEF2F2;
+  --danger-border:   #FECACA;
+
+  /* Semantic: Info */
+  --info:            #2563EB;
+  --info-soft:       #EFF6FF;
+  --info-border:     #BFDBFE;
+
+  /* Semantic: Pending/In-review */
+  --pending:         #7C3AED;
+  --pending-soft:    #F5F3FF;
+  --pending-border:  #DDD6FE;
+
+  /* Legacy accent aliases (for backward compat with existing class refs) */
+  --accent:          #16A34A;
+  --accent-soft:     #F0FDF4;
+
+  /* Radius scale */
+  --radius-sm:  4px;
+  --radius-md:  6px;
+  --radius-lg:  8px;
+  --radius-xl:  12px;
+
+  /* Legacy radius aliases */
+  --radius-xl-old: 12px;
+  --radius-lg-old:  8px;
+  --radius-md-old:  6px;
+
+  /* Shadows — very subtle */
+  --shadow-sm:  0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md:  0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow:     0 4px 6px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.06);
+
+  /* Transitions */
+  --ease:        cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-xs:      80ms;
+  --dur-sm:      120ms;
+  --dur-md:      160ms;
 }
 
-* {
+/* ─── Reset ─── */
+*, *::before, *::after {
   box-sizing: border-box;
 }
 
-html,
-body {
+html, body {
   margin: 0;
   min-height: 100%;
-  color: var(--ink);
   max-width: 100%;
   overflow-x: hidden;
-  font-family: "Aptos", "Segoe UI", "Inter", sans-serif;
-  background:
-    radial-gradient(circle at top left, rgba(126, 248, 199, 0.18), transparent 22%),
-    radial-gradient(circle at top right, rgba(176, 255, 232, 0.18), transparent 22%),
-    linear-gradient(180deg, #ffffff 0%, #f7fffb 100%);
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 a {
@@ -49,14 +111,6 @@ a {
   text-decoration: none;
 }
 
-button,
-input,
-select,
-textarea {
+button, input, select, textarea {
   font: inherit;
-}
-
-body {
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
 }

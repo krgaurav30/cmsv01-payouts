@@ -1,7 +1,9 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { PackagesSection } from "./packages-section";
+import { DebitAccountsSection } from "./debit-accounts-section";
 
 import {
   clearSession,
@@ -24,7 +26,9 @@ import type {
   Notification,
   PayoutBatch,
   PayoutFileUpload,
-  PayoutTimelineEvent
+  PayoutTimelineEvent,
+  CorporateSubscription,
+  CorporateDebitAccount
 } from "../../../lib/types";
 
 export type SectionId =
@@ -33,6 +37,8 @@ export type SectionId =
   | "file-uploads"
   | "beneficiaries"
   | "approvals"
+  | "packages"
+  | "debit-accounts"
   | "approval-matrices"
   | "roles"
   | "users"
@@ -69,13 +75,190 @@ type SetupAuditEntry = {
   remark: string | null;
 };
 
-type DateRangePreset = "" | "today" | "yesterday" | "this_week" | "this_month" | "custom";
+function CompactMultiDropdown({
+  label,
+  options,
+  values,
+  onChange,
+  placeholder
+}: {
+  label: string;
+  options: Array<{ value: string; label: string }>;
+  values: string[];
+  onChange: (values: string[]) => void;
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const selectedLabels = values
+    .map((value) => options.find((option) => option.value === value)?.label ?? value)
+    .filter(Boolean);
 
-type DateRangeFilter = {
-  preset: DateRangePreset;
-  from: string;
-  to: string;
-};
+  const filteredOptions = options.filter((option) => {
+    const haystack = `${option.label} ${option.value}`.toLowerCase();
+    return haystack.includes(query.toLowerCase());
+  });
+
+  useEffect(() => {
+    function onDocClick(event: MouseEvent) {
+      if (!(event.target instanceof Node)) return;
+      const target = event.target as HTMLElement;
+      if (!target.closest(`[data-compact-dropdown="${label}"]`)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [label]);
+
+  return (
+    <div data-compact-dropdown={label} style={{ position: "relative" }}>
+      <button
+        type="button"
+        className="ops-input"
+        onClick={() => setOpen((current) => !current)}
+        style={{
+          width: "100%",
+          minHeight: "44px",
+          textAlign: "left",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "10px",
+          padding: "10px 14px",
+          whiteSpace: "normal"
+        }}
+      >
+        <span
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "6px",
+            alignItems: "center"
+          }}
+        >
+          {selectedLabels.length > 0 ? (
+            selectedLabels.slice(0, 2).map((item) => (
+              <span
+                key={item}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "4px 10px",
+                  borderRadius: "999px",
+                  background: "var(--accent-soft)",
+                  color: "var(--accent)",
+                  fontSize: "12px",
+                  fontWeight: 600
+                }}
+              >
+                {item}
+              </span>
+            ))
+          ) : (
+            <span style={{ color: "var(--text-secondary)" }}>{placeholder}</span>
+          )}
+          {selectedLabels.length > 2 ? (
+            <span style={{ color: "var(--text-secondary)", fontSize: "12px" }}>
+              +{selectedLabels.length - 2} more
+            </span>
+          ) : null}
+        </span>
+        <span style={{ color: "var(--text-secondary)", flex: "0 0 auto" }}>▾</span>
+      </button>
+      {open ? (
+        <div
+          style={{
+            position: "absolute",
+            zIndex: 20,
+            left: 0,
+            right: 0,
+            top: "calc(100% + 6px)",
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: "12px",
+            boxShadow: "var(--shadow-lg)",
+            padding: "10px",
+            maxHeight: "220px",
+            overflow: "auto"
+          }}
+        >
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={`Search ${label}`}
+            style={{
+              width: "100%",
+              marginBottom: "10px",
+              padding: "10px 12px",
+              border: "1px solid var(--border)",
+              borderRadius: "10px",
+              background: "var(--surface)"
+            }}
+          />
+          {filteredOptions.length > 0 ? (
+            filteredOptions.map((option) => {
+              const checked = values.includes(option.value);
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() =>
+                    onChange(
+                      checked ? values.filter((value) => value !== option.value) : [...values, option.value]
+                    )
+                  }
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "12px",
+                    padding: "10px 12px",
+                    border: 0,
+                    background: checked ? "var(--accent-soft)" : "transparent",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    textAlign: "left"
+                  }}
+                >
+                  <span style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span
+                      style={{
+                        width: "16px",
+                        height: "16px",
+                        borderRadius: "999px",
+                        border: `1px solid ${checked ? "var(--accent)" : "var(--border-strong)"}`,
+                        background: checked ? "var(--accent)" : "transparent",
+                        color: "#fff",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "11px",
+                        fontWeight: 700
+                      }}
+                    >
+                      {checked ? "✓" : ""}
+                    </span>
+                    <span>{option.label}</span>
+                  </span>
+                  <span style={{ color: checked ? "var(--accent)" : "var(--text-secondary)", fontSize: "12px" }}>
+                    {checked ? "Selected" : "Add"}
+                  </span>
+                </button>
+              );
+            })
+          ) : (
+            <div style={{ padding: "12px", color: "var(--text-secondary)", fontSize: "13px" }}>
+              No matches
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export const SECTIONS: Array<{ id: SectionId; label: string; accent: string }> = [
   { id: "home", label: "Home", accent: "Overview" },
@@ -83,6 +266,8 @@ export const SECTIONS: Array<{ id: SectionId; label: string; accent: string }> =
   { id: "file-uploads", label: "File Uploads", accent: "Bulk import history" },
   { id: "beneficiaries", label: "Beneficiaries", accent: "Directory" },
   { id: "approvals", label: "Approvals", accent: "Maker-checker queue" },
+  { id: "packages", label: "Packages", accent: "Active subscriptions" },
+  { id: "debit-accounts", label: "Debit Accounts", accent: "Corporate funding" },
   { id: "approval-matrices", label: "Approval Matrix", accent: "Rules engine" },
   { id: "roles", label: "Roles", accent: "Permission model" },
   { id: "users", label: "Users", accent: "Access roster" },
@@ -204,7 +389,6 @@ export function OperationsDashboard({
   initialSection
 }: OperationsDashboardProps) {
   const router = useRouter();
-  const pathname = usePathname();
   const bootstrappedRef = useRef(false);
   const skipNextCorporateRefreshRef = useRef(Boolean(initialData.selectedCorporateId));
   const otherMenuRef = useRef<HTMLDetailsElement | null>(null);
@@ -220,6 +404,7 @@ export function OperationsDashboard({
   const [session, setSession] = useState<CorporateSession | null>(initialSession);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [activeSection, setActiveSection] = useState<SectionId>(initialSection);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [activeTimelineId, setActiveTimelineId] = useState<string | null>(null);
   const [approvalSectionFilter, setApprovalSectionFilter] =
@@ -242,6 +427,12 @@ export function OperationsDashboard({
   const [approvalMatrices, setApprovalMatrices] = useState<ApprovalMatrix[]>(
     initialData.approvalMatrices
   );
+  const [subscriptions, setSubscriptions] = useState<CorporateSubscription[]>(
+    initialData.subscriptions ?? []
+  );
+  const [debitAccounts, setDebitAccounts] = useState<CorporateDebitAccount[]>(
+    initialData.debitAccounts ?? []
+  );
   const [transactionDetailCache, setTransactionDetailCache] = useState<Record<string, PayoutBatch>>({});
 
   const [selectedCorporateId, setSelectedCorporateId] = useState(initialData.selectedCorporateId);
@@ -251,24 +442,33 @@ export function OperationsDashboard({
   const [showTransactionBulkUpload, setShowTransactionBulkUpload] = useState(false);
   const [showRoleCreate, setShowRoleCreate] = useState(false);
   const [showUserCreate, setShowUserCreate] = useState(false);
+  const [approvalMatrixSubscriptionId, setApprovalMatrixSubscriptionId] = useState("");
+  const [approvalMatrixDebitAccountIds, setApprovalMatrixDebitAccountIds] = useState<string[]>([]);
+  const [approvalMatrixRoleNames, setApprovalMatrixRoleNames] = useState<string[]>([]);
+  const [settingsTab, setSettingsTab] = useState<"general" | "packages" | "debit-accounts">(
+    "general"
+  );
+  const [selectedTransactionPackageCode, setSelectedTransactionPackageCode] = useState("");
+  const [selectedTransactionDebitAccountId, setSelectedTransactionDebitAccountId] = useState("");
+  const [selectedTransactionPaymentMethodCode, setSelectedTransactionPaymentMethodCode] =
+    useState("");
 
   const [beneficiarySearch, setBeneficiarySearch] = useState("");
   const [beneficiaryStatusFilter, setBeneficiaryStatusFilter] = useState("");
-  const [beneficiaryDateFilter, setBeneficiaryDateFilter] = useState<DateRangeFilter>(
-    createEmptyDateRangeFilter()
-  );
+  const [beneficiaryPackageCodes, setBeneficiaryPackageCodes] = useState<string[]>([]);
 
   const [transactionSearch, setTransactionSearch] = useState("");
   const [transactionStateFilter, setTransactionStateFilter] = useState("");
-  const [transactionDateFilter, setTransactionDateFilter] = useState<DateRangeFilter>(
-    createEmptyDateRangeFilter()
-  );
-  const [fileUploadSearch, setFileUploadSearch] = useState("");
-  const [fileUploadStatusFilter, setFileUploadStatusFilter] = useState("");
-  const [fileUploadDateFilter, setFileUploadDateFilter] = useState<DateRangeFilter>(
-    createEmptyDateRangeFilter()
-  );
+  const [transactionTagFilter, setTransactionTagFilter] = useState("");
   const [dashboardDateRange, setDashboardDateRange] = useState("all");
+
+  async function copyText(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // clipboard may be unavailable in some browsers
+    }
+  }
 
   useEffect(() => {
     if (bootstrappedRef.current) {
@@ -294,10 +494,9 @@ export function OperationsDashboard({
     void bootstrap(currentSession);
   }, [initialSession, router]);
 
-  const activeSection = useMemo(
-    () => resolveSectionFromPathname(pathname) ?? initialSection,
-    [pathname, initialSection]
-  );
+  useEffect(() => {
+    setActiveSection(initialSection);
+  }, [initialSection]);
 
   useEffect(() => {
     latestSessionRef.current = session;
@@ -378,6 +577,8 @@ export function OperationsDashboard({
       setRoles([]);
       setUsers([]);
       setSettings(null);
+      setSubscriptions([]);
+      setDebitAccounts([]);
       if (!silent) {
         setNotice({ tone: "info", text: "No child corporate is available for this user yet." });
       }
@@ -403,6 +604,8 @@ export function OperationsDashboard({
       approvalMatricesResult,
       rolesResult,
       usersResult,
+      subscriptionsResult,
+      debitAccountsResult,
       settingsResult
     ] = await Promise.all([
       fetchJson<{ items: PayoutBatch[] }>(
@@ -422,6 +625,12 @@ export function OperationsDashboard({
       ),
       fetchJson<{ items: CorporateUser[] }>(
         `/v1/auth/users?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
+      ),
+      fetchJson<{ items: CorporateSubscription[] }>(
+        `/v1/subscriptions?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
+      ),
+      fetchJson<{ items: CorporateDebitAccount[] }>(
+        `/v1/debit-accounts?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
       ),
       settingsRequest
     ]);
@@ -449,6 +658,12 @@ export function OperationsDashboard({
     if (usersResult.ok) {
       setUsers(usersResult.data.items ?? []);
     }
+    if (subscriptionsResult.ok) {
+      setSubscriptions(subscriptionsResult.data.items ?? []);
+    }
+    if (debitAccountsResult.ok) {
+      setDebitAccounts(debitAccountsResult.data.items ?? []);
+    }
 
     if (settingsResult.ok && settingsResult.data) {
       setSettings(settingsResult.data);
@@ -461,6 +676,8 @@ export function OperationsDashboard({
       approvalMatricesResult,
       rolesResult,
       usersResult,
+      subscriptionsResult,
+      debitAccountsResult,
       settingsResult
     ].filter((result) => !result.ok);
 
@@ -658,6 +875,97 @@ export function OperationsDashboard({
     [beneficiaries]
   );
 
+  const packageAwareBeneficiaries = useMemo(
+    () =>
+      selectedTransactionPackageCode
+        ? approvedBeneficiaries.filter((beneficiary) =>
+            beneficiary.assignedPackages.some(
+              (assignment) =>
+                assignment.packageCode === selectedTransactionPackageCode
+            )
+          )
+        : approvedBeneficiaries,
+    [approvedBeneficiaries, selectedTransactionPackageCode]
+  );
+
+  const accessibleSubscriptions = useMemo(
+    () =>
+      subscriptions.filter(
+        (subscription) =>
+          subscription.status === "active" &&
+          subscription.userAccess.some(
+            (access) =>
+              access.userId === session?.userId &&
+              access.roleName === session?.role &&
+              access.status === "active"
+          )
+      ),
+    [session?.role, session?.userId, subscriptions]
+  );
+
+  const transactionPackageOptions = useMemo(
+    () =>
+      accessibleSubscriptions.map((subscription) => ({
+        value: subscription.packageCode,
+        label: `${subscription.displayName} (${subscription.packageCode})`
+      })),
+    [accessibleSubscriptions]
+  );
+
+  const selectedTransactionSubscription = useMemo(
+    () =>
+      accessibleSubscriptions.find(
+        (subscription) => subscription.packageCode === selectedTransactionPackageCode
+      ) ?? accessibleSubscriptions[0] ?? null,
+    [accessibleSubscriptions, selectedTransactionPackageCode]
+  );
+
+  const selectedTransactionDebitAccounts = useMemo(
+    () => selectedTransactionSubscription?.debitAccounts ?? [],
+    [selectedTransactionSubscription]
+  );
+
+  const selectedTransactionDebitAccount = useMemo(
+    () =>
+      selectedTransactionDebitAccounts.find(
+        (account) => account.debitAccountId === selectedTransactionDebitAccountId
+      ) ?? null,
+    [selectedTransactionDebitAccountId, selectedTransactionDebitAccounts]
+  );
+
+  const selectedTransactionPaymentMethods = useMemo(() => {
+    const methodCodes = new Set<string>();
+    for (const account of selectedTransactionDebitAccounts) {
+      for (const code of account.allowedPaymentMethodCodes ?? []) {
+        methodCodes.add(code);
+      }
+    }
+    return [...methodCodes];
+  }, [selectedTransactionDebitAccounts]);
+
+  useEffect(() => {
+    if (!selectedTransactionPackageCode && transactionPackageOptions.length > 0) {
+      setSelectedTransactionPackageCode(transactionPackageOptions[0]?.value ?? "");
+    }
+  }, [selectedTransactionPackageCode, transactionPackageOptions]);
+
+  useEffect(() => {
+    if (!selectedTransactionSubscription) {
+      return;
+    }
+
+    const defaultDebitAccountId =
+      selectedTransactionSubscription.debitAccounts.find((account) => account.isDefault)?.debitAccountId ??
+      selectedTransactionSubscription.debitAccounts[0]?.debitAccountId ??
+      "";
+    setSelectedTransactionDebitAccountId((current) => current || defaultDebitAccountId);
+
+    const defaultPaymentMethodCode =
+      selectedTransactionPaymentMethods[0] ??
+      "";
+    setSelectedTransactionPaymentMethodCode((current) => current || defaultPaymentMethodCode);
+  }, [selectedTransactionPaymentMethods, selectedTransactionSubscription]);
+
   const approvedRoles = useMemo(
     () =>
       roles.filter(
@@ -716,128 +1024,44 @@ export function OperationsDashboard({
   }, [activeTimelineId, transactionDetailCache, transactions]);
 
   const beneficiaryRows = useMemo(() => {
-    return beneficiaries
-      .filter((beneficiary) => {
+    return beneficiaries.filter((beneficiary) => {
       const searchTerm = beneficiarySearch.trim().toLowerCase();
-      const beneficiaryDate = normalizeDateOnly(beneficiary.lastUpdatedAt);
 
       const matchesSearch =
         searchTerm.length === 0 ||
-        [
-          beneficiary.name,
-          beneficiary.beneficiaryId,
-          beneficiary.accountNumber,
-          beneficiary.ifsc,
-          beneficiary.bankName,
-          beneficiary.phoneNumber ?? "",
-          beneficiary.category ?? "",
-          beneficiary.status,
-          beneficiary.approvalState,
-          beneficiary.reviewComment ?? "",
-          beneficiary.tags.join(" ")
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(searchTerm);
+        beneficiary.name.toLowerCase().includes(searchTerm) ||
+        beneficiary.beneficiaryId.toLowerCase().includes(searchTerm) ||
+        beneficiary.accountNumber.includes(searchTerm);
 
       const matchesStatus =
         beneficiaryStatusFilter.length === 0 ||
         beneficiary.status === beneficiaryStatusFilter;
 
-      const matchesDate = matchesDateRangeFilter(beneficiaryDate, beneficiaryDateFilter);
-
-      return matchesSearch && matchesStatus && matchesDate;
-    })
-      .sort(
-        (left, right) =>
-          compareDateDesc(left.lastUpdatedAt, right.lastUpdatedAt) ||
-          right.beneficiaryId.localeCompare(left.beneficiaryId)
-      );
-  }, [
-    beneficiaries,
-    beneficiaryDateFilter,
-    beneficiarySearch,
-    beneficiaryStatusFilter
-  ]);
+      return matchesSearch && matchesStatus;
+    });
+  }, [beneficiaries, beneficiarySearch, beneficiaryStatusFilter]);
 
   const transactionRows = useMemo(() => {
-    return transactions
-      .filter((transaction) => {
+    return transactions.filter((transaction) => {
       const searchTerm = transactionSearch.trim().toLowerCase();
-      const transactionDate = normalizeDateOnly(transaction.createdAt);
+      const tagTerm = transactionTagFilter.trim().toLowerCase();
 
       const matchesSearch =
         searchTerm.length === 0 ||
-        [
-          transaction.batchId,
-          transaction.title,
-          transaction.primaryBeneficiaryName ?? "",
-          transaction.primaryBeneficiaryId ?? "",
-          transaction.tag ?? "",
-          transaction.remark ?? "",
-          transaction.state,
-          String(transaction.totalAmount.value)
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(searchTerm);
+        transaction.batchId.toLowerCase().includes(searchTerm) ||
+        transaction.title.toLowerCase().includes(searchTerm);
 
       const matchesState =
         transactionStateFilter.length === 0 ||
         transaction.state === transactionStateFilter;
 
-      const matchesDate = matchesDateRangeFilter(transactionDate, transactionDateFilter);
+      const matchesTag =
+        tagTerm.length === 0 ||
+        (transaction.tag ?? "").toLowerCase().includes(tagTerm);
 
-      return matchesSearch && matchesState && matchesDate;
-    })
-      .sort(
-        (left, right) =>
-          compareDateDesc(left.createdAt, right.createdAt) ||
-          right.batchId.localeCompare(left.batchId)
-      );
-  }, [
-    transactionDateFilter,
-    transactionSearch,
-    transactionStateFilter,
-    transactions
-  ]);
-
-  const fileUploadRows = useMemo(() => {
-    return fileUploads
-      .filter((fileUpload) => {
-        const searchTerm = fileUploadSearch.trim().toLowerCase();
-        const statusTerm = fileUploadStatusFilter.trim().toLowerCase();
-        const uploadDate = normalizeDateOnly(fileUpload.uploadedAt);
-
-        const matchesSearch =
-          searchTerm.length === 0 ||
-          [
-            fileUpload.fileName,
-            fileUpload.uploadedByName ?? "",
-            fileUpload.uploadedByUserId,
-            fileUpload.status,
-            fileUpload.remark ?? "",
-            String(fileUpload.totalRows),
-            String(fileUpload.createdCount),
-            String(fileUpload.rejectedCount)
-          ]
-            .join(" ")
-            .toLowerCase()
-            .includes(searchTerm);
-
-        const matchesDate = matchesDateRangeFilter(uploadDate, fileUploadDateFilter);
-
-        const matchesStatus =
-          statusTerm.length === 0 || fileUpload.status.toLowerCase() === statusTerm;
-
-        return matchesSearch && matchesDate && matchesStatus;
-      })
-      .sort(
-        (left, right) =>
-          compareDateDesc(left.uploadedAt, right.uploadedAt) ||
-          right.uploadId.localeCompare(left.uploadId)
-      );
-  }, [fileUploadDateFilter, fileUploadSearch, fileUploadStatusFilter, fileUploads]);
+      return matchesSearch && matchesState && matchesTag;
+    });
+  }, [transactionSearch, transactionStateFilter, transactionTagFilter, transactions]);
 
   const approvalEntries = useMemo<ApprovalEntry[]>(() => {
     return [
@@ -1199,17 +1423,23 @@ export function OperationsDashboard({
 
     const form = event.currentTarget;
     const formData = new FormData(form);
+    if (beneficiaryPackageCodes.length === 0) {
+      setNotice({ tone: "error", text: "Please attach at least one package to the beneficiary." });
+      return;
+    }
     const payload = {
       createdByUserId: session.userId,
       bankTenantId: session.bankTenantId,
       corporateTenantId: session.corporateTenantId,
       corporateId: selectedCorporateId,
+      beneficiaryId: String(formData.get("beneficiaryId")),
       name: String(formData.get("name")),
       accountNumber: String(formData.get("accountNumber")),
       ifsc: String(formData.get("ifsc")),
       phoneNumber: String(formData.get("phoneNumber")),
       category: optionalText(formData.get("category")),
-      tags: csvToArray(formData.get("tags"))
+      tags: csvToArray(formData.get("tags")),
+      packageCodes: beneficiaryPackageCodes
     };
 
     setBusy(true);
@@ -1223,6 +1453,7 @@ export function OperationsDashboard({
 
     setBeneficiaries((current) => [result.data, ...current]);
     form.reset();
+    setBeneficiaryPackageCodes([]);
     setShowBeneficiaryCreate(false);
     setNotice({
       tone: "success",
@@ -1285,6 +1516,9 @@ export function OperationsDashboard({
       corporateTenantId: session.corporateTenantId,
       corporateId: selectedCorporateId,
       createdByUserId: session.userId,
+      packageCode: selectedTransactionPackageCode || undefined,
+      debitAccountId: selectedTransactionDebitAccountId || undefined,
+      paymentMethodCode: selectedTransactionPaymentMethodCode || undefined,
       title: String(formData.get("transactionReference")),
       tag: optionalText(formData.get("tag")),
       remark: optionalText(formData.get("remark")),
@@ -1408,15 +1642,29 @@ export function OperationsDashboard({
       .getAll("roles")
       .map((value) => String(value))
       .filter(Boolean);
+    const selectedRoles = approvalMatrixRoleNames.length > 0 ? approvalMatrixRoleNames : roles;
+
+    if (!approvalMatrixSubscriptionId) {
+      setNotice({ tone: "error", text: "Please select a package subscription." });
+      return;
+    }
+
+    if (approvalMatrixDebitAccountIds.length === 0) {
+      setNotice({ tone: "error", text: "Please select at least one debit account." });
+      return;
+    }
 
     setBusy(true);
     const result = await postJson<ApprovalMatrix>("/v1/approval-matrices", {
+      name: String(formData.get("name")),
       corporateTenantId: session.corporateTenantId,
       createdByUserId: session.userId,
+      subscriptionId: approvalMatrixSubscriptionId,
+      debitAccountIds: approvalMatrixDebitAccountIds,
       amountFrom: Number(formData.get("amountFrom")),
       amountTo: Number(formData.get("amountTo")),
       approvalLevels: Number(formData.get("approvalLevels")),
-      roles,
+      roles: selectedRoles,
       status: "active"
     });
     setBusy(false);
@@ -1428,6 +1676,9 @@ export function OperationsDashboard({
 
     setApprovalMatrices((current) => [result.data, ...current]);
     form.reset();
+    setApprovalMatrixSubscriptionId("");
+    setApprovalMatrixDebitAccountIds([]);
+    setApprovalMatrixRoleNames([]);
     setNotice({
       tone: "success",
       text: "Approval matrix created successfully."
@@ -1661,6 +1912,7 @@ export function OperationsDashboard({
   }
 
   function navigateToSection(section: SectionId) {
+    setActiveSection(section);
     router.push(`/operations/${section}`);
   }
 
@@ -1726,7 +1978,7 @@ export function OperationsDashboard({
             </details>
           </nav>
 
-          <div className="ops-topbar-right">
+      <div className="ops-topbar-right">
             <details className="ops-notification-menu" ref={notificationMenuRef}>
               <summary className="ops-notification-trigger">
                 <span className="ops-notification-icon" aria-hidden="true">
@@ -1835,13 +2087,24 @@ export function OperationsDashboard({
         {notice ? (
           <section className={`ops-banner ops-banner-${notice.tone}`}>
             <p>{notice.text}</p>
-            <button
-              className="ops-banner-close"
-              onClick={() => setNotice(null)}
-              type="button"
-            >
-              Dismiss
-            </button>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              {notice.tone === "error" ? (
+                <button
+                  className="ops-banner-close"
+                  onClick={() => void copyText(notice.text)}
+                  type="button"
+                >
+                  Copy
+                </button>
+              ) : null}
+              <button
+                className="ops-banner-close"
+                onClick={() => setNotice(null)}
+                type="button"
+              >
+                Dismiss
+              </button>
+            </div>
           </section>
         ) : null}
 
@@ -1957,6 +2220,9 @@ export function OperationsDashboard({
               <div className="ops-panel-head">
                 <div>
                   <h3>Transactions</h3>
+                  <p className="ops-meta">
+                    Every payout transaction with state tracking, timeline visibility, and clean filters.
+                  </p>
                 </div>
                 <div className="ops-actions">
                   {isTransactionMaker ? (
@@ -1990,12 +2256,26 @@ export function OperationsDashboard({
                       </label>
                     </div>
                     <p className="ops-meta">
-                      Required columns: Transaction Reference, Beneficiary Name, Amount, Tag, Remark
+                      Required columns: Package Code, Transaction Reference, Beneficiary ID, Amount, Tag, Remark
                     </p>
                     <div className="ops-actions">
                       <a
                         className="ops-button secondary ops-link-button"
-                        href="/api/payouts/bulk-upload/template"
+                        href={`/api/payouts/bulk-upload/template${
+                          selectedTransactionPackageCode
+                            ? `?packageCode=${encodeURIComponent(selectedTransactionPackageCode)}`
+                            : ""
+                        }${
+                          selectedTransactionPaymentMethodCode
+                            ? `${selectedTransactionPackageCode ? "&" : "?"}paymentMethodCode=${encodeURIComponent(selectedTransactionPaymentMethodCode)}`
+                            : ""
+                        }${
+                          selectedTransactionDebitAccount?.accountNumber
+                            ? `${selectedTransactionPackageCode || selectedTransactionPaymentMethodCode ? "&" : "?"}debitAccountNumber=${encodeURIComponent(
+                                selectedTransactionDebitAccount.accountNumber
+                              )}`
+                            : ""
+                        }`}
                       >
                         Download template
                       </a>
@@ -2010,6 +2290,63 @@ export function OperationsDashboard({
               {showTransactionCreate && isTransactionMaker ? (
                 <div className="ops-drawer">
                   <form className="ops-form" onSubmit={handleTransactionSubmit}>
+                    <div className="ops-fields three">
+                      <label>
+                        Package
+                        <select
+                          name="packageCode"
+                          required
+                          value={selectedTransactionPackageCode}
+                          onChange={(event) => {
+                            setSelectedTransactionPackageCode(event.target.value);
+                            setSelectedTransactionDebitAccountId("");
+                            setSelectedTransactionPaymentMethodCode("");
+                          }}
+                        >
+                          {transactionPackageOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Debit Account
+                        <select
+                          name="debitAccountId"
+                          required
+                          value={selectedTransactionDebitAccountId}
+                          onChange={(event) =>
+                            setSelectedTransactionDebitAccountId(event.target.value)
+                          }
+                        >
+                          <option value="">Select debit account</option>
+                          {selectedTransactionDebitAccounts.map((account) => (
+                            <option key={account.debitAccountId} value={account.debitAccountId}>
+                              {account.accountName} ({account.accountNumber})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Payment Method
+                        <select
+                          name="paymentMethodCode"
+                          required
+                          value={selectedTransactionPaymentMethodCode}
+                          onChange={(event) =>
+                            setSelectedTransactionPaymentMethodCode(event.target.value)
+                          }
+                        >
+                          <option value="">Select payment method</option>
+                          {selectedTransactionPaymentMethods.map((methodCode) => (
+                            <option key={methodCode} value={methodCode}>
+                              {methodCode}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
                     <div className="ops-fields two">
                       <label>
                         Transaction Reference
@@ -2022,7 +2359,7 @@ export function OperationsDashboard({
                       <label>
                         Beneficiary Name
                         <select name="beneficiaryId" required>
-                          {approvedBeneficiaries.map((beneficiary) => (
+                          {packageAwareBeneficiaries.map((beneficiary) => (
                             <option key={beneficiary.beneficiaryId} value={beneficiary.beneficiaryId}>
                               {beneficiary.name} ({beneficiary.beneficiaryId})
                             </option>
@@ -2065,10 +2402,10 @@ export function OperationsDashboard({
 
               <div className="ops-toolbar ops-fields three">
                 <label>
-                  Smart search
+                  Search
                   <input
                     onChange={(event) => setTransactionSearch(event.target.value)}
-                    placeholder="Search by reference, beneficiary, amount, status, or remark"
+                    placeholder="Search by transaction reference or txn UUID"
                     value={transactionSearch}
                   />
                 </label>
@@ -2090,50 +2427,12 @@ export function OperationsDashboard({
                   </select>
                 </label>
                 <label>
-                  Date
-                  <div className="ops-date-filter">
-                    <select
-                      onChange={(event) =>
-                        setTransactionDateFilter(
-                          createDateRangeFilterFromPreset(event.target.value as DateRangePreset)
-                        )
-                      }
-                      value={transactionDateFilter.preset}
-                    >
-                      <option value="">All dates</option>
-                      <option value="today">Today</option>
-                      <option value="yesterday">Yesterday</option>
-                      <option value="this_week">This week</option>
-                      <option value="this_month">This month</option>
-                      <option value="custom">Custom range</option>
-                    </select>
-                    {transactionDateFilter.preset === "custom" ? (
-                      <div className="ops-date-range">
-                        <input
-                          onChange={(event) =>
-                            setTransactionDateFilter((current) => ({
-                              preset: "custom",
-                              from: event.target.value,
-                              to: current.to
-                            }))
-                          }
-                          type="date"
-                          value={transactionDateFilter.from}
-                        />
-                        <input
-                          onChange={(event) =>
-                            setTransactionDateFilter((current) => ({
-                              preset: "custom",
-                              from: current.from,
-                              to: event.target.value
-                            }))
-                          }
-                          type="date"
-                          value={transactionDateFilter.to}
-                        />
-                      </div>
-                    ) : null}
-                  </div>
+                  Tag
+                  <input
+                    onChange={(event) => setTransactionTagFilter(event.target.value)}
+                    placeholder="Filter by tag"
+                    value={transactionTagFilter}
+                  />
                 </label>
               </div>
 
@@ -2211,6 +2510,9 @@ export function OperationsDashboard({
               <div className="ops-panel-head">
                 <div>
                   <h3>File Uploads</h3>
+                  <p className="ops-meta">
+                    Track every bulk transaction file with file-level status, uploader details, and rejection remarks.
+                  </p>
                 </div>
                 <div className="ops-actions">
                   {isTransactionMaker ? (
@@ -2252,77 +2554,6 @@ export function OperationsDashboard({
                 </div>
               ) : null}
 
-              <div className="ops-toolbar ops-fields three">
-                <label>
-                  Smart search
-                  <input
-                    onChange={(event) => setFileUploadSearch(event.target.value)}
-                    placeholder="Search by file, uploader, status, remark, or row count"
-                    value={fileUploadSearch}
-                  />
-                </label>
-                <label>
-                  Status
-                  <select
-                    onChange={(event) => setFileUploadStatusFilter(event.target.value)}
-                    value={fileUploadStatusFilter}
-                  >
-                    <option value="">All statuses</option>
-                    <option value="processing">Processing</option>
-                    <option value="successful">Successful</option>
-                    <option value="partially_successful">Partially successful</option>
-                    <option value="failed">Failed</option>
-                    <option value="rejected">Rejected</option>
-                  </select>
-                </label>
-                <label>
-                  Date
-                  <div className="ops-date-filter">
-                    <select
-                      onChange={(event) =>
-                        setFileUploadDateFilter(
-                          createDateRangeFilterFromPreset(event.target.value as DateRangePreset)
-                        )
-                      }
-                      value={fileUploadDateFilter.preset}
-                    >
-                      <option value="">All dates</option>
-                      <option value="today">Today</option>
-                      <option value="yesterday">Yesterday</option>
-                      <option value="this_week">This week</option>
-                      <option value="this_month">This month</option>
-                      <option value="custom">Custom range</option>
-                    </select>
-                    {fileUploadDateFilter.preset === "custom" ? (
-                      <div className="ops-date-range">
-                        <input
-                          onChange={(event) =>
-                            setFileUploadDateFilter((current) => ({
-                              preset: "custom",
-                              from: event.target.value,
-                              to: current.to
-                            }))
-                          }
-                          type="date"
-                          value={fileUploadDateFilter.from}
-                        />
-                        <input
-                          onChange={(event) =>
-                            setFileUploadDateFilter((current) => ({
-                              preset: "custom",
-                              from: current.from,
-                              to: event.target.value
-                            }))
-                          }
-                          type="date"
-                          value={fileUploadDateFilter.to}
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                </label>
-              </div>
-
               <div className="ops-table-shell">
                 <table className="ops-table">
                   <thead>
@@ -2335,8 +2566,8 @@ export function OperationsDashboard({
                     </tr>
                   </thead>
                   <tbody>
-                    {fileUploadRows.length > 0 ? (
-                      fileUploadRows.map((fileUpload) => (
+                    {fileUploads.length > 0 ? (
+                      fileUploads.map((fileUpload) => (
                         <tr key={fileUpload.uploadId}>
                           <td>{fileUpload.fileName}</td>
                           <td>{formatDateTime(fileUpload.uploadedAt)}</td>
@@ -2358,7 +2589,7 @@ export function OperationsDashboard({
                     ) : (
                       <tr>
                         <td className="ops-empty-row" colSpan={5}>
-                          No file uploads match the current filters.
+                          No files uploaded yet.
                         </td>
                       </tr>
                     )}
@@ -2375,6 +2606,9 @@ export function OperationsDashboard({
               <div className="ops-panel-head">
                 <div>
                   <h3>Beneficiaries</h3>
+                  <p className="ops-meta">
+                    Searchable directory with maker-owned activation controls and clean approval visibility.
+                  </p>
                 </div>
                 <div className="ops-actions">
                   {isBeneficiaryMaker ? (
@@ -2394,16 +2628,20 @@ export function OperationsDashboard({
                   <form className="ops-form" onSubmit={handleBeneficiarySubmit}>
                     <div className="ops-fields two">
                       <label>
-                        Bene Name
-                        <input name="name" placeholder="Orbit Vendor Services" required />
+                        Bene ID
+                        <input name="beneficiaryId" placeholder="KUMAR123" required />
                       </label>
                       <label>
-                        Bene Bank Account Number
-                        <input name="accountNumber" placeholder="409876543210" required />
+                        Bene Name
+                        <input name="name" placeholder="Orbit Vendor Services" required />
                       </label>
                     </div>
 
                     <div className="ops-fields three">
+                      <label>
+                        Bene Bank Account Number
+                        <input name="accountNumber" placeholder="409876543210" required />
+                      </label>
                       <label>
                         Bene IFSC Code
                         <input name="ifsc" placeholder="HDFC0001234" required />
@@ -2412,9 +2650,23 @@ export function OperationsDashboard({
                         Bene Phone Number
                         <input name="phoneNumber" placeholder="+91 9876543210" required />
                       </label>
+                    </div>
+
+                    <div className="ops-fields one">
                       <label>
-                        Bene Category
-                        <input name="category" placeholder="Optional" />
+                        Packages
+                        <CompactMultiDropdown
+                          label="beneficiary packages"
+                          options={subscriptions
+                            .filter((subscription) => subscription.status === "active")
+                            .map((subscription) => ({
+                              value: subscription.packageCode,
+                              label: `${subscription.displayName} (${subscription.packageCode})`
+                            }))}
+                          values={beneficiaryPackageCodes}
+                          onChange={setBeneficiaryPackageCodes}
+                          placeholder="Attach packages"
+                        />
                       </label>
                     </div>
 
@@ -2436,10 +2688,10 @@ export function OperationsDashboard({
 
               <div className="ops-toolbar ops-fields three">
                 <label>
-                  Smart search
+                  Search
                   <input
                     onChange={(event) => setBeneficiarySearch(event.target.value)}
-                    placeholder="Search by bene ID, name, account, IFSC, bank, phone, tag, or status"
+                    placeholder="Search by bene ID, name, or account"
                     value={beneficiarySearch}
                   />
                 </label>
@@ -2454,52 +2706,6 @@ export function OperationsDashboard({
                     <option value="inactive">Inactive</option>
                   </select>
                 </label>
-                <label>
-                  Date
-                  <div className="ops-date-filter">
-                    <select
-                      onChange={(event) =>
-                        setBeneficiaryDateFilter(
-                          createDateRangeFilterFromPreset(event.target.value as DateRangePreset)
-                        )
-                      }
-                      value={beneficiaryDateFilter.preset}
-                    >
-                      <option value="">All dates</option>
-                      <option value="today">Today</option>
-                      <option value="yesterday">Yesterday</option>
-                      <option value="this_week">This week</option>
-                      <option value="this_month">This month</option>
-                      <option value="custom">Custom range</option>
-                    </select>
-                    {beneficiaryDateFilter.preset === "custom" ? (
-                      <div className="ops-date-range">
-                        <input
-                          onChange={(event) =>
-                            setBeneficiaryDateFilter((current) => ({
-                              preset: "custom",
-                              from: event.target.value,
-                              to: current.to
-                            }))
-                          }
-                          type="date"
-                          value={beneficiaryDateFilter.from}
-                        />
-                        <input
-                          onChange={(event) =>
-                            setBeneficiaryDateFilter((current) => ({
-                              preset: "custom",
-                              from: current.from,
-                              to: event.target.value
-                            }))
-                          }
-                          type="date"
-                          value={beneficiaryDateFilter.to}
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                </label>
               </div>
 
               <div className="ops-table-shell">
@@ -2512,7 +2718,7 @@ export function OperationsDashboard({
                       <th>Account Number</th>
                       <th>Bank Name</th>
                       <th>IFSC Code</th>
-                      <th>Category</th>
+                      <th>Packages</th>
                       <th>Status</th>
                       <th>Action</th>
                     </tr>
@@ -2530,7 +2736,29 @@ export function OperationsDashboard({
                         <td>{maskAccountNumber(beneficiary.accountNumber)}</td>
                         <td>{beneficiary.bankName}</td>
                         <td>{beneficiary.ifsc}</td>
-                        <td>{beneficiary.category ?? "Uncategorized"}</td>
+                        <td>
+                          {beneficiary.assignedPackages.length > 0 ? (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                              {beneficiary.assignedPackages.map((item) => (
+                                <span
+                                  key={item.packageId}
+                                  style={{
+                                    padding: "4px 8px",
+                                    borderRadius: "999px",
+                                    background: "var(--accent-soft)",
+                                    color: "var(--accent)",
+                                    fontSize: "12px",
+                                    fontWeight: 600
+                                  }}
+                                >
+                                  {item.packageCode}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="ops-meta">No packages</span>
+                          )}
+                        </td>
                         <td>
                           <span className={`ops-status ${beneficiary.status}`}>
                             {humanize(beneficiary.status)}
@@ -2890,7 +3118,29 @@ export function OperationsDashboard({
               {isRoleMaker ? (
                 <div className="ops-drawer">
                   <form className="ops-form" onSubmit={handleApprovalMatrixSubmit}>
-                    <div className="ops-fields three">
+                    <div className="ops-fields two">
+                      <label>
+                        Matrix name
+                        <input name="name" placeholder="Vendor payment standard matrix" required />
+                      </label>
+                      <label>
+                        Package subscription
+                        <select
+                          name="subscriptionId"
+                          required
+                          value={approvalMatrixSubscriptionId}
+                          onChange={(event) => setApprovalMatrixSubscriptionId(event.target.value)}
+                        >
+                          <option value="">Select package subscription</option>
+                          {subscriptions
+                            .filter((subscription) => subscription.status === "active")
+                            .map((subscription) => (
+                              <option key={subscription.subscriptionId} value={subscription.subscriptionId}>
+                                {subscription.displayName} ({subscription.packageCode})
+                              </option>
+                            ))}
+                        </select>
+                      </label>
                       <label>
                         From Amount
                         <input min="0" name="amountFrom" required step="0.01" type="number" />
@@ -2899,6 +3149,9 @@ export function OperationsDashboard({
                         To Amount
                         <input min="0" name="amountTo" required step="0.01" type="number" />
                       </label>
+                    </div>
+
+                    <div className="ops-fields two">
                       <label>
                         Number of Approval Level
                         <select defaultValue="1" name="approvalLevels" required>
@@ -2907,25 +3160,38 @@ export function OperationsDashboard({
                           <option value="3">3</option>
                         </select>
                       </label>
+                      <label>
+                        Debit accounts
+                        <CompactMultiDropdown
+                          label="approval matrix debit accounts"
+                          options={debitAccounts
+                            .filter((account) => account.status === "active")
+                            .map((account) => ({
+                              value: account.debitAccountId,
+                              label: `${account.accountName} (${account.accountNumber})`
+                            }))}
+                          values={approvalMatrixDebitAccountIds}
+                          onChange={setApprovalMatrixDebitAccountIds}
+                          placeholder="Select debit accounts"
+                        />
+                      </label>
                     </div>
 
-                    <fieldset className="ops-fieldset">
-                      <legend>Roles</legend>
-                      <div className="ops-check-grid">
-                        {approvedTransactionCheckerRoles.length > 0 ? (
-                          approvedTransactionCheckerRoles.map((role) => (
-                            <label className="ops-check-card" key={role.roleId}>
-                              <input name="roles" type="checkbox" value={role.name} />
-                              <span>{role.name}</span>
-                            </label>
-                          ))
-                        ) : (
-                          <p className="ops-meta">
-                            No approved transaction checker roles are available yet.
-                          </p>
-                        )}
-                      </div>
-                    </fieldset>
+                    <div className="ops-fields one">
+                      <label>
+                        Roles
+                        <CompactMultiDropdown
+                          label="approval matrix roles"
+                          options={approvedTransactionCheckerRoles.map((role) => ({
+                            value: role.name,
+                            label: role.name
+                          }))}
+                          values={approvalMatrixRoleNames}
+                          onChange={setApprovalMatrixRoleNames}
+                          placeholder="Select roles"
+                        />
+                      </label>
+                    </div>
 
                     <div className="ops-actions">
                       <button className="ops-button primary" disabled={busy} type="submit">
@@ -2940,6 +3206,7 @@ export function OperationsDashboard({
                 <table className="ops-table">
                   <thead>
                     <tr>
+                      <th>Name</th>
                       <th>From Amount</th>
                       <th>To Amount</th>
                       <th>Number of Approval Level</th>
@@ -2950,6 +3217,7 @@ export function OperationsDashboard({
                   <tbody>
                     {approvalMatrices.map((matrix) => (
                       <tr key={matrix.matrixId}>
+                        <td>{matrix.name}</td>
                         <td>INR {formatAmount(matrix.amountFrom)}</td>
                         <td>INR {formatAmount(matrix.amountTo)}</td>
                         <td>{matrix.approvalLevels}</td>
@@ -2963,7 +3231,7 @@ export function OperationsDashboard({
                     ))}
                     {approvalMatrices.length === 0 ? (
                       <tr>
-                        <td className="ops-empty" colSpan={5}>
+                        <td className="ops-empty" colSpan={6}>
                           No approval matrices configured yet.
                         </td>
                       </tr>
@@ -3471,8 +3739,59 @@ export function OperationsDashboard({
           </section>
         ) : null}
 
+        {activeSection === "packages" ? (
+          <PackagesSection
+            corporateTenantId={session.corporateTenantId}
+            corporateId={selectedCorporateId}
+            bankTenantId={session.bankTenantId}
+            debitAccounts={debitAccounts}
+          />
+        ) : null}
+
+        {activeSection === "debit-accounts" ? (
+          <DebitAccountsSection
+            debitAccounts={debitAccounts}
+            subscriptions={subscriptions}
+            canEdit={canEditSettings}
+            session={session}
+            selectedCorporateId={selectedCorporateId}
+            onUpdate={async () => {
+              if (session) {
+                await refreshWorkspace(session, selectedCorporateId, { silent: true });
+              }
+            }}
+          />
+        ) : null}
+
         {activeSection === "settings" && canViewSettings ? (
           <section className="ops-page active">
+            <section className="ops-panel">
+              <div className="ops-inline-links">
+                <button
+                  className={`ops-inline-link ${settingsTab === "general" ? "active" : ""}`}
+                  onClick={() => setSettingsTab("general")}
+                  type="button"
+                >
+                  General
+                </button>
+                <button
+                  className={`ops-inline-link ${settingsTab === "packages" ? "active" : ""}`}
+                  onClick={() => setSettingsTab("packages")}
+                  type="button"
+                >
+                  Packages
+                </button>
+                <button
+                  className={`ops-inline-link ${settingsTab === "debit-accounts" ? "active" : ""}`}
+                  onClick={() => setSettingsTab("debit-accounts")}
+                  type="button"
+                >
+                  Debit Accounts
+                </button>
+              </div>
+            </section>
+
+            {settingsTab === "general" ? (
             <form className="ops-form" onSubmit={handleSettingsSubmit}>
               <section className="ops-panel">
                 <div className="ops-panel-head">
@@ -3623,6 +3942,109 @@ export function OperationsDashboard({
                 </div>
               </section>
             </form>
+            ) : null}
+
+            {settingsTab === "packages" ? (
+              <section className="ops-panel">
+                <div className="ops-panel-head">
+                  <div>
+                    <h3>Packages</h3>
+                    <p className="ops-meta">Package subscriptions for this corporate workspace.</p>
+                  </div>
+                  <div className="ops-actions">
+                    <button
+                      className="ops-button primary"
+                      onClick={() => navigateToSection("packages")}
+                      type="button"
+                    >
+                      Create / Edit Packages
+                    </button>
+                  </div>
+                </div>
+                <div className="ops-table-shell">
+                  <table className="ops-table">
+                    <thead>
+                      <tr>
+                        <th>Code</th>
+                        <th>Name</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {subscriptions.length > 0 ? (
+                        subscriptions.map((sub) => (
+                          <tr key={sub.subscriptionId}>
+                            <td>{sub.packageCode}</td>
+                            <td>{sub.displayName}</td>
+                            <td>
+                              <span className={`ops-status ${sub.status}`}>{humanize(sub.status)}</span>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td className="ops-empty-row" colSpan={3}>
+                            No packages configured yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            ) : null}
+
+            {settingsTab === "debit-accounts" ? (
+              <section className="ops-panel">
+                <div className="ops-panel-head">
+                  <div>
+                    <h3>Debit Accounts</h3>
+                    <p className="ops-meta">Funding accounts available in this workspace.</p>
+                  </div>
+                  <div className="ops-actions">
+                    <button
+                      className="ops-button primary"
+                      onClick={() => navigateToSection("debit-accounts")}
+                      type="button"
+                    >
+                      Create / Edit Debit Accounts
+                    </button>
+                  </div>
+                </div>
+                <div className="ops-table-shell">
+                  <table className="ops-table">
+                    <thead>
+                      <tr>
+                        <th>Account Name</th>
+                        <th>Account Number</th>
+                        <th>IFSC</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {debitAccounts.length > 0 ? (
+                        debitAccounts.map((account) => (
+                          <tr key={account.debitAccountId}>
+                            <td>{account.accountName}</td>
+                            <td>{account.accountNumber}</td>
+                            <td>{account.ifsc}</td>
+                            <td>
+                              <span className={`ops-status ${account.status}`}>{humanize(account.status)}</span>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td className="ops-empty-row" colSpan={4}>
+                            No debit accounts configured yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            ) : null}
           </section>
         ) : null}
 
@@ -3902,105 +4324,6 @@ function formatDateTime(value: string | null) {
   });
 }
 
-function normalizeDateOnly(value: string | null) {
-  if (!value) {
-    return "";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return date.toISOString().slice(0, 10);
-}
-
-function compareDateDesc(left: string | null, right: string | null) {
-  const leftTime = left ? new Date(left).getTime() : Number.NEGATIVE_INFINITY;
-  const rightTime = right ? new Date(right).getTime() : Number.NEGATIVE_INFINITY;
-
-  if (Number.isNaN(leftTime) && Number.isNaN(rightTime)) {
-    return 0;
-  }
-
-  if (Number.isNaN(leftTime)) {
-    return 1;
-  }
-
-  if (Number.isNaN(rightTime)) {
-    return -1;
-  }
-
-  return rightTime - leftTime;
-}
-
-function createEmptyDateRangeFilter(): DateRangeFilter {
-  return {
-    preset: "",
-    from: "",
-    to: ""
-  };
-}
-
-function createDateRangeFilterFromPreset(preset: DateRangePreset): DateRangeFilter {
-  if (!preset) {
-    return createEmptyDateRangeFilter();
-  }
-
-  if (preset === "custom") {
-    return {
-      preset,
-      from: "",
-      to: ""
-    };
-  }
-
-  const today = new Date();
-  const start = new Date(today);
-  const end = new Date(today);
-
-  if (preset === "yesterday") {
-    start.setDate(start.getDate() - 1);
-    end.setDate(end.getDate() - 1);
-  }
-
-  if (preset === "this_week") {
-    const currentDay = start.getDay();
-    const diffToMonday = currentDay === 0 ? 6 : currentDay - 1;
-    start.setDate(start.getDate() - diffToMonday);
-  }
-
-  if (preset === "this_month") {
-    start.setDate(1);
-  }
-
-  return {
-    preset,
-    from: normalizeDateOnly(start.toISOString()),
-    to: normalizeDateOnly(end.toISOString())
-  };
-}
-
-function matchesDateRangeFilter(value: string, filter: DateRangeFilter) {
-  if (!value) {
-    return false;
-  }
-
-  if (!filter.from && !filter.to) {
-    return true;
-  }
-
-  if (filter.from && value < filter.from) {
-    return false;
-  }
-
-  if (filter.to && value > filter.to) {
-    return false;
-  }
-
-  return true;
-}
-
 function maskAccountNumber(value: string) {
   if (value.length <= 4) {
     return value;
@@ -4011,20 +4334,6 @@ function maskAccountNumber(value: string) {
 
 function createSimpleId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
-}
-
-function resolveSectionFromPathname(pathname: string | null) {
-  if (!pathname) {
-    return null;
-  }
-
-  const match = pathname.match(/\/operations\/([^/]+)$/);
-  if (!match) {
-    return null;
-  }
-
-  const section = match[1] as SectionId;
-  return SECTIONS.some((item) => item.id === section) ? section : null;
 }
 
 function cryptoAvailableUuid() {
@@ -4046,3 +4355,4 @@ function getInitials(value: string) {
     .map((part) => part.charAt(0).toUpperCase())
     .join("");
 }
+

@@ -14,7 +14,14 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const file = generateTemplateBuffer();
+    const packageCode = request.nextUrl.searchParams.get("packageCode");
+    const paymentMethodCode = request.nextUrl.searchParams.get("paymentMethodCode");
+    const debitAccountNumber = request.nextUrl.searchParams.get("debitAccountNumber");
+    const file = generateTemplateBuffer(
+      packageCode,
+      paymentMethodCode,
+      debitAccountNumber
+    );
     const body = new Blob([new Uint8Array(file)], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     });
@@ -39,18 +46,28 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-function generateTemplateBuffer(): Buffer {
+function generateTemplateBuffer(
+  packageCode?: string | null,
+  paymentMethodCode?: string | null,
+  debitAccountNumber?: string | null
+): Buffer {
   const HEADERS = [
+    "Package Code",
+    "Payment Method Code",
     "Transaction Reference",
-    "Beneficiary Name",
+    "Beneficiary ID",
+    "Debit Account Number",
     "Amount",
     "Tag",
     "Remark"
   ];
 
   const SAMPLE_ROW = [
+    packageCode?.trim().toUpperCase() || "",
+    paymentMethodCode?.trim().toUpperCase() || "",
     "INV-2026-000143",
-    "Jain Ashish",
+    "KUMAR123",
+    debitAccountNumber?.trim() || "",
     101.00,
     "salary",
     "May payout batch"

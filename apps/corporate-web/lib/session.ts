@@ -4,11 +4,13 @@ import type { CorporateSession } from "./types";
 import {
   parseSessionCookie,
   SELECTED_CORPORATE_COOKIE,
+  SELECTED_SUBSCRIPTION_COOKIE,
   SESSION_COOKIE
 } from "./session-cookie";
 
 const SESSION_KEY = "cmsCorporateSession";
 const SELECTED_CORPORATE_KEY = "cmsSelectedCorporateId";
+const SELECTED_SUBSCRIPTION_KEY = "cmsSelectedSubscriptionId";
 
 export function readSession() {
   try {
@@ -41,8 +43,10 @@ export function persistSession(session: CorporateSession) {
 export function clearSession() {
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(SELECTED_CORPORATE_KEY);
+  localStorage.removeItem(SELECTED_SUBSCRIPTION_KEY);
   document.cookie = `${SESSION_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
   document.cookie = `${SELECTED_CORPORATE_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
+  document.cookie = `${SELECTED_SUBSCRIPTION_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
 }
 
 export function readSelectedCorporateId() {
@@ -52,6 +56,20 @@ export function readSelectedCorporateId() {
 export function persistSelectedCorporateId(corporateId: string) {
   localStorage.setItem(SELECTED_CORPORATE_KEY, corporateId);
   document.cookie = `${SELECTED_CORPORATE_COOKIE}=${encodeURIComponent(corporateId)}; Path=/; Max-Age=${60 * 60 * 8}; SameSite=Lax`;
+}
+
+export function readSelectedSubscriptionId() {
+  return localStorage.getItem(SELECTED_SUBSCRIPTION_KEY);
+}
+
+export function persistSelectedSubscriptionId(subscriptionId: string) {
+  localStorage.setItem(SELECTED_SUBSCRIPTION_KEY, subscriptionId);
+  document.cookie = `${SELECTED_SUBSCRIPTION_COOKIE}=${encodeURIComponent(subscriptionId)}; Path=/; Max-Age=${60 * 60 * 8}; SameSite=Lax`;
+}
+
+export function clearSelectedSubscriptionId() {
+  localStorage.removeItem(SELECTED_SUBSCRIPTION_KEY);
+  document.cookie = `${SELECTED_SUBSCRIPTION_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
 }
 
 function readCookie(name: string) {

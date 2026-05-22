@@ -13,7 +13,7 @@ const LOGIN_ERRORS: Record<string, string> = {
 export default async function LoginPage({
   searchParams
 }: {
-  searchParams?: Promise<{ error?: string }>;
+  searchParams?: Promise<{ error?: string; details?: string }>;
 }) {
   const cookieStore = await cookies();
   const session = parseSessionCookie(cookieStore.get(SESSION_COOKIE)?.value);
@@ -27,6 +27,7 @@ export default async function LoginPage({
     params?.error && params.error in LOGIN_ERRORS
       ? LOGIN_ERRORS[params.error]
       : null;
+  const details = params?.error === "service_unavailable" ? params.details ?? null : null;
 
   return (
     <main className="login-shell">
@@ -49,7 +50,7 @@ export default async function LoginPage({
         </div>
       </section>
 
-      <LoginCard error={error} />
+      <LoginCard error={details ? `${error} ${details}` : error} />
     </main>
   );
 }

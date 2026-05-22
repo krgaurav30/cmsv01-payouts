@@ -1,5 +1,5 @@
 import { loadConfig } from "@cmsv01/shared/config";
-import { getDatabasePool } from "@cmsv01/shared/db";
+import { getDatabasePool, type DatabaseExecutor } from "@cmsv01/shared/db";
 
 import { IdentityAccessService } from "../identity-access/service.js";
 import { NotificationsService } from "../notifications/service.js";
@@ -9,6 +9,7 @@ import type {
   Beneficiary,
   BeneficiaryApprovalActionRequest,
   BeneficiaryCreateRequest,
+  BeneficiaryPackageAssignment,
   PublishedBeneficiaryApprovalRequest,
   PublishedBeneficiaryCreateRequest,
   BeneficiaryStatusActionRequest,
@@ -24,12 +25,28 @@ type BeneficiaryRow = {
   account_number: string;
   ifsc: string;
   phone_number: string | null;
+  type: Beneficiary["beneficiaryType"];
   category: string | null;
   tags: string[] | null;
   status: Beneficiary["status"];
   approval_state: Beneficiary["approvalState"];
   review_comment: string | null;
   updated_at: Date | null;
+};
+
+type BeneficiaryPackageAssignmentRow = {
+  beneficiary_id: string;
+  package_id: string;
+  package_code: string;
+  display_name: string;
+  owner_type: BeneficiaryPackageAssignment["ownerType"];
+};
+
+type AssignablePackageRow = {
+  package_id: string;
+  package_code: string;
+  display_name: string;
+  owner_type: BeneficiaryPackageAssignment["ownerType"];
 };
 
 export class BeneficiaryManagementService {
@@ -45,7 +62,6 @@ export class BeneficiaryManagementService {
     corporateTenantId?: string;
     corporateId?: string;
     status?: Beneficiary["status"];
-    category?: string;
     search?: string;
   }) {
     const clauses: string[] = [];
@@ -66,11 +82,6 @@ export class BeneficiaryManagementService {
       clauses.push(`status = $${values.length}`);
     }
 
-    if (filters?.category) {
-      values.push(filters.category);
-      clauses.push(`category = $${values.length}`);
-    }
-
     if (filters?.search) {
       values.push(`%${filters.search.toLowerCase()}%`);
       clauses.push(`(lower(name) like $${values.length} or account_number like $${values.length})`);
@@ -79,7 +90,7 @@ export class BeneficiaryManagementService {
     const whereClause = clauses.length > 0 ? `where ${clauses.join(" and ")}` : "";
     const result = await this.db.query<BeneficiaryRow>(
       `select beneficiary_id, bank_tenant_id, corporate_tenant_id, corporate_id, name,
-              account_number, ifsc, phone_number, category, tags, status,
+              account_number, ifsc, phone_number, type, category, tags, status,
               approval_state, review_comment, updated_at
        from beneficiaries
        ${whereClause}
@@ -87,13 +98,13 @@ export class BeneficiaryManagementService {
       values
     );
 
-    return result.rows.map(mapBeneficiaryRow);
+    return this.attachPackageAssignments(result.rows);
   }
 
   async getBeneficiary(beneficiaryId: string) {
     const result = await this.db.query<BeneficiaryRow>(
       `select beneficiary_id, bank_tenant_id, corporate_tenant_id, corporate_id, name,
-              account_number, ifsc, phone_number, category, tags, status,
+              account_number, ifsc, phone_number, type, category, tags, status,
               approval_state, review_comment, updated_at
        from beneficiaries
        where beneficiary_id = $1`,
@@ -101,7 +112,12 @@ export class BeneficiaryManagementService {
     );
 
     const row = result.rows[0];
-    return row ? mapBeneficiaryRow(row) : null;
+    if (!row) {
+      return null;
+    }
+
+    const [beneficiary] = await this.attachPackageAssignments([row]);
+    return beneficiary ?? null;
   }
 
   async createBeneficiary(payload: BeneficiaryCreateRequest) {
@@ -142,6 +158,22 @@ export class BeneficiaryManagementService {
       };
     }
 
+    const normalizedBeneficiaryId = payload.beneficiaryId.trim().toUpperCase();
+    const duplicateById = await this.db.query<{ beneficiary_id: string }>(
+      `select beneficiary_id
+       from beneficiaries
+       where beneficiary_id = $1
+       limit 1`,
+      [normalizedBeneficiaryId]
+    );
+
+    if (duplicateById.rows[0]) {
+      return {
+        error: "duplicate_beneficiary_id" as const,
+        beneficiaryId: duplicateById.rows[0].beneficiary_id
+      };
+    }
+
     const duplicate = await this.db.query<{ beneficiary_id: string }>(
       `select beneficiary_id
        from beneficiaries
@@ -159,33 +191,57 @@ export class BeneficiaryManagementService {
       };
     }
 
-    const beneficiaryId = await this.generateBeneficiaryId();
-    const result = await this.db.query<BeneficiaryRow>(
-      `insert into beneficiaries (
-         beneficiary_id, bank_tenant_id, corporate_tenant_id, corporate_id, name,
-         account_number, ifsc, type, pan, gstin, phone_number, category, tags,
-         status, approval_state, review_comment, updated_at
-       )
-       values ($1, $2, $3, $4, $5, $6, $7, 'vendor', null, null, $8, $9, $10,
-               'inactive', 'pending_approval', null, now())
-       returning beneficiary_id, bank_tenant_id, corporate_tenant_id, corporate_id, name,
-                 account_number, ifsc, phone_number, category, tags, status,
-                 approval_state, review_comment, updated_at`,
-      [
-        beneficiaryId,
-        payload.bankTenantId,
-        payload.corporateTenantId,
-        payload.corporateId,
-        payload.name,
-        payload.accountNumber,
-        payload.ifsc,
-        payload.phoneNumber,
-        payload.category ?? null,
-        payload.tags
-      ]
-    );
+    const assignablePackages = await this.resolveAssignablePackagesByCode({
+      bankTenantId: payload.bankTenantId,
+      corporateTenantId: payload.corporateTenantId,
+      corporateId: payload.corporateId,
+      packageCodes: payload.packageCodes
+    });
 
-    const created = mapBeneficiaryRow(result.rows[0]);
+    if ("error" in assignablePackages) {
+      return assignablePackages;
+    }
+
+    const beneficiaryId = normalizedBeneficiaryId;
+    const client = await this.db.connect();
+    try {
+      await client.query("begin");
+      await client.query<BeneficiaryRow>(
+        `insert into beneficiaries (
+           beneficiary_id, bank_tenant_id, corporate_tenant_id, corporate_id, name,
+           account_number, ifsc, type, pan, gstin, phone_number, category, tags,
+           status, approval_state, review_comment, updated_at
+         )
+         values ($1, $2, $3, $4, $5, $6, $7, $8, null, null, $9, $10, $11,
+                 'inactive', 'pending_approval', null, now())`,
+        [
+          beneficiaryId,
+          payload.bankTenantId,
+          payload.corporateTenantId,
+          payload.corporateId,
+          payload.name,
+          payload.accountNumber,
+          payload.ifsc,
+          payload.beneficiaryType,
+          payload.phoneNumber,
+          null,
+          payload.tags
+        ]
+      );
+
+      await this.replacePackageAssignments(beneficiaryId, assignablePackages, client);
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    const created = await this.getBeneficiary(beneficiaryId);
+    if (!created) {
+      throw new Error("Beneficiary could not be loaded after creation");
+    }
 
     this.notificationsService.notifyPermissionRecipientsInBackground({
       corporateTenantId: payload.corporateTenantId,
@@ -219,11 +275,13 @@ export class BeneficiaryManagementService {
       bankTenantId: payload.bankTenantId,
       corporateTenantId: payload.corporateTenantId,
       corporateId: payload.corporateId,
+      beneficiaryId: payload.beneId,
       name: payload.beneName,
       accountNumber: payload.beneBankAccountNumber,
       ifsc: payload.beneIfscCode,
       phoneNumber: payload.benePhoneNumber,
-      category: payload.beneCategory,
+      beneficiaryType: payload.beneType,
+      packageCodes: payload.benePackageCodes,
       tags: payload.tags
     });
   }
@@ -291,12 +349,12 @@ export class BeneficiaryManagementService {
            updated_at = now()
        where beneficiary_id = $1
        returning beneficiary_id, bank_tenant_id, corporate_tenant_id, corporate_id, name,
-                 account_number, ifsc, phone_number, category, tags, status,
+                 account_number, ifsc, phone_number, type, category, tags, status,
                  approval_state, review_comment, updated_at`,
       [beneficiaryId, nextApprovalState, nextStatus, payload.comment ?? null]
     );
 
-    const updated = mapBeneficiaryRow(result.rows[0]);
+    const updated = mapBeneficiaryRow(result.rows[0], existing.assignedPackages);
     this.notificationsService.notifyPermissionRecipientsInBackground({
       corporateTenantId: existing.corporateTenantId,
       corporateId: existing.corporateId,
@@ -352,13 +410,13 @@ export class BeneficiaryManagementService {
            updated_at = now()
        where beneficiary_id = $1
        returning beneficiary_id, bank_tenant_id, corporate_tenant_id, corporate_id, name,
-                 account_number, ifsc, phone_number, category, tags, status,
+                 account_number, ifsc, phone_number, type, category, tags, status,
                  approval_state, review_comment, updated_at`,
       [beneficiaryId, nextStatus, payload.comment ?? null]
     );
 
     return {
-      data: mapBeneficiaryRow(result.rows[0])
+      data: mapBeneficiaryRow(result.rows[0], existing.assignedPackages)
     };
   }
 
@@ -371,32 +429,89 @@ export class BeneficiaryManagementService {
       };
     }
 
-    const result = await this.db.query<BeneficiaryRow>(
-      `update beneficiaries
-       set name = $2,
-           account_number = $3,
-           ifsc = $4,
-           phone_number = $5,
-           category = $6,
-           tags = $7,
-           updated_at = now()
-       where beneficiary_id = $1
-       returning beneficiary_id, bank_tenant_id, corporate_tenant_id, corporate_id, name,
-                 account_number, ifsc, phone_number, category, tags, status,
-                 approval_state, review_comment, updated_at`,
-      [
-        beneficiaryId,
-        payload.name,
-        payload.accountNumber,
-        payload.ifsc,
-        payload.phoneNumber,
-        payload.category ?? null,
-        payload.tags
-      ]
-    );
+    const actor = await this.identityAccessService.getCorporateUserById(payload.actedByUserId);
+    if (
+      !actor ||
+      !(await this.identityAccessService.userHasPermission(
+        payload.actedByUserId,
+        "beneficiary.make"
+      ))
+    ) {
+      return {
+        error: "forbidden" as const
+      };
+    }
+
+    if (
+      actor.corporateTenantId !== existing.corporateTenantId ||
+      (existing.corporateId && actor.corporateId !== existing.corporateId)
+    ) {
+      return {
+        error: "forbidden" as const
+      };
+    }
+
+    const assignablePackages = await this.resolveAssignablePackagesByCode({
+      bankTenantId: existing.bankTenantId,
+      corporateTenantId: existing.corporateTenantId,
+      corporateId: existing.corporateId ?? "",
+      packageCodes: payload.packageCodes
+    });
+
+    if ("error" in assignablePackages) {
+      return assignablePackages;
+    }
+
+    const client = await this.db.connect();
+    try {
+      await client.query("begin");
+      await client.query<BeneficiaryRow>(
+        `update beneficiaries
+         set name = $2,
+             account_number = $3,
+             ifsc = $4,
+             phone_number = $5,
+             type = $6,
+             category = null,
+             tags = $7,
+             status = 'inactive',
+             approval_state = 'pending_approval',
+             review_comment = null,
+             updated_at = now()
+         where beneficiary_id = $1`,
+        [
+          beneficiaryId,
+          payload.name,
+          payload.accountNumber,
+          payload.ifsc,
+          payload.phoneNumber,
+          payload.beneficiaryType,
+          payload.tags
+        ]
+      );
+
+      await this.replacePackageAssignments(beneficiaryId, assignablePackages, client);
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    this.notificationsService.notifyPermissionRecipientsInBackground({
+      corporateTenantId: existing.corporateTenantId,
+      corporateId: existing.corporateId,
+      permission: "beneficiary.checker",
+      title: "Beneficiary approval pending",
+      message: `${payload.name} was updated and is waiting for checker approval.`,
+      targetSection: "approvals",
+      entityType: "beneficiary",
+      entityId: beneficiaryId
+    });
 
     return {
-      data: mapBeneficiaryRow(result.rows[0])
+      data: await this.getBeneficiary(beneficiaryId)
     };
   }
 
@@ -411,24 +526,107 @@ export class BeneficiaryManagementService {
     };
   }
 
-  private async generateBeneficiaryId() {
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const candidate = `${Date.now()}`.slice(-6) + `${Math.floor(Math.random() * 10000)}`.padStart(4, "0");
-      const existing = await this.db.query<{ beneficiary_id: string }>(
-        `select beneficiary_id from beneficiaries where beneficiary_id = $1 limit 1`,
-        [candidate]
-      );
-
-      if (!existing.rows[0]) {
-        return candidate;
-      }
+  private async attachPackageAssignments(rows: BeneficiaryRow[]) {
+    if (rows.length === 0) {
+      return [] as Beneficiary[];
     }
 
-    return `${Math.floor(1000000000 + Math.random() * 9000000000)}`;
+    const assignmentsByBeneficiary = await this.getPackageAssignmentsForBeneficiaries(
+      rows.map((row) => row.beneficiary_id)
+    );
+
+    return rows.map((row) =>
+      mapBeneficiaryRow(row, assignmentsByBeneficiary.get(row.beneficiary_id) ?? [])
+    );
+  }
+
+  private async getPackageAssignmentsForBeneficiaries(beneficiaryIds: string[]) {
+    const result = await this.db.query<BeneficiaryPackageAssignmentRow>(
+      `select bpa.beneficiary_id, bpa.package_id, p.package_code, p.name as display_name, p.owner_type
+       from beneficiary_package_assignments bpa
+       join packages p on p.package_id = bpa.package_id
+       where bpa.beneficiary_id = any($1::text[])
+       order by p.package_code`,
+      [beneficiaryIds]
+    );
+
+    const assignmentsByBeneficiary = new Map<string, BeneficiaryPackageAssignment[]>();
+
+    for (const row of result.rows) {
+      const items = assignmentsByBeneficiary.get(row.beneficiary_id) ?? [];
+      items.push({
+        packageId: row.package_id,
+        packageCode: row.package_code,
+        displayName: row.display_name,
+        ownerType: row.owner_type
+      });
+      assignmentsByBeneficiary.set(row.beneficiary_id, items);
+    }
+
+    return assignmentsByBeneficiary;
+  }
+
+  private async resolveAssignablePackagesByCode(input: {
+    bankTenantId: string;
+    corporateTenantId: string;
+    corporateId: string;
+    packageCodes: string[];
+  }) {
+    const normalizedPackageCodes = [...new Set(input.packageCodes.map((code) => code.trim().toUpperCase()).filter(Boolean))];
+
+    const result = await this.db.query<AssignablePackageRow>(
+      `select distinct cs.package_id, cs.package_code, cs.display_name, p.owner_type
+       from corporate_subscriptions cs
+       join packages p on p.package_id = cs.package_id
+       where cs.bank_tenant_id = $1
+         and cs.corporate_tenant_id = $2
+         and cs.corporate_id = $3
+         and cs.status = 'active'
+         and cs.package_code = any($4::text[])
+       order by cs.package_code`,
+      [
+        input.bankTenantId,
+        input.corporateTenantId,
+        input.corporateId,
+        normalizedPackageCodes
+      ]
+    );
+
+    if (result.rows.length !== normalizedPackageCodes.length) {
+      const resolvedCodes = new Set(result.rows.map((row) => row.package_code));
+      return {
+        error: "invalid_package_assignments" as const,
+        packageCodes: normalizedPackageCodes.filter((code) => !resolvedCodes.has(code))
+      };
+    }
+
+    return result.rows;
+  }
+
+  private async replacePackageAssignments(
+    beneficiaryId: string,
+    packages: AssignablePackageRow[],
+    executor: DatabaseExecutor
+  ) {
+    await executor.query(
+      `delete from beneficiary_package_assignments where beneficiary_id = $1`,
+      [beneficiaryId]
+    );
+
+    for (const packageRow of packages) {
+      await executor.query(
+        `insert into beneficiary_package_assignments (beneficiary_id, package_id, created_at)
+         values ($1, $2, now())`,
+        [beneficiaryId, packageRow.package_id]
+      );
+    }
   }
 }
 
-function mapBeneficiaryRow(row: BeneficiaryRow) {
+function mapBeneficiaryRow(
+  row: BeneficiaryRow,
+  assignedPackages: BeneficiaryPackageAssignment[]
+) {
   return {
     beneficiaryId: row.beneficiary_id,
     bankTenantId: row.bank_tenant_id,
@@ -439,7 +637,8 @@ function mapBeneficiaryRow(row: BeneficiaryRow) {
     ifsc: row.ifsc,
     bankName: inferBankNameFromIfsc(row.ifsc),
     phoneNumber: row.phone_number,
-    category: row.category,
+    beneficiaryType: row.type,
+    assignedPackages,
     tags: row.tags ?? [],
     status: row.status,
     approvalState: row.approval_state,

@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     "./config": "./src/config.ts",
+    "./crypto": "./src/crypto.ts",
     "./db": "./src/db.ts",
     "./events": "./src/events.ts",
     "./kafka": "./src/kafka.ts",

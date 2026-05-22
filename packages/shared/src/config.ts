@@ -10,7 +10,8 @@ const configSchema = z.object({
   DATABASE_URL: z.string().min(1),
   BENEFICIARY_PUBLISH_API_KEY: z.string().default("bank-alpha-dev-key"),
   KAFKA_SASL_USERNAME: z.string().optional(),
-  KAFKA_SASL_PASSWORD: z.string().optional()
+  KAFKA_SASL_PASSWORD: z.string().optional(),
+  DB_SSL_REJECT_UNAUTHORIZED: z.enum(["true", "false"]).optional()
 });
 
 export type AppConfig = {
@@ -24,10 +25,15 @@ export type AppConfig = {
   beneficiaryPublishApiKey: string;
   kafkaSaslUsername?: string;
   kafkaSaslPassword?: string;
+  dbSslRejectUnauthorized: boolean;
 };
 
 export function loadConfig(): AppConfig {
   const env = configSchema.parse(process.env);
+
+  const dbSslRejectUnauthorized = env.DB_SSL_REJECT_UNAUTHORIZED
+    ? env.DB_SSL_REJECT_UNAUTHORIZED === "true"
+    : env.NODE_ENV === "production";
 
   return {
     appName: env.APP_NAME,
@@ -39,6 +45,8 @@ export function loadConfig(): AppConfig {
     databaseUrl: env.DATABASE_URL,
     beneficiaryPublishApiKey: env.BENEFICIARY_PUBLISH_API_KEY,
     kafkaSaslUsername: env.KAFKA_SASL_USERNAME,
-    kafkaSaslPassword: env.KAFKA_SASL_PASSWORD
+    kafkaSaslPassword: env.KAFKA_SASL_PASSWORD,
+    dbSslRejectUnauthorized
   };
 }
+

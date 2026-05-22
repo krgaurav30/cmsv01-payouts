@@ -4,71 +4,78 @@
   overflow-x: clip;
   display: grid;
   grid-template-columns: 1.2fr minmax(380px, 460px);
-  gap: 24px;
-  padding: 24px;
+  gap: 20px;
+  padding: 20px;
+  background: var(--bg);
 }
 
 .login-hero,
 .login-card {
-  border-radius: 28px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
 }
 
 .login-hero {
-  padding: 42px;
+  padding: 40px;
   display: grid;
   align-content: center;
-  gap: 18px;
+  gap: 20px;
+  background: var(--surface-subtle);
 }
 
 .eyebrow {
   margin: 0;
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #13b77f;
+  color: var(--action-text);
 }
 
 .login-hero h1 {
   margin: 0;
-  font-size: clamp(42px, 5vw, 72px);
-  line-height: 1.04;
-  letter-spacing: -0.04em;
+  font-size: clamp(32px, 4vw, 56px);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  font-weight: 700;
+  color: var(--text-primary);
 }
 
 .hero-copy {
   margin: 0;
-  max-width: 720px;
-  color: var(--muted);
-  font-size: 17px;
-  line-height: 1.75;
+  max-width: 600px;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.7;
 }
 
 .hero-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  gap: 14px;
 }
 
 .hero-card {
-  padding: 22px;
-  border-radius: 20px;
-  background: linear-gradient(180deg, rgba(126, 248, 199, 0.08) 0%, #ffffff 100%);
-  border: 1px solid rgba(126, 248, 199, 0.2);
+  padding: 18px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--border);
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .hero-card strong {
-  font-size: 18px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .hero-card span {
-  color: var(--muted);
-  line-height: 1.7;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .login-card {
@@ -78,40 +85,49 @@
 }
 
 .login-card h2 {
-  margin: 0 0 8px;
-  font-size: 34px;
+  margin: 0 0 6px;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
 }
 
 .login-card p {
-  margin: 0 0 28px;
-  color: var(--muted);
-  line-height: 1.7;
+  margin: 0 0 24px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-size: 14px;
 }
 
 .login-form {
   display: grid;
-  gap: 16px;
+  gap: 14px;
 }
 
 .login-form label {
   display: grid;
-  gap: 8px;
+  gap: 6px;
+  font-size: 12px;
   font-weight: 600;
+  color: var(--text-secondary);
 }
 
 .login-form input {
   width: 100%;
-  min-height: 54px;
-  padding: 0 16px;
-  border-radius: 16px;
-  border: 1px solid var(--line);
-  background: var(--surface-strong);
+  height: 38px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 14px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
 .login-form input:focus {
   outline: none;
-  border-color: var(--line-strong);
-  box-shadow: 0 0 0 4px rgba(126, 248, 199, 0.22);
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px rgba(21, 128, 61, 0.12);
 }
 
 .login-actions {
@@ -119,32 +135,40 @@
   justify-content: space-between;
   gap: 14px;
   align-items: center;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .hint {
-  color: var(--muted);
+  color: var(--text-secondary);
   font-size: 13px;
 }
 
 .primary-button {
-  min-height: 52px;
-  padding: 0 22px;
-  border: 0;
-  border-radius: 16px;
-  background: linear-gradient(180deg, #9dffd9 0%, #7ef8c7 100%);
-  color: #07130f;
-  font-weight: 700;
+  height: 38px;
+  padding: 0 20px;
+  border: 1px solid var(--action-border);
+  border-radius: var(--radius-md);
+  background: var(--action-bg);
+  color: var(--action-text);
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
+  transition: background 120ms ease;
+  white-space: nowrap;
+}
+
+.primary-button:hover {
+  background: var(--action-hover-bg);
 }
 
 .error-box {
-  margin-top: 16px;
-  padding: 14px 16px;
-  border-radius: 16px;
-  background: rgba(181, 46, 46, 0.08);
-  border: 1px solid rgba(181, 46, 46, 0.14);
-  color: #8e2f2f;
+  margin-top: 14px;
+  padding: 11px 14px;
+  border-radius: var(--radius-md);
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  color: #DC2626;
+  font-size: 13px;
 }
 
 @media (max-width: 1080px) {

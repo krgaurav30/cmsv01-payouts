@@ -1,5 +1,6 @@
 import { loadConfig } from "@cmsv01/shared/config";
 import { getDatabasePool } from "@cmsv01/shared/db";
+import { hashPassword, verifyPassword, signJwt } from "@cmsv01/shared/crypto";
 
 import type { AppConfig } from "@cmsv01/shared/config";
 
@@ -11,6 +12,9 @@ import type {
   CorporateRoleName,
   CorporateRole,
   CorporateRoleCreateRequest,
+  CorporateRoleUpdateRequest,
+  RoleDebitAccountAccess,
+  RoleDebitAccountAccessUpdateRequest,
   CorporateUser,
   CorporateUserCreateRequest,
   LoginRequest,
@@ -33,7 +37,8 @@ const corporatePermissionTemplates: Record<string, CorporatePermission[]> = {
     "roles.make",
     "user.make",
     "devportal.view",
-    "settings.view"
+    "settings.view",
+    "settings.edit"
   ],
   checker: [
     "transaction.checker",
@@ -41,7 +46,8 @@ const corporatePermissionTemplates: Record<string, CorporatePermission[]> = {
     "roles.checker",
     "user.checker",
     "devportal.view",
-    "settings.view"
+    "settings.view",
+    "settings.edit"
   ]
 };
 
@@ -84,6 +90,16 @@ type CorporateRoleRow = {
   reviewed_by_role: string | null;
 };
 
+type RoleDebitAccountAccessRow = {
+  access_id: string;
+  corporate_tenant_id: string;
+  role_name: string;
+  debit_account_id: string;
+  status: "active" | "inactive";
+  created_at: Date | null;
+  updated_at: Date | null;
+};
+
 export class IdentityAccessService {
   private readonly db = getDatabasePool(loadConfig());
 
@@ -110,7 +126,7 @@ export class IdentityAccessService {
     const user = result.rows[0];
     if (
       !user ||
-      user.password !== payload.password ||
+      !verifyPassword(payload.password, user.password) ||
       user.status !== "active" ||
       user.approval_state !== "approved"
     ) {
@@ -124,23 +140,29 @@ export class IdentityAccessService {
       user.role
     );
 
+    const session: AuthenticatedUser = {
+      userId: user.user_id,
+      username: user.username,
+      displayName: user.display_name,
+      role: user.role,
+      tenantScope: "corporate" as const,
+      bankTenantId: user.bank_tenant_id,
+      corporateTenantId: user.corporate_tenant_id,
+      corporateId: user.corporate_id,
+      status: "active" as const,
+      permissions
+    };
+
+    const token = signJwt(session);
+    session.token = token;
+
     return {
       data: {
         message: "Login successful",
         authMode: "built-in",
         databaseConfigured: Boolean(this.config.databaseUrl),
-        session: {
-          userId: user.user_id,
-          username: user.username,
-          displayName: user.display_name,
-          role: user.role,
-          tenantScope: "corporate",
-          bankTenantId: user.bank_tenant_id,
-          corporateTenantId: user.corporate_tenant_id,
-          corporateId: user.corporate_id,
-          status: "active",
-          permissions
-        } satisfies AuthenticatedUser
+        token,
+        session
       }
     };
   }
@@ -248,6 +270,161 @@ export class IdentityAccessService {
       .map((role) => role.name);
   }
 
+  async listApprovedTransactionCheckerRoleNamesForSubscription(
+    corporateTenantId: string,
+    subscriptionId: string
+  ) {
+    const validRoleNames = new Set(
+      await this.listApprovedTransactionCheckerRoleNames(corporateTenantId)
+    );
+    const result = await this.db.query<{ role_name: string }>(
+      `select distinct role_name
+       from subscription_user_access
+       where subscription_id = $1
+         and status = 'active'`,
+      [subscriptionId]
+    );
+
+    return result.rows
+      .map((row) => row.role_name)
+      .filter((roleName) => validRoleNames.has(roleName));
+  }
+
+  async listRoleDebitAccountAccess(
+    corporateTenantId: string,
+    roleName?: string
+  ) {
+    const result = roleName
+      ? await this.db.query<RoleDebitAccountAccessRow>(
+          `select access_id, corporate_tenant_id, role_name, debit_account_id, status, created_at, updated_at
+           from role_debit_account_access
+           where corporate_tenant_id = $1
+             and role_name = $2
+           order by role_name, debit_account_id`,
+          [corporateTenantId, roleName]
+        )
+      : await this.db.query<RoleDebitAccountAccessRow>(
+          `select access_id, corporate_tenant_id, role_name, debit_account_id, status, created_at, updated_at
+           from role_debit_account_access
+           where corporate_tenant_id = $1
+           order by role_name, debit_account_id`,
+          [corporateTenantId]
+        );
+
+    return result.rows.map(mapRoleDebitAccountAccessRow);
+  }
+
+  async replaceRoleDebitAccountAccess(payload: RoleDebitAccountAccessUpdateRequest) {
+    const actor = await this.getCorporateUserById(payload.actedByUserId);
+    if (!actor || !(await this.userHasPermission(payload.actedByUserId, "settings.edit"))) {
+      return { error: "forbidden" as const };
+    }
+
+    const role = await this.getCorporateRoleByName(payload.corporateTenantId, payload.roleName);
+    if (!role) {
+      return { error: "role_not_found" as const };
+    }
+
+    const client = await this.db.connect();
+    try {
+      await client.query("begin");
+      await client.query(
+        `delete from role_debit_account_access
+         where corporate_tenant_id = $1
+           and role_name = $2`,
+        [payload.corporateTenantId, payload.roleName]
+      );
+
+      for (const debitAccountId of [...new Set(payload.debitAccountIds)]) {
+        await client.query(
+          `insert into role_debit_account_access (
+             access_id, corporate_tenant_id, role_name, debit_account_id, status, created_at, updated_at
+           )
+           values ($1, $2, $3, $4, 'active', now(), now())`,
+          [
+            `rdaa-${payload.corporateTenantId}-${payload.roleName}-${debitAccountId}`,
+            payload.corporateTenantId,
+            payload.roleName,
+            debitAccountId
+          ]
+        );
+      }
+
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    return {
+      data: await this.listRoleDebitAccountAccess(payload.corporateTenantId, payload.roleName)
+    };
+  }
+
+  async getAllowedDebitAccountIdsForRole(
+    corporateTenantId: string,
+    roleName: string
+  ) {
+    const result = await this.db.query<{ debit_account_id: string }>(
+      `select debit_account_id
+       from role_debit_account_access
+       where corporate_tenant_id = $1
+         and role_name = $2
+         and status = 'active'
+       order by debit_account_id`,
+      [corporateTenantId, roleName]
+    );
+
+    return result.rows.map((row) => row.debit_account_id);
+  }
+
+  async listApprovedTransactionCheckerRoleNamesForSubscriptionAndDebitAccount(
+    corporateTenantId: string,
+    subscriptionId: string,
+    debitAccountId?: string | null
+  ) {
+    const roleNames = await this.listApprovedTransactionCheckerRoleNamesForSubscription(
+      corporateTenantId,
+      subscriptionId
+    );
+
+    if (!debitAccountId) {
+      return roleNames;
+    }
+
+    const allowedRows = await this.db.query<{ role_name: string }>(
+      `select distinct role_name
+       from role_debit_account_access
+       where corporate_tenant_id = $1
+         and debit_account_id = $2
+         and status = 'active'`,
+      [corporateTenantId, debitAccountId]
+    );
+
+    const allowedRoleNames = new Set(allowedRows.rows.map((row) => row.role_name));
+    if (allowedRoleNames.size === 0) {
+      return roleNames;
+    }
+
+    return roleNames.filter((roleName) => allowedRoleNames.has(roleName));
+  }
+
+  async userHasActiveSubscriptionAccess(subscriptionId: string, userId: string) {
+    const result = await this.db.query<{ role_name: string }>(
+      `select role_name
+       from subscription_user_access
+       where subscription_id = $1
+         and user_id = $2
+         and status = 'active'
+       limit 1`,
+      [subscriptionId, userId]
+    );
+
+    return Boolean(result.rows[0]);
+  }
+
   async userHasPermission(userId: string, permission: CorporatePermission) {
     const user = await this.getCorporateUserById(userId);
     if (!user || user.approvalState !== "approved" || user.status !== "active") {
@@ -313,7 +490,7 @@ export class IdentityAccessService {
       [
         payload.userId,
         payload.username,
-        payload.password,
+        hashPassword(payload.password),
         payload.displayName,
         payload.role,
         payload.bankTenantId,
@@ -435,6 +612,78 @@ export class IdentityAccessService {
 
     return {
       data: created
+    };
+  }
+
+  async updateCorporateRole(roleId: string, payload: CorporateRoleUpdateRequest) {
+    const actor = await this.getCorporateUserById(payload.actedByUserId);
+    if (!actor || !(await this.userHasPermission(payload.actedByUserId, "roles.make"))) {
+      return {
+        error: "forbidden" as const
+      };
+    }
+
+    const currentResult = await this.db.query<CorporateRoleRow>(
+      `select role_id, corporate_tenant_id, name, description, status, permissions,
+              approval_state, review_comment, created_by_user_id, created_by_role,
+              created_at, updated_at, reviewed_at, reviewed_by_user_id, reviewed_by_role
+       from corporate_roles
+       where role_id = $1
+       limit 1`,
+      [roleId]
+    );
+
+    const current = currentResult.rows[0];
+    if (!current) {
+      return {
+        error: "role_not_found" as const
+      };
+    }
+
+    if (current.corporate_tenant_id !== payload.corporateTenantId) {
+      return {
+        error: "forbidden" as const
+      };
+    }
+
+    const duplicateRole = await this.db.query<{ role_id: string }>(
+      `select role_id
+       from corporate_roles
+       where corporate_tenant_id = $1
+         and lower(name) = lower($2)
+         and role_id <> $3
+       limit 1`,
+      [payload.corporateTenantId, payload.name, roleId]
+    );
+
+    if (duplicateRole.rows[0]) {
+      return {
+        error: "role_name_conflict" as const
+      };
+    }
+
+    const result = await this.db.query<CorporateRoleRow>(
+      `update corporate_roles
+       set name = $2,
+           description = $3,
+           permissions = $4,
+           status = $5,
+           updated_at = now()
+       where role_id = $1
+       returning role_id, corporate_tenant_id, name, description, status, permissions,
+                 approval_state, review_comment, created_by_user_id, created_by_role,
+                 created_at, updated_at, reviewed_at, reviewed_by_user_id, reviewed_by_role`,
+      [
+        roleId,
+        payload.name,
+        payload.description ?? null,
+        payload.permissions,
+        payload.status
+      ]
+    );
+
+    return {
+      data: mapCorporateRoleRow(result.rows[0])
     };
   }
 
@@ -562,6 +811,18 @@ export class IdentityAccessService {
       data: updated
     };
   }
+}
+
+function mapRoleDebitAccountAccessRow(row: RoleDebitAccountAccessRow) {
+  return {
+    accessId: row.access_id,
+    corporateTenantId: row.corporate_tenant_id,
+    roleName: row.role_name,
+    debitAccountId: row.debit_account_id,
+    status: row.status,
+    createdAt: row.created_at?.toISOString() ?? null,
+    updatedAt: row.updated_at?.toISOString() ?? null
+  } satisfies RoleDebitAccountAccess;
 }
 
 function mapCorporateUserRow(row: CorporateUserRow) {

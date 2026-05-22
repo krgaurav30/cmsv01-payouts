@@ -1,23 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as xlsx from "xlsx";
 
-import { resolveApiBase } from "../../../../lib/api-base";
-import { parseSessionCookie, SESSION_COOKIE } from "../../../../lib/session-cookie";
+import { resolveBffBase } from "../../../../lib/api-base";
+import {
+  parseSessionCookie,
+  SELECTED_SUBSCRIPTION_COOKIE,
+  SESSION_COOKIE
+} from "../../../../lib/session-cookie";
 
 type ParsedUpload = {
   rows: Array<{
+    packageCode?: string;
+    paymentMethodCode?: string;
     transactionReference: string;
-    beneficiaryName: string;
+    beneficiaryId: string;
+    debitAccountNumber?: string;
     amount: number;
-    tag?: string | null;
-    remark?: string | null;
+    tag?: string;
+    remark?: string;
   }>;
+  explicitPackageCodes: string[];
   errors: string[];
 };
 
 export async function POST(request: NextRequest) {
-  const apiUrl = resolveApiBase(request.nextUrl.origin);
+  const bffUrl = resolveBffBase(request.nextUrl.origin);
   const session = parseSessionCookie(request.cookies.get(SESSION_COOKIE)?.value);
+  const cookieHeader = request.headers.get("cookie") ?? "";
 
   if (!session) {
     return NextResponse.json(
@@ -29,6 +38,10 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const file = formData.get("file");
   const corporateId = String(formData.get("corporateId") ?? session.corporateId ?? "");
+  const defaultSubscriptionId =
+    optionalString(formData.get("defaultSubscriptionId")) ??
+    request.cookies.get(SELECTED_SUBSCRIPTION_COOKIE)?.value?.trim() ??
+    null;
   const uploadId = `upload-${Date.now()}-${Math.floor(Math.random() * 100000)
     .toString()
     .padStart(5, "0")}`;
@@ -50,14 +63,34 @@ export async function POST(request: NextRequest) {
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
     const parsedUpload = parseWorkbookFromBuffer(buffer);
+    const explicitPackageCode = parsedUpload.explicitPackageCodes[0] ?? null;
+    const hasMixedPackageCodes = parsedUpload.explicitPackageCodes.length > 1;
+
+    if (hasMixedPackageCodes) {
+      parsedUpload.errors.push(
+        "A bulk file can contain only one Package Code. Split mixed-package rows into separate files."
+      );
+    }
+
+    const effectiveSubscriptionId = explicitPackageCode ? null : defaultSubscriptionId;
+    const effectivePackageCode = explicitPackageCode;
+
+    if (!effectivePackageCode && !effectiveSubscriptionId) {
+      parsedUpload.errors.push(
+        "Package Code is blank in the file. Fill it in the sheet or choose a default package in Context."
+      );
+    }
 
     if (parsedUpload.errors.length > 0) {
       await recordRejectedFileUpload({
-        apiUrl,
+        bffUrl,
+        cookieHeader,
         uploadId,
         bankTenantId: session.bankTenantId,
         corporateTenantId: session.corporateTenantId,
         corporateId,
+        subscriptionId: effectiveSubscriptionId,
+        packageCode: effectivePackageCode,
         fileName: file.name,
         uploadedByUserId: session.userId,
         errors: parsedUpload.errors
@@ -72,15 +105,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const response = await fetch(`${apiUrl}/v1/payouts/file-uploads/accept`, {
+    const response = await fetch(`${bffUrl}/v1/payouts/file-uploads/accept`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        Cookie: cookieHeader
       },
       body: JSON.stringify({
         bankTenantId: session.bankTenantId,
         corporateTenantId: session.corporateTenantId,
         corporateId,
+        ...(effectiveSubscriptionId ? { subscriptionId: effectiveSubscriptionId } : {}),
+        ...(effectivePackageCode ? { packageCode: effectivePackageCode } : {}),
         createdByUserId: session.userId,
         fileName: file.name,
         rows: parsedUpload.rows
@@ -105,8 +141,11 @@ export async function POST(request: NextRequest) {
 
 function parseWorkbookFromBuffer(buffer: Buffer): ParsedUpload {
   const EXPECTED_HEADERS: Record<string, string> = {
+    "package code": "packageCode",
+    "payment method code": "paymentMethodCode",
     "transaction reference": "transactionReference",
-    "beneficiary name": "beneficiaryName",
+    "beneficiary id": "beneficiaryId",
+    "debit account number": "debitAccountNumber",
     amount: "amount",
     tag: "tag",
     remark: "remark"
@@ -115,13 +154,13 @@ function parseWorkbookFromBuffer(buffer: Buffer): ParsedUpload {
   const workbook = xlsx.read(buffer, { type: "buffer" });
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) {
-    return { rows: [], errors: ["The uploaded sheet is empty."] };
+    return { rows: [], explicitPackageCodes: [], errors: ["The uploaded sheet is empty."] };
   }
 
   const sheet = workbook.Sheets[sheetName];
   const rows = xlsx.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: null });
   if (rows.length === 0) {
-    return { rows: [], errors: ["The uploaded sheet is empty."] };
+    return { rows: [], explicitPackageCodes: [], errors: ["The uploaded sheet is empty."] };
   }
 
   const headerRow = rows[0] || [];
@@ -135,24 +174,20 @@ function parseWorkbookFromBuffer(buffer: Buffer): ParsedUpload {
     }
   }
 
-  const requiredLabels = [
-    "transactionReference",
-    "beneficiaryName",
-    "amount",
-    "tag",
-    "remark"
-  ];
+  const requiredLabels = ["packageCode", "transactionReference", "beneficiaryId", "amount"];
   
   const missing = requiredLabels.filter((label) => headerMap[label] === undefined);
 
   if (missing.length > 0) {
     return {
       rows: [],
+      explicitPackageCodes: [],
       errors: ["Missing required columns: " + missing.join(", ")]
     };
   }
 
   const parsedRows: ParsedUpload["rows"] = [];
+  const explicitPackageCodes = new Set<string>();
   const errors: string[] = [];
 
   for (let i = 1; i < rows.length; i++) {
@@ -168,18 +203,27 @@ function parseWorkbookFromBuffer(buffer: Buffer): ParsedUpload {
     };
 
     const transactionReference = getStr(headerMap["transactionReference"]);
-    const beneficiaryName = getStr(headerMap["beneficiaryName"]);
+    const packageCode = getStr(headerMap["packageCode"]);
+    const paymentMethodCode = getStr(headerMap["paymentMethodCode"]);
+    const beneficiaryId = getStr(headerMap["beneficiaryId"]);
+    const debitAccountNumber = getStr(headerMap["debitAccountNumber"]);
     const amountVal = row[headerMap["amount"]];
     const tag = getStr(headerMap["tag"]);
     const remark = getStr(headerMap["remark"]);
+
+    const normalizedPackageCode = packageCode?.toUpperCase() ?? null;
+
+    if (normalizedPackageCode) {
+      explicitPackageCodes.add(normalizedPackageCode);
+    }
 
     if (!transactionReference) {
       errors.push(`Row ${i + 1}: Transaction Reference is required.`);
       continue;
     }
 
-    if (!beneficiaryName) {
-      errors.push(`Row ${i + 1}: Beneficiary Name is required.`);
+    if (!beneficiaryId) {
+      errors.push(`Row ${i + 1}: Beneficiary ID is required.`);
       continue;
     }
 
@@ -197,37 +241,48 @@ function parseWorkbookFromBuffer(buffer: Buffer): ParsedUpload {
     }
 
     parsedRows.push({
+      ...(normalizedPackageCode ? { packageCode: normalizedPackageCode } : {}),
+      ...(paymentMethodCode
+        ? { paymentMethodCode: paymentMethodCode.toUpperCase() }
+        : {}),
       transactionReference,
-      beneficiaryName,
+      beneficiaryId: beneficiaryId.toUpperCase(),
+      ...(debitAccountNumber ? { debitAccountNumber } : {}),
       amount,
-      tag: tag === "" ? null : tag,
-      remark: remark === "" ? null : remark
+      ...(tag ? { tag } : {}),
+      ...(remark ? { remark } : {})
     });
   }
 
-  return { rows: parsedRows, errors };
+  return { rows: parsedRows, explicitPackageCodes: [...explicitPackageCodes], errors };
 }
 
 async function recordRejectedFileUpload(payload: {
-  apiUrl: string;
+  bffUrl: string;
+  cookieHeader: string;
   uploadId: string;
   bankTenantId: string;
   corporateTenantId: string;
   corporateId: string;
+  subscriptionId: string | null;
+  packageCode: string | null;
   fileName: string;
   uploadedByUserId: string;
   errors: string[];
 }) {
-  await fetch(`${payload.apiUrl}/v1/payouts/file-uploads`, {
+  await fetch(`${payload.bffUrl}/v1/payouts/file-uploads`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      Cookie: payload.cookieHeader
     },
     body: JSON.stringify({
       uploadId: payload.uploadId,
       bankTenantId: payload.bankTenantId,
       corporateTenantId: payload.corporateTenantId,
       corporateId: payload.corporateId,
+      subscriptionId: payload.subscriptionId,
+      packageCode: payload.packageCode,
       fileName: payload.fileName,
       uploadedByUserId: payload.uploadedByUserId,
       status: "rejected",
@@ -238,4 +293,9 @@ async function recordRejectedFileUpload(payload: {
     }),
     cache: "no-store"
   }).catch(() => undefined);
+}
+
+function optionalString(value: FormDataEntryValue | null) {
+  const normalized = String(value ?? "").trim();
+  return normalized.length > 0 ? normalized : null;
 }

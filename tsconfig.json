@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./packages/shared" },
+    { "path": "./apps/bff" },
     { "path": "./apps/api" },
     { "path": "./apps/worker" }
   ]

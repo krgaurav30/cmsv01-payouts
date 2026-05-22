@@ -2,7 +2,7 @@ import { getDatabasePool, type DatabaseExecutor } from "./db.js";
 import type { DomainEventEnvelope } from "./events.js";
 import type { AppConfig } from "./config.js";
 
-export type OutboxEventStatus = "pending" | "published" | "failed";
+export type OutboxEventStatus = "pending" | "published" | "failed" | "dead_letter";
 
 export type OutboxEventRow = {
   event_id: string;
@@ -82,15 +82,16 @@ export async function markOutboxEventPublished(config: AppConfig, eventId: strin
 export async function markOutboxEventFailed(
   config: AppConfig,
   eventId: string,
-  errorMessage: string
+  errorMessage: string,
+  maxAttempts: number = 5
 ) {
   const db = getDatabasePool(config);
   await db.query(
     `update outbox_events
-     set status = 'failed',
-         attempt_count = attempt_count + 1,
+     set attempt_count = attempt_count + 1,
+         status = case when attempt_count + 1 >= $3 then 'dead_letter'::text else 'failed'::text end,
          last_error = $2
      where event_id = $1`,
-    [eventId, errorMessage]
+    [eventId, errorMessage, maxAttempts]
   );
 }
