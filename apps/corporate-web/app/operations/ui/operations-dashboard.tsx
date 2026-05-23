@@ -1,6 +1,6 @@
-﻿"use client";
+"use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { PackagesSection } from "./packages-section";
 import { DebitAccountsSection } from "./debit-accounts-section";
@@ -418,6 +418,7 @@ export function OperationsDashboard({
   initialSection
 }: OperationsDashboardProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const bootstrappedRef = useRef(false);
   const skipNextCorporateRefreshRef = useRef(Boolean(initialData.selectedCorporateId));
   const otherMenuRef = useRef<HTMLDetailsElement | null>(null);
@@ -434,6 +435,18 @@ export function OperationsDashboard({
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activeSection, setActiveSection] = useState<SectionId>(initialSection);
+
+  useEffect(() => {
+    if (!pathname) return;
+    const parts = pathname.split("/");
+    const operationsIndex = parts.indexOf("operations");
+    if (operationsIndex !== -1 && parts[operationsIndex + 1]) {
+      const sectionFromUrl = parts[operationsIndex + 1] as SectionId;
+      if (SECTIONS.some((s) => s.id === sectionFromUrl)) {
+        setActiveSection(sectionFromUrl);
+      }
+    }
+  }, [pathname]);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [activeTimelineId, setActiveTimelineId] = useState<string | null>(null);
   const [approvalSectionFilter, setApprovalSectionFilter] =
