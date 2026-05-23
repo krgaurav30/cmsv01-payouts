@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { CorporateDebitAccount } from "../../../lib/types";
@@ -14,6 +14,7 @@ type PackageItem = {
   packageCode: string;
   name: string;
   useCase: "vendor_payments" | "salary" | "statutory";
+  status?: "active" | "inactive" | "terminated";
   description: string | null;
   allowedBeneficiaryTypes: string[];
   debitModesAllowed: string[];
@@ -227,6 +228,7 @@ export function PackagesSection({
   const [items, setItems] = useState<PackageItem[]>([]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [editing, setEditing] = useState<PackageItem | null>(null);
+  const [showForm, setShowForm] = useState(false);
   const [msg, setMsg] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [actionMenuItem, setActionMenuItem] = useState<PackageItem | null>(null);
@@ -316,6 +318,7 @@ export function PackagesSection({
 
   function resetForm() {
     setEditing(null);
+    setShowForm(false);
     setPackageCode("");
     setName("");
     setUseCase("vendor_payments");
@@ -373,7 +376,7 @@ export function PackagesSection({
 
     const response = await fetch(
       editing
-        ? `/v1/package-catalog/packages/by-id/${encodeURIComponent(editing.packageId)}`
+        ? "/v1/package-catalog/packages/by-id/" + encodeURIComponent(editing.packageId)
         : "/v1/package-catalog/packages",
       {
         method: editing ? "PUT" : "POST",
@@ -414,7 +417,7 @@ export function PackagesSection({
 
   async function updatePackageStatus(item: PackageItem, nextStatus: "active" | "inactive") {
     setActionMenuItem(null);
-    const response = await fetch(`/v1/package-catalog/packages/by-id/${encodeURIComponent(item.packageId)}`, {
+    const response = await fetch("/v1/package-catalog/packages/by-id/" + encodeURIComponent(item.packageId), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -443,7 +446,7 @@ export function PackagesSection({
       setToast(data.message ?? "Unable to update package status.");
       return;
     }
-    setToast(`Package ${nextStatus === "active" ? "activated" : "deactivated"} successfully.`);
+    setToast("Package " + (nextStatus === "active" ? "activated" : "deactivated") + " successfully.");
     await load();
   }
 
@@ -485,35 +488,12 @@ export function PackagesSection({
       ) : null}
 
       {actionMenuItem ? (
-        <div
-          onMouseDown={() => setActionMenuItem(null)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 120,
-            background: "rgba(15, 23, 42, 0.28)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "20px"
-          }}
-        >
-          <div
-            onMouseDown={(event) => event.stopPropagation()}
-            style={{
-              width: "100%",
-              maxWidth: "320px",
-              background: "var(--surface)",
-              border: "1px solid var(--border)",
-              borderRadius: "16px",
-              boxShadow: "var(--shadow-xl)",
-              padding: "18px"
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", marginBottom: "12px" }}>
+        <div className="ops-row-action-modal" onMouseDown={() => setActionMenuItem(null)}>
+          <div className="ops-row-action-card" onMouseDown={(event) => event.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start" }}>
               <div>
-                <h4 style={{ margin: 0 }}>Package Actions</h4>
-                <p className="ops-meta" style={{ margin: "4px 0 0 0" }}>
+                <h4 className="ops-row-action-title">Package actions</h4>
+                <p className="ops-row-action-subtitle">
                   {actionMenuItem.packageCode} · {actionMenuItem.name}
                 </p>
               </div>
@@ -521,46 +501,52 @@ export function PackagesSection({
                 Close
               </button>
             </div>
-            <div style={{ display: "grid", gap: "10px" }}>
-              <button
-                type="button"
-                className="ops-mini"
-                style={{ width: "100%", textAlign: "left", padding: "12px 14px" }}
-                onClick={() => beginEdit(actionMenuItem)}
-              >
+            <div className="ops-row-action-list">
+              <button type="button" className="ops-mini" style={{ width: "100%", textAlign: "left" }} onClick={() => beginEdit(actionMenuItem)}>
                 Edit
               </button>
               <button
                 type="button"
                 className="ops-mini"
-                style={{ width: "100%", textAlign: "left", padding: "12px 14px" }}
-                onClick={() => void updatePackageStatus(actionMenuItem, "active")}
+                style={{ width: "100%", textAlign: "left" }}
+                onClick={() =>
+                  void updatePackageStatus(
+                    actionMenuItem,
+                    actionMenuItem.status === "active" ? "inactive" : "active"
+                  )
+                }
               >
-                Activate
-              </button>
-              <button
-                type="button"
-                className="ops-mini"
-                style={{ width: "100%", textAlign: "left", padding: "12px 14px" }}
-                onClick={() => void updatePackageStatus(actionMenuItem, "inactive")}
-              >
-                Deactivate
+                {actionMenuItem.status === "active" ? "Deactivate" : "Activate"}
               </button>
             </div>
           </div>
         </div>
       ) : null}
 
+
       <section className="ops-panel" style={{ padding: "24px" }}>
         <div className="ops-panel-head" style={{ marginBottom: "16px" }}>
           <div>
-            <h3 style={{ margin: 0 }}>Create / Edit Package</h3>
-            <p className="ops-meta" style={{ margin: "4px 0 0 0" }}>
-              Matches the package architecture schema with dropdown-based multi-selects.
-            </p>
+            <h3 style={{ margin: 0 }}>Packages</h3>
           </div>
+          <button
+            className="ops-button primary"
+            type="button"
+            onClick={() => {
+              if (showForm) {
+                cancelEditing();
+                return;
+              }
+              setEditing(null);
+              resetForm();
+              setShowForm(true);
+            }}
+          >
+            {showForm ? (editing ? "Close edit" : "Close form") : "Create package"}
+          </button>
         </div>
 
+        {showForm ? (
         <form className="ops-form" onSubmit={submit}>
           <div className="ops-fields two">
             <label>
@@ -706,6 +692,7 @@ export function PackagesSection({
             )}
           </div>
         </form>
+        ) : null}
       </section>
 
       <section className="ops-panel" style={{ padding: "24px" }}>
@@ -735,14 +722,12 @@ export function PackagesSection({
                     <td>{item.name}</td>
                     <td>{item.useCase}</td>
                     <td>
-                      <div style={{ display: "inline-flex" }}>
+                      <div className="ops-row-action-wrap">
                         <button
                           className="ops-kebab"
                           type="button"
                           onClick={() => setActionMenuItem((current) => (current?.packageId === item.packageId ? null : item))}
-                        >
-                          ⋮
-                        </button>
+                        >⋮</button>
                       </div>
                     </td>
                   </tr>
@@ -761,3 +746,6 @@ export function PackagesSection({
     </section>
   );
 }
+
+
+

@@ -100,6 +100,7 @@ export type Beneficiary = {
   approvalState: "pending_approval" | "approved" | "rejected";
   reviewComment: string | null;
   lastUpdatedAt: string | null;
+  createdAt?: string | null;
   assignedPackages: BeneficiaryPackageAssignment[];
 };
 

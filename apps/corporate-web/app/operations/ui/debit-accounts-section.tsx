@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, FormEvent, useEffect } from "react";
 import type { CorporateDebitAccount, CorporateSubscription, CorporateSession } from "../../../lib/types";
@@ -22,6 +22,7 @@ export function DebitAccountsSection({
 }: DebitAccountsSectionProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<CorporateDebitAccount | null>(null);
+  const [actionMenuItem, setActionMenuItem] = useState<CorporateDebitAccount | null>(null);
   
   // State for unmasked account numbers
   const [unmaskedIds, setUnmaskedIds] = useState<Record<string, boolean>>({});
@@ -195,6 +196,47 @@ export function DebitAccountsSection({
     setIsDrawerOpen(true);
   };
 
+  const updateAccountStatus = async (account: CorporateDebitAccount, nextStatus: "active" | "inactive") => {
+    setFormBusy(true);
+    setValidationError(null);
+    setBannerNotice(null);
+
+    try {
+      const response = await fetch(`/v1/debit-accounts/${account.debitAccountId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          accountName: account.accountName,
+          accountNumber: account.accountNumber,
+          ifsc: account.ifsc,
+          status: nextStatus,
+          isDefault: account.isDefault
+        })
+      });
+
+      const resData = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setBannerNotice({
+          tone: "error",
+          text: resData.message ?? `Request failed with status ${response.status}`
+        });
+        return;
+      }
+
+      await onUpdate();
+      setActionMenuItem(null);
+    } catch (err) {
+      setBannerNotice({
+        tone: "error",
+        text: `Network error: ${String(err)}`
+      });
+    } finally {
+      setFormBusy(false);
+    }
+  };
+
   return (
     <section className="ops-page active" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       {/* Control Desk Heading & Primary Action */}
@@ -234,7 +276,7 @@ export function DebitAccountsSection({
                 <th style={{ padding: "16px 20px", fontWeight: 600, fontSize: "12px", color: "var(--text-secondary)" }}>ACCESS MAP (SUBSCRIPTIONS)</th>
                 <th style={{ padding: "16px 20px", fontWeight: 600, fontSize: "12px", color: "var(--text-secondary)", textAlign: "center" }}>DEFAULT</th>
                 <th style={{ padding: "16px 20px", fontWeight: 600, fontSize: "12px", color: "var(--text-secondary)" }}>STATUS</th>
-                {canEdit && <th style={{ padding: "16px 20px", fontWeight: 600, fontSize: "12px", color: "var(--text-secondary)", textAlign: "right" }}>ACTIONS</th>}
+                {canEdit && <th style={{ padding: "16px 20px", fontWeight: 600, fontSize: "12px", color: "var(--text-secondary)", textAlign: "right" }}>ACTION</th>}
               </tr>
             </thead>
             <tbody>
@@ -408,11 +450,20 @@ export function DebitAccountsSection({
                         <td style={{ padding: "16px 20px", textAlign: "right" }}>
                           <button
                             type="button"
-                            onClick={() => openEditDrawer(account)}
-                            className="ops-button secondary"
-                            style={{ padding: "4px 12px", fontSize: "12px" }}
+                            onClick={() => setActionMenuItem(account)}
+                            style={{
+                              width: "34px",
+                              height: "34px",
+                              borderRadius: "10px",
+                              border: "1px solid var(--border)",
+                              background: "var(--surface)",
+                              cursor: "pointer",
+                              fontSize: "18px",
+                              lineHeight: 1
+                            }}
+                            title="More actions"
                           >
-                            Edit
+                            ⋮
                           </button>
                         </td>
                       )}
@@ -424,6 +475,80 @@ export function DebitAccountsSection({
           </table>
         </div>
       </section>
+
+      {actionMenuItem && (
+        <div
+          onClick={() => setActionMenuItem(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1090,
+            background: "rgba(15, 23, 42, 0.26)",
+            backdropFilter: "blur(2px)"
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              position: "fixed",
+              left: "50%",
+              top: "50%",
+              transform: "translate(-50%, -50%)",
+              width: "360px",
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: "18px",
+              boxShadow: "0 24px 64px rgba(15, 23, 42, 0.16)",
+              padding: "20px",
+              zIndex: 1100
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "12px", marginBottom: "12px" }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 600 }}>Debit account actions</h3>
+                <p className="ops-meta" style={{ margin: "6px 0 0", color: "var(--text-secondary)" }}>
+                  {actionMenuItem.accountName} · {actionMenuItem.accountNumber.slice(-4)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActionMenuItem(null)}
+                style={{
+                  border: "1px solid var(--border)",
+                  background: "var(--surface)",
+                  borderRadius: "10px",
+                  padding: "8px 12px",
+                  cursor: "pointer"
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div style={{ display: "grid", gap: "10px" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  openEditDrawer(actionMenuItem);
+                  setActionMenuItem(null);
+                }}
+                className="ops-button secondary"
+                style={{ width: "100%", justifyContent: "flex-start" }}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => updateAccountStatus(actionMenuItem, actionMenuItem.status === "active" ? "inactive" : "active")}
+                className="ops-button secondary"
+                style={{ width: "100%", justifyContent: "flex-start" }}
+                disabled={formBusy}
+              >
+                {actionMenuItem.status === "active" ? "Deactivate" : "Activate"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Backdrop for Slide Drawer */}
       {isDrawerOpen && (
@@ -682,3 +807,4 @@ export function DebitAccountsSection({
     </section>
   );
 }
+

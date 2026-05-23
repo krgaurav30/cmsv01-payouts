@@ -1,9 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { PackagesSection } from "./packages-section";
 import { DebitAccountsSection } from "./debit-accounts-section";
+import { TransactionDetailsBody } from "./detail-panels";
 
 import {
   clearSession,
@@ -57,10 +58,38 @@ type Notice = {
 };
 
 type ApprovalEntry =
-  | { entity: "transaction"; id: string; title: string; meta: string; status: string }
-  | { entity: "beneficiary"; id: string; title: string; meta: string; status: string }
-  | { entity: "role"; id: string; title: string; meta: string; status: string }
-  | { entity: "user"; id: string; title: string; meta: string; status: string };
+  | {
+      entity: "transaction";
+      id: string;
+      title: string;
+      meta: string;
+      status: string;
+      createdAt?: string;
+    }
+  | {
+      entity: "beneficiary";
+      id: string;
+      title: string;
+      meta: string;
+      status: string;
+      createdAt?: string;
+    }
+  | {
+      entity: "role";
+      id: string;
+      title: string;
+      meta: string;
+      status: string;
+      createdAt?: string;
+    }
+  | {
+      entity: "user";
+      id: string;
+      title: string;
+      meta: string;
+      status: string;
+      createdAt?: string;
+    };
 
 type ApprovalSectionFilter = "all" | ApprovalEntry["entity"];
 
@@ -438,9 +467,15 @@ export function OperationsDashboard({
   const [selectedCorporateId, setSelectedCorporateId] = useState(initialData.selectedCorporateId);
 
   const [showBeneficiaryCreate, setShowBeneficiaryCreate] = useState(false);
+  const [editingBeneficiaryId, setEditingBeneficiaryId] = useState<string | null>(null);
+  const [beneficiaryActionItem, setBeneficiaryActionItem] = useState<Beneficiary | null>(null);
+  const [beneficiaryActionMenuOpen, setBeneficiaryActionMenuOpen] = useState(false);
   const [showTransactionCreate, setShowTransactionCreate] = useState(false);
   const [showTransactionBulkUpload, setShowTransactionBulkUpload] = useState(false);
   const [showRoleCreate, setShowRoleCreate] = useState(false);
+  const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
+  const [roleActionItem, setRoleActionItem] = useState<CorporateRole | null>(null);
+  const [roleActionMenuOpen, setRoleActionMenuOpen] = useState(false);
   const [showUserCreate, setShowUserCreate] = useState(false);
   const [approvalMatrixSubscriptionId, setApprovalMatrixSubscriptionId] = useState("");
   const [approvalMatrixDebitAccountIds, setApprovalMatrixDebitAccountIds] = useState<string[]>([]);
@@ -456,11 +491,27 @@ export function OperationsDashboard({
   const [beneficiarySearch, setBeneficiarySearch] = useState("");
   const [beneficiaryStatusFilter, setBeneficiaryStatusFilter] = useState("");
   const [beneficiaryPackageCodes, setBeneficiaryPackageCodes] = useState<string[]>([]);
+  const editingRole = useMemo(
+    () => (editingRoleId ? roles.find((item) => item.roleId === editingRoleId) ?? null : null),
+    [editingRoleId, roles]
+  );
 
   const [transactionSearch, setTransactionSearch] = useState("");
   const [transactionStateFilter, setTransactionStateFilter] = useState("");
-  const [transactionTagFilter, setTransactionTagFilter] = useState("");
   const [dashboardDateRange, setDashboardDateRange] = useState("all");
+  const [transactionDatePreset, setTransactionDatePreset] = useState("all");
+  const [transactionCustomStart, setTransactionCustomStart] = useState("");
+  const [transactionCustomEnd, setTransactionCustomEnd] = useState("");
+  const [showTransactionDatePicker, setShowTransactionDatePicker] = useState(false);
+  const [approvalDatePreset, setApprovalDatePreset] = useState("all");
+  const [approvalCustomStart, setApprovalCustomStart] = useState("");
+  const [approvalCustomEnd, setApprovalCustomEnd] = useState("");
+  const [showApprovalDatePicker, setShowApprovalDatePicker] = useState(false);
+
+  const editingBeneficiary = useMemo(
+    () => (editingBeneficiaryId ? beneficiaries.find((item) => item.beneficiaryId === editingBeneficiaryId) ?? null : null),
+    [editingBeneficiaryId, beneficiaries]
+  );
 
   async function copyText(text: string) {
     try {
@@ -1011,6 +1062,61 @@ export function OperationsDashboard({
       .reduce((sum, t) => sum + t.totalAmount.value, 0);
   }, [dashboardTransactions]);
 
+  const buildDateRange = (preset: string, customStart: string, customEnd: string) => {
+    const today = new Date();
+    const startOfDay = (date: Date) => {
+      const value = new Date(date);
+      value.setHours(0, 0, 0, 0);
+      return value;
+    };
+    const endOfDay = (date: Date) => {
+      const value = new Date(date);
+      value.setHours(23, 59, 59, 999);
+      return value;
+    };
+
+    if (preset === "custom") {
+      return {
+        start: customStart ? startOfDay(new Date(customStart)) : null,
+        end: customEnd ? endOfDay(new Date(customEnd)) : null
+      };
+    }
+
+    if (preset === "today") {
+      return { start: startOfDay(today), end: endOfDay(today) };
+    }
+
+    if (preset === "yesterday") {
+      const yesterday = new Date(today);
+      yesterday.setDate(today.getDate() - 1);
+      return { start: startOfDay(yesterday), end: endOfDay(yesterday) };
+    }
+
+    if (preset === "week") {
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - 6);
+      return { start: startOfDay(weekStart), end: endOfDay(today) };
+    }
+
+    if (preset === "month") {
+      const monthStart = new Date(today);
+      monthStart.setDate(1);
+      return { start: startOfDay(monthStart), end: endOfDay(today) };
+    }
+
+    return { start: null, end: null };
+  };
+
+  const transactionDateRange = useMemo(
+    () => buildDateRange(transactionDatePreset, transactionCustomStart, transactionCustomEnd),
+    [transactionCustomEnd, transactionCustomStart, transactionDatePreset]
+  );
+
+  const approvalDateRange = useMemo(
+    () => buildDateRange(approvalDatePreset, approvalCustomStart, approvalCustomEnd),
+    [approvalCustomEnd, approvalCustomStart, approvalDatePreset]
+  );
+
   const activeTimelineTransaction = useMemo(() => {
     if (!activeTimelineId) {
       return null;
@@ -1022,6 +1128,29 @@ export function OperationsDashboard({
       null
     );
   }, [activeTimelineId, transactionDetailCache, transactions]);
+
+  const activeTransactionSubscription = useMemo(() => {
+    if (!activeTimelineTransaction?.packageCode) {
+      return null;
+    }
+
+    return (
+      subscriptions.find((item) => item.packageCode === activeTimelineTransaction.packageCode) ??
+      null
+    );
+  }, [activeTimelineTransaction, subscriptions]);
+
+  const activeTransactionDebitAccount = useMemo(() => {
+    if (!activeTimelineTransaction) {
+      return null;
+    }
+
+    return (
+      debitAccounts.find(
+        (item) => item.debitAccountId === activeTimelineTransaction.debitAccountId
+      ) ?? null
+    );
+  }, [activeTimelineTransaction, debitAccounts]);
 
   const beneficiaryRows = useMemo(() => {
     return beneficiaries.filter((beneficiary) => {
@@ -1044,7 +1173,6 @@ export function OperationsDashboard({
   const transactionRows = useMemo(() => {
     return transactions.filter((transaction) => {
       const searchTerm = transactionSearch.trim().toLowerCase();
-      const tagTerm = transactionTagFilter.trim().toLowerCase();
 
       const matchesSearch =
         searchTerm.length === 0 ||
@@ -1055,54 +1183,106 @@ export function OperationsDashboard({
         transactionStateFilter.length === 0 ||
         transaction.state === transactionStateFilter;
 
-      const matchesTag =
-        tagTerm.length === 0 ||
-        (transaction.tag ?? "").toLowerCase().includes(tagTerm);
+      const createdAt = transaction.createdAt ? new Date(transaction.createdAt) : null;
+      const matchesDate =
+        !createdAt ||
+        ((!transactionDateRange.start || createdAt >= transactionDateRange.start) &&
+          (!transactionDateRange.end || createdAt <= transactionDateRange.end));
 
-      return matchesSearch && matchesState && matchesTag;
+      return matchesSearch && matchesState && matchesDate;
     });
-  }, [transactionSearch, transactionStateFilter, transactionTagFilter, transactions]);
+  }, [
+    transactionDateRange.end,
+    transactionDateRange.start,
+    transactionSearch,
+    transactionStateFilter,
+    transactions
+  ]);
 
   const approvalEntries = useMemo<ApprovalEntry[]>(() => {
     return [
       ...transactions
         .filter((item) => item.state === "pending_approval")
+        .filter((item) => {
+          if (!item.createdAt) {
+            return true;
+          }
+          const createdAt = new Date(item.createdAt);
+          return (
+            (!approvalDateRange.start || createdAt >= approvalDateRange.start) &&
+            (!approvalDateRange.end || createdAt <= approvalDateRange.end)
+          );
+        })
         .map((item) => ({
           entity: "transaction" as const,
           id: item.batchId,
           title: item.title,
           meta: `${item.batchId} | INR ${formatAmount(item.totalAmount.value)}`,
-          status: item.state
+          status: item.state,
+          createdAt: item.createdAt ?? undefined
         })),
       ...beneficiaries
         .filter((item) => item.approvalState === "pending_approval")
+        .filter((item) => {
+          if (!item.createdAt) {
+            return true;
+          }
+          const createdAt = new Date(item.createdAt);
+          return (
+            (!approvalDateRange.start || createdAt >= approvalDateRange.start) &&
+            (!approvalDateRange.end || createdAt <= approvalDateRange.end)
+          );
+        })
         .map((item) => ({
           entity: "beneficiary" as const,
           id: item.beneficiaryId,
           title: item.name,
           meta: `${maskAccountNumber(item.accountNumber)} | ${item.bankName}`,
-          status: item.approvalState
+          status: item.approvalState,
+          createdAt: item.createdAt ?? undefined
         })),
       ...roles
         .filter((item) => item.approvalState === "pending_approval")
+        .filter((item) => {
+          if (!item.createdAt) {
+            return true;
+          }
+          const createdAt = new Date(item.createdAt);
+          return (
+            (!approvalDateRange.start || createdAt >= approvalDateRange.start) &&
+            (!approvalDateRange.end || createdAt <= approvalDateRange.end)
+          );
+        })
         .map((item) => ({
           entity: "role" as const,
           id: item.roleId,
           title: item.name,
           meta: item.description ?? "No description provided",
-          status: item.approvalState
+          status: item.approvalState,
+          createdAt: item.createdAt ?? undefined
         })),
       ...users
         .filter((item) => item.approvalState === "pending_approval")
+        .filter((item) => {
+          if (!item.createdAt) {
+            return true;
+          }
+          const createdAt = new Date(item.createdAt);
+          return (
+            (!approvalDateRange.start || createdAt >= approvalDateRange.start) &&
+            (!approvalDateRange.end || createdAt <= approvalDateRange.end)
+          );
+        })
         .map((item) => ({
           entity: "user" as const,
           id: item.userId,
           title: item.displayName,
           meta: `${item.username} | ${item.role}`,
-          status: item.approvalState
+          status: item.approvalState,
+          createdAt: item.createdAt ?? undefined
         }))
     ];
-  }, [beneficiaries, roles, transactions, users]);
+  }, [approvalDateRange.end, approvalDateRange.start, beneficiaries, roles, transactions, users]);
 
   const paymentApprovalEntries = useMemo(
     () => approvalEntries.filter((entry) => entry.entity === "transaction"),
@@ -1442,8 +1622,16 @@ export function OperationsDashboard({
       packageCodes: beneficiaryPackageCodes
     };
 
-    setBusy(true);
-    const result = await postJson<Beneficiary>("/v1/beneficiaries", payload);
+    const isEdit = Boolean(editingBeneficiaryId);
+    const result = isEdit
+      ? await postJson<Beneficiary>(
+          `/v1/beneficiaries/${encodeURIComponent(editingBeneficiaryId as string)}`,
+          {
+            ...payload,
+            actedByUserId: session.userId
+          }
+        )
+      : await postJson<Beneficiary>("/v1/beneficiaries", payload);
     setBusy(false);
 
     if (!result.ok) {
@@ -1451,14 +1639,25 @@ export function OperationsDashboard({
       return;
     }
 
-    setBeneficiaries((current) => [result.data, ...current]);
+    setBeneficiaries((current) => [result.data, ...current.filter((item) => item.beneficiaryId !== result.data.beneficiaryId)]);
     form.reset();
     setBeneficiaryPackageCodes([]);
     setShowBeneficiaryCreate(false);
+    setEditingBeneficiaryId(null);
     setNotice({
       tone: "success",
-      text: `${payload.name} created successfully and sent for approval.`
+      text: isEdit
+        ? `${payload.name} updated successfully and sent for approval.`
+        : `${payload.name} created successfully and sent for approval.`
     });
+  }
+
+  function beginEditBeneficiary(beneficiary: Beneficiary) {
+    setBeneficiaryActionItem(null);
+    setBeneficiaryActionMenuOpen(false);
+    setEditingBeneficiaryId(beneficiary.beneficiaryId);
+    setShowBeneficiaryCreate(true);
+    setBeneficiaryPackageCodes(beneficiary.assignedPackages.map((item) => item.packageCode));
   }
 
   async function handleBeneficiaryStatusAction(
@@ -1498,6 +1697,21 @@ export function OperationsDashboard({
       );
       void refreshWorkspace(session, selectedCorporateId);
     }
+  }
+
+  function openBeneficiaryActions(beneficiary: Beneficiary) {
+    setBeneficiaryActionItem(beneficiary);
+    setBeneficiaryActionMenuOpen(true);
+  }
+
+  async function updateBeneficiaryStatusFromMenu(action: "activate" | "deactivate") {
+    if (!beneficiaryActionItem) {
+      return;
+    }
+
+    await handleBeneficiaryStatusAction(beneficiaryActionItem.beneficiaryId, action);
+    setBeneficiaryActionMenuOpen(false);
+    setBeneficiaryActionItem(null);
   }
 
   async function handleTransactionSubmit(event: FormEvent<HTMLFormElement>) {
@@ -1801,15 +2015,19 @@ export function OperationsDashboard({
         .map((item) => item.value)
     );
 
-    setBusy(true);
-    const result = await postJson<CorporateRole>("/v1/auth/corporate-roles", {
+    const payload = {
       createdByUserId: session.userId,
       corporateTenantId: session.corporateTenantId,
       name: String(formData.get("name")),
       description: optionalText(formData.get("description")),
       permissions,
       status: String(formData.get("status"))
-    });
+    };
+
+    setBusy(true);
+    const result = editingRoleId
+      ? await postJson<CorporateRole>(`/v1/auth/corporate-roles/${encodeURIComponent(editingRoleId)}`, payload)
+      : await postJson<CorporateRole>("/v1/auth/corporate-roles", payload);
     setBusy(false);
 
     if (!result.ok) {
@@ -1820,10 +2038,42 @@ export function OperationsDashboard({
     setRoles((current) => [result.data, ...current.filter((item) => item.roleId !== result.data.roleId)]);
     form.reset();
     setShowRoleCreate(false);
+    setEditingRoleId(null);
     setNotice({
       tone: "success",
-      text: `${String(formData.get("name"))} created successfully and sent for approval.`
+      text: `${String(formData.get("name"))} ${editingRoleId ? "updated" : "created"} successfully and sent for approval.`
     });
+  }
+
+  function beginEditRole(role: CorporateRole) {
+    setRoleActionItem(null);
+    setRoleActionMenuOpen(false);
+    setEditingRoleId(role.roleId);
+    setShowRoleCreate(true);
+  }
+
+  async function updateRoleStatus(role: CorporateRole, nextStatus: "active" | "inactive") {
+    setRoleActionItem(null);
+    setRoleActionMenuOpen(false);
+
+    const result = await postJson<CorporateRole>(`/v1/auth/corporate-roles/${encodeURIComponent(role.roleId)}`, {
+      createdByUserId: session?.userId ?? "",
+      corporateTenantId: session?.corporateTenantId ?? role.corporateTenantId,
+      name: role.name,
+      description: role.description,
+      permissions: role.permissions,
+      status: nextStatus
+    });
+
+    setNotice({
+      tone: result.ok ? "success" : "error",
+      text: result.ok ? `Role ${nextStatus === "active" ? "activated" : "deactivated"} successfully.` : result.message
+    });
+
+    if (result.ok) {
+      setRoles((current) => [result.data, ...current.filter((item) => item.roleId !== result.data.roleId)]);
+      void refreshWorkspace(session!, selectedCorporateId, { silent: true });
+    }
   }
 
   async function handleUserSubmit(event: FormEvent<HTMLFormElement>) {
@@ -2220,9 +2470,6 @@ export function OperationsDashboard({
               <div className="ops-panel-head">
                 <div>
                   <h3>Transactions</h3>
-                  <p className="ops-meta">
-                    Every payout transaction with state tracking, timeline visibility, and clean filters.
-                  </p>
                 </div>
                 <div className="ops-actions">
                   {isTransactionMaker ? (
@@ -2400,16 +2647,130 @@ export function OperationsDashboard({
                 </div>
               ) : null}
 
-              <div className="ops-toolbar ops-fields three">
-                <label>
-                  Search
-                  <input
-                    onChange={(event) => setTransactionSearch(event.target.value)}
-                    placeholder="Search by transaction reference or txn UUID"
-                    value={transactionSearch}
-                  />
-                </label>
-                <label>
+              <div className="ops-toolbar" style={{ marginTop: "12px", display: "flex", alignItems: "end", gap: "12px", flexWrap: "wrap" }}>
+                <div style={{ position: "relative" }}>
+                  <label style={{ display: "block", marginBottom: "6px" }}>Date Range</label>
+                  <button
+                    type="button"
+                    className="ops-button secondary"
+                    onClick={() => setShowTransactionDatePicker((current) => !current)}
+                    style={{ display: "inline-flex", alignItems: "center", gap: "8px", minWidth: "200px" }}
+                  >
+                    <span style={{ opacity: 0.7 }}>
+                      {transactionDatePreset === "all"
+                        ? "All time"
+                        : transactionDatePreset === "today"
+                          ? "Today"
+                          : transactionDatePreset === "yesterday"
+                            ? "Yesterday"
+                            : transactionDatePreset === "week"
+                              ? "This week"
+                              : transactionDatePreset === "month"
+                                ? "This month"
+                                : "Custom"}
+                    </span>
+                  </button>
+
+                  {showTransactionDatePicker ? (
+                    <>
+                      <div
+                        onClick={() => setShowTransactionDatePicker(false)}
+                        style={{
+                          position: "fixed",
+                          inset: 0,
+                          zIndex: 39,
+                          background: "transparent"
+                        }}
+                      />
+                      <div
+                        onClick={(event) => event.stopPropagation()}
+                        style={{
+                          position: "absolute",
+                          top: "calc(100% + 10px)",
+                          left: 0,
+                          width: "440px",
+                          background: "var(--surface)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "18px",
+                          boxShadow: "0 24px 56px rgba(15, 23, 42, 0.16)",
+                          padding: "16px",
+                          zIndex: 40
+                        }}
+                      >
+                        <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: "14px" }}>
+                          <div style={{ display: "grid", gap: "8px" }}>
+                            {[
+                              ["all", "All time"],
+                              ["today", "Today"],
+                              ["yesterday", "Yesterday"],
+                              ["week", "This week"],
+                              ["month", "This month"],
+                              ["custom", "Custom"]
+                            ].map(([value, label]) => (
+                              <button
+                                key={value}
+                                type="button"
+                                className="ops-button secondary"
+                                onClick={() => setTransactionDatePreset(value)}
+                                style={{
+                                  justifyContent: "flex-start",
+                                  width: "100%",
+                                  background: transactionDatePreset === value ? "var(--accent-soft)" : "var(--surface)"
+                                }}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                          <div style={{ display: "grid", gap: "12px", alignContent: "start" }}>
+                            {transactionDatePreset === "custom" ? (
+                              <>
+                                <label>
+                                  Start date
+                                  <input
+                                    onChange={(event) => setTransactionCustomStart(event.target.value)}
+                                    type="date"
+                                    value={transactionCustomStart}
+                                  />
+                                </label>
+                                <label>
+                                  End date
+                                  <input
+                                    onChange={(event) => setTransactionCustomEnd(event.target.value)}
+                                    type="date"
+                                    value={transactionCustomEnd}
+                                  />
+                                </label>
+                                <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                                  <button
+                                    type="button"
+                                    className="ops-button secondary"
+                                    onClick={() => setShowTransactionDatePicker(false)}
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="ops-button primary"
+                                  onClick={() => setShowTransactionDatePicker(false)}
+                                >
+                                  Set date
+                                </button>
+                              </div>
+                            </>
+                            ) : (
+                              <p className="ops-meta" style={{ margin: 0 }}>
+                                Choose a quick range or switch to custom to set start and end dates.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+
+                <label style={{ minWidth: "180px", flex: 1 }}>
                   Status
                   <select
                     onChange={(event) => setTransactionStateFilter(event.target.value)}
@@ -2426,12 +2787,13 @@ export function OperationsDashboard({
                     <option value="failed">Failed</option>
                   </select>
                 </label>
-                <label>
-                  Tag
+
+                <label style={{ minWidth: "220px", flex: 1.2 }}>
+                  Search anything
                   <input
-                    onChange={(event) => setTransactionTagFilter(event.target.value)}
-                    placeholder="Filter by tag"
-                    value={transactionTagFilter}
+                    onChange={(event) => setTransactionSearch(event.target.value)}
+                    placeholder="Search by reference, beneficiary, amount"
+                    value={transactionSearch}
                   />
                 </label>
               </div>
@@ -2440,14 +2802,14 @@ export function OperationsDashboard({
                 <table className="ops-table">
                   <thead>
                     <tr>
-                      <th>Txn UUID</th>
                       <th>Transaction Reference</th>
                       <th>Beneficiary</th>
                       <th>Amount</th>
+                      <th>Package</th>
+                      <th>Payment Method</th>
                       <th>Tag</th>
                       <th>Status</th>
                       <th>Created</th>
-                      <th>Timeline</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2461,9 +2823,15 @@ export function OperationsDashboard({
                         transaction.primaryBeneficiaryId ??
                         "Unknown beneficiary";
 
+                      const packageLabel = transaction.packageCode ?? "No package";
+                      const paymentMethodLabel = transaction.paymentMethodCode ?? "Not captured";
+
                       return (
-                        <tr key={transaction.batchId}>
-                          <td>{transaction.batchId}</td>
+                        <tr
+                          key={transaction.batchId}
+                          onClick={() => setActiveTimelineId(transaction.batchId)}
+                          style={{ cursor: "pointer" }}
+                        >
                           <td>
                             <strong>{transaction.title}</strong>
                             <br />
@@ -2471,6 +2839,8 @@ export function OperationsDashboard({
                           </td>
                           <td>{beneficiaryName}</td>
                           <td>INR {formatAmount(transaction.totalAmount.value)}</td>
+                          <td>{packageLabel}</td>
+                          <td>{paymentMethodLabel}</td>
                           <td>{transaction.tag ?? "Not tagged"}</td>
                           <td>
                             <span className={`ops-status ${transaction.state}`}>
@@ -2478,15 +2848,6 @@ export function OperationsDashboard({
                             </span>
                           </td>
                           <td>{formatDateTime(transaction.createdAt)}</td>
-                          <td>
-                            <button
-                              className="ops-kebab"
-                              onClick={() => setActiveTimelineId(transaction.batchId)}
-                              type="button"
-                            >
-                              ⋯
-                            </button>
-                          </td>
                         </tr>
                       );
                     })}
@@ -2614,10 +2975,20 @@ export function OperationsDashboard({
                   {isBeneficiaryMaker ? (
                     <button
                       className="ops-button primary"
-                      onClick={() => setShowBeneficiaryCreate((current) => !current)}
+                      onClick={() => {
+                        if (showBeneficiaryCreate) {
+                          setShowBeneficiaryCreate(false);
+                          setEditingBeneficiaryId(null);
+                          setBeneficiaryPackageCodes([]);
+                        } else {
+                          setEditingBeneficiaryId(null);
+                          setBeneficiaryPackageCodes([]);
+                          setShowBeneficiaryCreate(true);
+                        }
+                      }}
                       type="button"
                     >
-                      {showBeneficiaryCreate ? "Close form" : "Create beneficiary"}
+                      {showBeneficiaryCreate ? (editingBeneficiary ? "Close edit" : "Close form") : "Create beneficiary"}
                     </button>
                   ) : null}
                 </div>
@@ -2625,30 +2996,60 @@ export function OperationsDashboard({
 
               {showBeneficiaryCreate && isBeneficiaryMaker ? (
                 <div className="ops-drawer">
-                  <form className="ops-form" onSubmit={handleBeneficiarySubmit}>
+                  <form
+                    className="ops-form"
+                    key={editingBeneficiary?.beneficiaryId ?? "beneficiary-create"}
+                    onSubmit={handleBeneficiarySubmit}
+                  >
                     <div className="ops-fields two">
                       <label>
                         Bene ID
-                        <input name="beneficiaryId" placeholder="KUMAR123" required />
+                        <input
+                          defaultValue={editingBeneficiary?.beneficiaryId ?? ""}
+                          name="beneficiaryId"
+                          placeholder="KUMAR123"
+                          required
+                          disabled={Boolean(editingBeneficiary)}
+                        />
                       </label>
                       <label>
                         Bene Name
-                        <input name="name" placeholder="Orbit Vendor Services" required />
+                        <input
+                          defaultValue={editingBeneficiary?.name ?? ""}
+                          name="name"
+                          placeholder="Orbit Vendor Services"
+                          required
+                        />
                       </label>
                     </div>
 
                     <div className="ops-fields three">
                       <label>
                         Bene Bank Account Number
-                        <input name="accountNumber" placeholder="409876543210" required />
+                        <input
+                          defaultValue={editingBeneficiary?.accountNumber ?? ""}
+                          name="accountNumber"
+                          placeholder="409876543210"
+                          required
+                        />
                       </label>
                       <label>
                         Bene IFSC Code
-                        <input name="ifsc" placeholder="HDFC0001234" required />
+                        <input
+                          defaultValue={editingBeneficiary?.ifsc ?? ""}
+                          name="ifsc"
+                          placeholder="HDFC0001234"
+                          required
+                        />
                       </label>
                       <label>
                         Bene Phone Number
-                        <input name="phoneNumber" placeholder="+91 9876543210" required />
+                        <input
+                          defaultValue={editingBeneficiary?.phoneNumber ?? ""}
+                          name="phoneNumber"
+                          placeholder="+91 9876543210"
+                          required
+                        />
                       </label>
                     </div>
 
@@ -2679,10 +3080,80 @@ export function OperationsDashboard({
 
                     <div className="ops-actions">
                       <button className="ops-button primary" disabled={busy} type="submit">
-                        {busy ? "Saving..." : "Create beneficiary"}
+                        {busy
+                          ? "Saving..."
+                          : editingBeneficiary
+                            ? "Save beneficiary"
+                            : "Create beneficiary"}
                       </button>
+                      {editingBeneficiary ? (
+                        <button
+                          className="ops-button"
+                          disabled={busy}
+                          type="button"
+                          onClick={() => {
+                            setShowBeneficiaryCreate(false);
+                            setEditingBeneficiaryId(null);
+                            setBeneficiaryPackageCodes([]);
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      ) : (
+                        <button
+                          className="ops-button"
+                          disabled={busy}
+                          type="button"
+                          onClick={() => {
+                            setBeneficiaryPackageCodes([]);
+                            setShowBeneficiaryCreate(false);
+                          }}
+                          >
+                          Reset
+                        </button>
+                      )}
                     </div>
                   </form>
+                </div>
+              ) : null}
+
+              {beneficiaryActionItem && beneficiaryActionMenuOpen ? (
+                <div className="ops-row-action-modal" onMouseDown={() => setBeneficiaryActionMenuOpen(false)}>
+                  <div className="ops-row-action-card" onMouseDown={(event) => event.stopPropagation()}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start" }}>
+                      <div>
+                        <h4 className="ops-row-action-title">Beneficiary actions</h4>
+                        <p className="ops-row-action-subtitle">
+                          {beneficiaryActionItem.beneficiaryId} · {beneficiaryActionItem.name}
+                        </p>
+                      </div>
+                      <button type="button" className="ops-mini" onClick={() => setBeneficiaryActionMenuOpen(false)}>
+                        Close
+                      </button>
+                    </div>
+                    <div className="ops-row-action-list">
+                      <button
+                        className="ops-mini"
+                        type="button"
+                        onClick={() => beginEditBeneficiary(beneficiaryActionItem)}
+                        style={{ width: "100%", textAlign: "left" }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="ops-mini"
+                        type="button"
+                        onClick={() =>
+                          void updateBeneficiaryStatusFromMenu(
+                            beneficiaryActionItem.status === "active" ? "deactivate" : "activate"
+                          )
+                        }
+                        style={{ width: "100%", textAlign: "left" }}
+                      >
+                        {beneficiaryActionItem.status === "active" ? "Deactivate" : "Activate"}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ) : null}
 
@@ -2769,19 +3240,16 @@ export function OperationsDashboard({
                           </span>
                         </td>
                         <td>
-                          {isBeneficiaryMaker && beneficiary.approvalState === "approved" ? (
-                            <button
-                              className="ops-mini"
-                              onClick={() =>
-                                void handleBeneficiaryStatusAction(
-                                  beneficiary.beneficiaryId,
-                                  beneficiary.status === "active" ? "deactivate" : "activate"
-                                )
-                              }
-                              type="button"
-                            >
-                              {beneficiary.status === "active" ? "Deactivate" : "Activate"}
-                            </button>
+                          {isBeneficiaryMaker ? (
+                            <div className="ops-row-action-wrap" style={{ justifyContent: "flex-end" }}>
+                              <button
+                                className="ops-kebab"
+                                onClick={() => openBeneficiaryActions(beneficiary)}
+                                type="button"
+                              >
+                                ⋮
+                              </button>
+                            </div>
                           ) : (
                             <span className="ops-meta">
                               {beneficiary.approvalState === "pending_approval"
@@ -2814,9 +3282,6 @@ export function OperationsDashboard({
               <div className="ops-panel-head">
                 <div>
                   <h3>Checker workbench</h3>
-                  <p className="ops-meta">
-                    Separate approval queues for payments, beneficiaries, roles, and users. Click any row to review the full record in a side sheet.
-                  </p>
                 </div>
               </div>
 
@@ -2878,6 +3343,130 @@ export function OperationsDashboard({
                       {item.label}
                     </button>
                   ))}
+                </div>
+
+                <div className="ops-toolbar" style={{ display: "flex", alignItems: "end", gap: "12px", flexWrap: "wrap" }}>
+                  <div style={{ position: "relative" }}>
+                    <label style={{ display: "block", marginBottom: "6px" }}>Date Range</label>
+                    <button
+                      type="button"
+                      className="ops-button secondary"
+                      onClick={() => setShowApprovalDatePicker((current) => !current)}
+                      style={{ display: "inline-flex", alignItems: "center", gap: "8px", minWidth: "200px" }}
+                    >
+                      <span style={{ opacity: 0.7 }}>
+                        {approvalDatePreset === "all"
+                          ? "All time"
+                          : approvalDatePreset === "today"
+                            ? "Today"
+                            : approvalDatePreset === "yesterday"
+                              ? "Yesterday"
+                              : approvalDatePreset === "week"
+                                ? "This week"
+                                : approvalDatePreset === "month"
+                                  ? "This month"
+                                  : "Custom"}
+                      </span>
+                    </button>
+
+                    {showApprovalDatePicker ? (
+                      <>
+                        <div
+                          onClick={() => setShowApprovalDatePicker(false)}
+                          style={{
+                            position: "fixed",
+                            inset: 0,
+                            zIndex: 39,
+                            background: "transparent"
+                          }}
+                        />
+                        <div
+                          onClick={(event) => event.stopPropagation()}
+                          style={{
+                            position: "absolute",
+                            top: "calc(100% + 10px)",
+                            left: 0,
+                            width: "440px",
+                            background: "var(--surface)",
+                            border: "1px solid var(--border)",
+                            borderRadius: "18px",
+                            boxShadow: "0 24px 56px rgba(15, 23, 42, 0.16)",
+                            padding: "16px",
+                            zIndex: 40
+                          }}
+                        >
+                          <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: "14px" }}>
+                            <div style={{ display: "grid", gap: "8px" }}>
+                              {[
+                                ["all", "All time"],
+                                ["today", "Today"],
+                                ["yesterday", "Yesterday"],
+                                ["week", "This week"],
+                                ["month", "This month"],
+                                ["custom", "Custom"]
+                              ].map(([value, label]) => (
+                                <button
+                                  key={value}
+                                  type="button"
+                                  className="ops-button secondary"
+                                  onClick={() => setApprovalDatePreset(value)}
+                                  style={{
+                                    justifyContent: "flex-start",
+                                    width: "100%",
+                                    background: approvalDatePreset === value ? "var(--accent-soft)" : "var(--surface)"
+                                  }}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                            <div style={{ display: "grid", gap: "12px", alignContent: "start" }}>
+                              {approvalDatePreset === "custom" ? (
+                                <>
+                                  <label>
+                                    Start date
+                                    <input
+                                      onChange={(event) => setApprovalCustomStart(event.target.value)}
+                                      type="date"
+                                      value={approvalCustomStart}
+                                    />
+                                  </label>
+                                  <label>
+                                    End date
+                                    <input
+                                      onChange={(event) => setApprovalCustomEnd(event.target.value)}
+                                      type="date"
+                                      value={approvalCustomEnd}
+                                    />
+                                  </label>
+                                  <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                                    <button
+                                      type="button"
+                                      className="ops-button secondary"
+                                      onClick={() => setShowApprovalDatePicker(false)}
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="ops-button primary"
+                                      onClick={() => setShowApprovalDatePicker(false)}
+                                    >
+                                      Set date
+                                    </button>
+                                  </div>
+                                </>
+                              ) : (
+                                <p className="ops-meta" style={{ margin: 0 }}>
+                                  Choose a quick range or switch to custom to set start and end dates.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
                 </div>
 
                 {(approvalSectionFilter === "all" || approvalSectionFilter === "transaction") ? (
@@ -3256,32 +3845,53 @@ export function OperationsDashboard({
                 {isRoleMaker ? (
                   <button
                     className="ops-button primary"
-                    onClick={() => setShowRoleCreate((current) => !current)}
+                    onClick={() => {
+                      if (showRoleCreate) {
+                        setShowRoleCreate(false);
+                        setEditingRoleId(null);
+                      } else {
+                        setEditingRoleId(null);
+                        setShowRoleCreate(true);
+                      }
+                    }}
                     type="button"
                   >
-                    {showRoleCreate ? "Close form" : "Create role"}
+                    {showRoleCreate ? (editingRole ? "Close edit" : "Close form") : "Create role"}
                   </button>
                 ) : null}
               </div>
 
               {showRoleCreate && isRoleMaker ? (
                 <div className="ops-drawer">
-                  <form className="ops-form" onSubmit={handleRoleSubmit}>
+                  <form
+                    className="ops-form"
+                    key={editingRole?.roleId ?? "role-create"}
+                    onSubmit={handleRoleSubmit}
+                  >
                     <div className="ops-fields three">
                       <label>
                         Role name
-                        <input name="name" placeholder="Finance checker" required />
+                        <input
+                          defaultValue={editingRole?.name ?? ""}
+                          name="name"
+                          placeholder="Finance checker"
+                          required
+                        />
                       </label>
                       <label>
                         Status
-                        <select name="status" required>
+                        <select defaultValue={editingRole?.status ?? "inactive"} name="status" required>
                           <option value="inactive">Inactive</option>
                           <option value="active">Active</option>
                         </select>
                       </label>
                       <label>
                         Description
-                        <input name="description" placeholder="Optional role note" />
+                        <input
+                          defaultValue={editingRole?.description ?? ""}
+                          name="description"
+                          placeholder="Optional role note"
+                        />
                       </label>
                     </div>
                     <div className="ops-permission-grid">
@@ -3295,6 +3905,7 @@ export function OperationsDashboard({
                                   name="permissions"
                                   type="checkbox"
                                   value={permission.value}
+                                  defaultChecked={editingRole?.permissions.includes(permission.value) ?? false}
                                 />
                                 <span>{permission.label}</span>
                               </label>
@@ -3305,8 +3916,30 @@ export function OperationsDashboard({
                     </div>
                     <div className="ops-actions">
                       <button className="ops-button primary" disabled={busy} type="submit">
-                        {busy ? "Saving..." : "Create role"}
+                        {busy ? "Saving..." : editingRole ? "Save role" : "Create role"}
                       </button>
+                      {editingRole ? (
+                        <button
+                          className="ops-button"
+                          disabled={busy}
+                          type="button"
+                          onClick={() => {
+                            setShowRoleCreate(false);
+                            setEditingRoleId(null);
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      ) : (
+                        <button
+                          className="ops-button"
+                          disabled={busy}
+                          type="button"
+                          onClick={() => setShowRoleCreate(false)}
+                        >
+                          Reset
+                        </button>
+                      )}
                     </div>
                   </form>
                 </div>
@@ -3322,6 +3955,7 @@ export function OperationsDashboard({
                       <th>Permissions</th>
                       <th>Status</th>
                       <th>Approval</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3339,11 +3973,61 @@ export function OperationsDashboard({
                             {humanize(role.approvalState)}
                           </span>
                         </td>
+                        <td>
+                          {isRoleMaker ? (
+                            <div className="ops-row-action-wrap" style={{ justifyContent: "flex-end" }}>
+                              <button
+                                className="ops-kebab"
+                                onClick={() => setRoleActionItem((current) => (current?.roleId === role.roleId ? null : role))}
+                                type="button"
+                              >
+                                ⋮
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="ops-meta">Maker only</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              {roleActionItem ? (
+                <div className="ops-row-action-modal" onMouseDown={() => setRoleActionItem(null)}>
+                  <div className="ops-row-action-card" onMouseDown={(event) => event.stopPropagation()}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start" }}>
+                      <div>
+                        <h4 className="ops-row-action-title">Role actions</h4>
+                        <p className="ops-row-action-subtitle">
+                          {roleActionItem.roleId} · {roleActionItem.name}
+                        </p>
+                      </div>
+                      <button type="button" className="ops-mini" onClick={() => setRoleActionItem(null)}>
+                        Close
+                      </button>
+                    </div>
+                    <div className="ops-row-action-list">
+                      <button type="button" className="ops-mini" style={{ width: "100%", textAlign: "left" }} onClick={() => beginEditRole(roleActionItem)}>
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="ops-mini"
+                        style={{ width: "100%", textAlign: "left" }}
+                        onClick={() =>
+                          void updateRoleStatus(
+                            roleActionItem,
+                            roleActionItem.status === "active" ? "inactive" : "active"
+                          )
+                        }
+                      >
+                        {roleActionItem.status === "active" ? "Deactivate" : "Activate"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </section>
           </section>
         ) : null}
@@ -3797,9 +4481,6 @@ export function OperationsDashboard({
                 <div className="ops-panel-head">
                   <div>
                     <h3>Corporate profile</h3>
-                    <p className="ops-meta">
-                      Maintain the core support and profile details for this corporate tenant.
-                    </p>
                   </div>
                 </div>
 
@@ -3945,126 +4626,48 @@ export function OperationsDashboard({
             ) : null}
 
             {settingsTab === "packages" ? (
-              <section className="ops-panel">
-                <div className="ops-panel-head">
-                  <div>
-                    <h3>Packages</h3>
-                    <p className="ops-meta">Package subscriptions for this corporate workspace.</p>
-                  </div>
-                  <div className="ops-actions">
-                    <button
-                      className="ops-button primary"
-                      onClick={() => navigateToSection("packages")}
-                      type="button"
-                    >
-                      Create / Edit Packages
-                    </button>
-                  </div>
-                </div>
-                <div className="ops-table-shell">
-                  <table className="ops-table">
-                    <thead>
-                      <tr>
-                        <th>Code</th>
-                        <th>Name</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {subscriptions.length > 0 ? (
-                        subscriptions.map((sub) => (
-                          <tr key={sub.subscriptionId}>
-                            <td>{sub.packageCode}</td>
-                            <td>{sub.displayName}</td>
-                            <td>
-                              <span className={`ops-status ${sub.status}`}>{humanize(sub.status)}</span>
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td className="ops-empty-row" colSpan={3}>
-                            No packages configured yet.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
+              <PackagesSection
+                bankTenantId={session?.bankTenantId ?? ""}
+                corporateId={selectedCorporateId ?? session?.corporateId ?? ""}
+                corporateTenantId={session?.corporateTenantId ?? ""}
+                debitAccounts={debitAccounts}
+              />
             ) : null}
 
             {settingsTab === "debit-accounts" ? (
-              <section className="ops-panel">
-                <div className="ops-panel-head">
-                  <div>
-                    <h3>Debit Accounts</h3>
-                    <p className="ops-meta">Funding accounts available in this workspace.</p>
-                  </div>
-                  <div className="ops-actions">
-                    <button
-                      className="ops-button primary"
-                      onClick={() => navigateToSection("debit-accounts")}
-                      type="button"
-                    >
-                      Create / Edit Debit Accounts
-                    </button>
-                  </div>
-                </div>
-                <div className="ops-table-shell">
-                  <table className="ops-table">
-                    <thead>
-                      <tr>
-                        <th>Account Name</th>
-                        <th>Account Number</th>
-                        <th>IFSC</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {debitAccounts.length > 0 ? (
-                        debitAccounts.map((account) => (
-                          <tr key={account.debitAccountId}>
-                            <td>{account.accountName}</td>
-                            <td>{account.accountNumber}</td>
-                            <td>{account.ifsc}</td>
-                            <td>
-                              <span className={`ops-status ${account.status}`}>{humanize(account.status)}</span>
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td className="ops-empty-row" colSpan={4}>
-                            No debit accounts configured yet.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
+              <DebitAccountsSection
+                debitAccounts={debitAccounts}
+                subscriptions={subscriptions}
+                canEdit={canEditSettings}
+                session={session}
+                selectedCorporateId={selectedCorporateId}
+                onUpdate={async () => {
+                  if (session) {
+                    await refreshWorkspace(session, selectedCorporateId, { silent: true });
+                  }
+                }}
+              />
             ) : null}
           </section>
         ) : null}
 
         {activeTimelineTransaction ? (
           <div
-            className="ops-modal-backdrop"
+            className="ops-sidesheet-backdrop"
             onClick={() => setActiveTimelineId(null)}
             role="presentation"
           >
-            <div
-              className="ops-modal"
+            <aside
+              aria-labelledby="transaction-details-title"
+              aria-modal="true"
+              className="ops-sidesheet"
               onClick={(event) => event.stopPropagation()}
               role="dialog"
-              aria-modal="true"
-              aria-labelledby="timeline-modal-title"
             >
-              <div className="ops-modal-head">
+              <div className="ops-sidesheet-head">
                 <div>
-                  <p className="ops-kicker">Transaction timeline</p>
-                  <h3 id="timeline-modal-title">{activeTimelineTransaction.title}</h3>
+                  <p className="ops-kicker">Payment details</p>
+                  <h3 id="transaction-details-title">{activeTimelineTransaction.title}</h3>
                   <p className="ops-meta">{activeTimelineTransaction.batchId}</p>
                 </div>
                 <button
@@ -4075,10 +4678,13 @@ export function OperationsDashboard({
                   Close
                 </button>
               </div>
-              <div className="ops-timeline ops-timeline-modal">
-                {renderTimeline(activeTimelineTransaction.timeline)}
-              </div>
-            </div>
+
+              <TransactionDetailsBody
+                debitAccount={activeTransactionDebitAccount}
+                subscription={activeTransactionSubscription}
+                transaction={activeTimelineTransaction}
+              />
+            </aside>
           </div>
         ) : null}
 

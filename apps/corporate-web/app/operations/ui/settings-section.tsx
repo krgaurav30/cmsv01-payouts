@@ -25,9 +25,6 @@ export function SettingsSection({
           <div className="ops-panel-head">
             <div>
               <h3>Corporate profile</h3>
-              <p className="ops-meta">
-                Maintain the core support and profile details for this corporate tenant.
-              </p>
             </div>
           </div>
 
