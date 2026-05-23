@@ -423,6 +423,7 @@ export function PackagesSection({
   function beginEdit(item: PackageItem) {
     setActionMenuItem(null);
     setEditing(item);
+    setShowForm(true);
     setPackageCode(item.packageCode);
     setName(item.name);
     setUseCase(item.useCase);
