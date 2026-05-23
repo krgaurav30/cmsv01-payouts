@@ -434,19 +434,24 @@ export function OperationsDashboard({
   const [session, setSession] = useState<CorporateSession | null>(initialSession);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [activeSection, setActiveSection] = useState<SectionId>(initialSection);
+  const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    if (!pathname) return;
+  const activeSection = useMemo<SectionId>(() => {
+    if (!pathname) return initialSection;
     const parts = pathname.split("/");
     const operationsIndex = parts.indexOf("operations");
     if (operationsIndex !== -1 && parts[operationsIndex + 1]) {
       const sectionFromUrl = parts[operationsIndex + 1] as SectionId;
       if (SECTIONS.some((s) => s.id === sectionFromUrl)) {
-        setActiveSection(sectionFromUrl);
+        return sectionFromUrl;
       }
     }
-  }, [pathname]);
+    return initialSection;
+  }, [pathname, initialSection]);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [activeTimelineId, setActiveTimelineId] = useState<string | null>(null);
   const [approvalSectionFilter, setApprovalSectionFilter] =
@@ -2173,7 +2178,6 @@ export function OperationsDashboard({
   }
 
   function navigateToSection(section: SectionId) {
-    setActiveSection(section);
     router.push(`/operations/${section}`);
   }
 
@@ -2369,7 +2373,37 @@ export function OperationsDashboard({
           </section>
         ) : null}
 
-        {activeSection === "home" ? (
+        {!mounted ? (
+          <section className="ops-page active" style={{ display: "block" }}>
+            <style>{`
+              @keyframes ops-pulse {
+                0%, 100% { opacity: 0.5; }
+                50% { opacity: 0.8; }
+              }
+              .ops-skeleton-pulse {
+                animation: ops-pulse 1.5s ease-in-out infinite;
+              }
+            `}</style>
+            <div className="ops-stripe-section-title ops-skeleton-pulse">
+              <span style={{ display: "inline-block", width: "120px", height: "20px", background: "var(--border)", borderRadius: "4px" }}></span>
+            </div>
+            <div className="ops-stripe-metrics-grid ops-skeleton-pulse">
+              <div className="ops-stripe-metric-card" style={{ background: "var(--surface-subtle)" }}>
+                <div style={{ width: "80px", height: "12px", background: "var(--border)", borderRadius: "2px", marginBottom: "8px" }} />
+                <div style={{ width: "140px", height: "28px", background: "var(--border)", borderRadius: "4px" }} />
+              </div>
+              <div className="ops-stripe-metric-card" style={{ background: "var(--surface-subtle)" }}>
+                <div style={{ width: "80px", height: "12px", background: "var(--border)", borderRadius: "2px", marginBottom: "8px" }} />
+                <div style={{ width: "140px", height: "28px", background: "var(--border)", borderRadius: "4px" }} />
+              </div>
+              <div className="ops-stripe-metric-card" style={{ background: "var(--surface-subtle)" }}>
+                <div style={{ width: "80px", height: "12px", background: "var(--border)", borderRadius: "2px", marginBottom: "8px" }} />
+                <div style={{ width: "140px", height: "28px", background: "var(--border)", borderRadius: "4px" }} />
+              </div>
+            </div>
+            <div className="ops-skeleton-pulse" style={{ width: "100%", height: "260px", background: "var(--surface-subtle)", border: "1px solid var(--border)", borderRadius: "8px" }} />
+          </section>
+        ) : activeSection === "home" ? (
           <section className="ops-page active" style={{ display: "block" }}>
             <div className="ops-stripe-section-title">
               <span>Overview</span>
