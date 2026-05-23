@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { PackagesSection } from "./packages-section";
 import { DebitAccountsSection } from "./debit-accounts-section";
 import { TransactionDetailsBody } from "./detail-panels";
+import { DevPortalSection } from "./devportal-section";
 
 import {
   clearSession,
@@ -92,7 +93,7 @@ type ApprovalEntry =
       createdAt?: string;
     };
 
-type ApprovalSectionFilter = "all" | ApprovalEntry["entity"];
+type ApprovalSectionFilter = "all" | ApprovalEntry["entity"] | "file";
 
 type SetupAuditEntry = {
   id: string;
@@ -425,6 +426,7 @@ export function OperationsDashboard({
   const otherMenuRef = useRef<HTMLDetailsElement | null>(null);
   const notificationMenuRef = useRef<HTMLDetailsElement | null>(null);
   const paymentApprovalsRef = useRef<HTMLDivElement | null>(null);
+  const fileApprovalsRef = useRef<HTMLDivElement | null>(null);
   const beneficiaryApprovalsRef = useRef<HTMLDivElement | null>(null);
   const roleApprovalsRef = useRef<HTMLDivElement | null>(null);
   const userApprovalsRef = useRef<HTMLDivElement | null>(null);
@@ -453,6 +455,16 @@ export function OperationsDashboard({
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  const formattedToday = useMemo(() => {
+    return new Date().toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric"
+    });
+  }, []);
+
   const [notice, setNotice] = useState<Notice | null>(null);
   const [activeTimelineId, setActiveTimelineId] = useState<string | null>(null);
   const [approvalSectionFilter, setApprovalSectionFilter] =
@@ -485,6 +497,11 @@ export function OperationsDashboard({
   const [packages, setPackages] = useState<any[]>([]);
   const [checkedBatchIds, setCheckedBatchIds] = useState<string[]>([]);
   const [bulkApprovalComment, setBulkApprovalComment] = useState("");
+  const [selectedFileApprovalId, setSelectedFileApprovalId] = useState<string | null>(null);
+  const [fileBatches, setFileBatches] = useState<PayoutBatch[]>([]);
+  const [fileBatchesSearchQuery, setFileBatchesSearchQuery] = useState("");
+  const [checkedFileBatchIds, setCheckedFileBatchIds] = useState<string[]>([]);
+  const [fileBulkComment, setFileBulkComment] = useState("");
 
   const [selectedCorporateId, setSelectedCorporateId] = useState(initialData.selectedCorporateId);
 
@@ -530,6 +547,10 @@ export function OperationsDashboard({
   const [approvalCustomStart, setApprovalCustomStart] = useState("");
   const [approvalCustomEnd, setApprovalCustomEnd] = useState("");
   const [showApprovalDatePicker, setShowApprovalDatePicker] = useState(false);
+  const [fileUploadDatePreset, setFileUploadDatePreset] = useState("all");
+  const [fileUploadCustomStart, setFileUploadCustomStart] = useState("");
+  const [fileUploadCustomEnd, setFileUploadCustomEnd] = useState("");
+  const [showFileUploadDatePicker, setShowFileUploadDatePicker] = useState(false);
 
   // Search and filter states per menu
   const [homeSearch, setHomeSearch] = useState("");
@@ -1168,6 +1189,11 @@ export function OperationsDashboard({
     [approvalCustomEnd, approvalCustomStart, approvalDatePreset]
   );
 
+  const fileUploadDateRange = useMemo(
+    () => buildDateRange(fileUploadDatePreset, fileUploadCustomStart, fileUploadCustomEnd),
+    [fileUploadCustomEnd, fileUploadCustomStart, fileUploadDatePreset]
+  );
+
   const reportDateRange = useMemo(
     () => buildDateRange(reportDatePreset, reportCustomStart, reportCustomEnd),
     [reportCustomEnd, reportCustomStart, reportDatePreset]
@@ -1243,9 +1269,21 @@ export function OperationsDashboard({
 
       const matchesStatus = !fileUploadStatusFilter || file.status === fileUploadStatusFilter;
 
-      return matchesSearch && matchesStatus;
+      let matchesDate = true;
+      if (file.uploadedAt) {
+        const uploadedAt = new Date(file.uploadedAt);
+        matchesDate =
+          (!fileUploadDateRange.start || uploadedAt >= fileUploadDateRange.start) &&
+          (!fileUploadDateRange.end || uploadedAt <= fileUploadDateRange.end);
+      } else {
+        if (fileUploadDateRange.start || fileUploadDateRange.end) {
+          matchesDate = false;
+        }
+      }
+
+      return matchesSearch && matchesStatus && matchesDate;
     });
-  }, [fileUploads, fileUploadSearch, fileUploadStatusFilter]);
+  }, [fileUploads, fileUploadSearch, fileUploadStatusFilter, fileUploadDateRange]);
 
   const filteredApprovalMatrices = useMemo(() => {
     return approvalMatrices.filter((matrix) => {
@@ -1437,6 +1475,42 @@ export function OperationsDashboard({
     () => approvalEntries.filter((entry) => entry.entity === "user"),
     [approvalEntries]
   );
+
+  const fileApprovalEntries = useMemo(() => {
+    return fileUploads
+      .filter((upload) => {
+        if (!upload.uploadedAt) return true;
+        const uploadedAt = new Date(upload.uploadedAt);
+        return (
+          (!approvalDateRange.start || uploadedAt >= approvalDateRange.start) &&
+          (!approvalDateRange.end || uploadedAt <= approvalDateRange.end)
+        );
+      })
+      .map((upload) => {
+        const fileBatchesList = transactions.filter(
+          (t) => t.sourceUploadId === upload.uploadId
+        );
+        const pendingCount = fileBatchesList.filter(
+          (t) => t.state === "pending_approval" || t.state === "partially_approved"
+        ).length;
+        const totalAmountValue = fileBatchesList.reduce(
+          (sum, t) => sum + (t.totalAmount?.value ?? 0),
+          0
+        );
+
+        return {
+          uploadId: upload.uploadId,
+          fileName: upload.fileName,
+          uploadedAt: upload.uploadedAt,
+          uploadedByName: upload.uploadedByName || upload.uploadedByUserId,
+          totalRows: upload.totalRows,
+          createdCount: upload.createdCount,
+          pendingCount,
+          totalAmount: totalAmountValue
+        };
+      })
+      .filter((file) => file.pendingCount > 0);
+  }, [fileUploads, transactions, approvalDateRange]);
 
   const selectedApprovalEntry = useMemo(() => {
     if (!selectedApprovalKey) {
@@ -1648,13 +1722,15 @@ export function OperationsDashboard({
     const sectionRef =
       filter === "transaction"
         ? paymentApprovalsRef
-        : filter === "beneficiary"
-          ? beneficiaryApprovalsRef
-          : filter === "role"
-            ? roleApprovalsRef
-            : filter === "user"
-              ? userApprovalsRef
-              : null;
+        : filter === "file"
+          ? fileApprovalsRef
+          : filter === "beneficiary"
+            ? beneficiaryApprovalsRef
+            : filter === "role"
+              ? roleApprovalsRef
+              : filter === "user"
+                ? userApprovalsRef
+                : null;
 
     if (filter === "all" || !sectionRef?.current) {
       return;
@@ -2195,6 +2271,94 @@ export function OperationsDashboard({
     void refreshWorkspace(session, selectedCorporateId);
   }
 
+  async function loadFileBatches(uploadId: string) {
+    setBusy(true);
+    setCheckedFileBatchIds([]);
+    setFileBulkComment("");
+    setFileBatchesSearchQuery("");
+    setSelectedFileApprovalId(uploadId);
+
+    const result = await fetchJson<{ items: PayoutBatch[] }>(
+      `/v1/payouts/file-uploads/${encodeURIComponent(uploadId)}/batches`
+    );
+    setBusy(false);
+
+    if (result.ok) {
+      setFileBatches(result.data.items ?? []);
+    } else {
+      setFileBatches([]);
+      setNotice({ tone: "error", text: "Unable to load transactions for this file." });
+    }
+  }
+
+  async function executeFileBulkAction(action: "approve" | "reject") {
+    if (!session || checkedFileBatchIds.length === 0 || !selectedFileApprovalId) {
+      return;
+    }
+
+    if (!hasPermission(session, "transaction.checker")) {
+      setNotice({ tone: "error", text: "You do not have permission to check transactions." });
+      return;
+    }
+
+    setBusy(true);
+    let successCount = 0;
+    let failCount = 0;
+    let lastErrorMessage = "";
+
+    await Promise.all(
+      checkedFileBatchIds.map(async (id) => {
+        try {
+          const endpoint = `/v1/payouts/batches/${encodeURIComponent(id)}/actions`;
+          const result = await postJson(endpoint, {
+            action,
+            actedByUserId: session.userId,
+            comment:
+              fileBulkComment.trim() ||
+              `${capitalize(action)}d by checker ${session.username} (File Bulk)`
+          });
+          if (result.ok) {
+            successCount++;
+          } else {
+            failCount++;
+            lastErrorMessage = result.message || "Failed";
+          }
+        } catch {
+          failCount++;
+          lastErrorMessage = "Network error";
+        }
+      })
+    );
+
+    setBusy(false);
+    setCheckedFileBatchIds([]);
+    setFileBulkComment("");
+
+    if (failCount === 0) {
+      setNotice({
+        tone: "success",
+        text: `Bulk ${action}d ${successCount} transactions from the file successfully.`
+      });
+    } else {
+      setNotice({
+        tone: "error",
+        text: `Bulk ${action}: ${successCount} succeeded, ${failCount} failed. Last error: ${lastErrorMessage}`
+      });
+    }
+
+    // Refresh file batches details to reflect updated states in the drawer
+    if (selectedFileApprovalId) {
+      const reloadResult = await fetchJson<{ items: PayoutBatch[] }>(
+        `/v1/payouts/file-uploads/${encodeURIComponent(selectedFileApprovalId)}/batches`
+      );
+      if (reloadResult.ok) {
+        setFileBatches(reloadResult.data.items ?? []);
+      }
+    }
+
+    void refreshWorkspace(session, selectedCorporateId);
+  }
+
   async function handleNotificationClick(notification: Notification) {
     if (!session) {
       return;
@@ -2625,9 +2789,27 @@ export function OperationsDashboard({
           </section>
         ) : activeSection === "home" ? (
           <section className="ops-page active" style={{ display: "block" }}>
+            {/* Welcome Banner */}
+            <div className="ops-welcome-banner">
+              <div>
+                <span className="ops-welcome-date">{formattedToday}</span>
+                <h2 className="ops-welcome-title">
+                  Welcome back, {session?.displayName || session?.username || "Operator"}
+                </h2>
+                <p className="ops-welcome-subtitle">
+                  Here is what's happening at {selectedCorporate?.name ?? "your organization"} today.
+                </p>
+              </div>
+              <div className="ops-welcome-badge">
+                <span className="ops-dot active"></span>
+                System operational
+              </div>
+            </div>
+
+            {/* Overview Section Header */}
             <div className="ops-stripe-section-title">
               <span>Overview</span>
-              <select 
+              <select
                 className="ops-stripe-filter-select"
                 value={dashboardDateRange}
                 onChange={(e) => setDashboardDateRange(e.target.value)}
@@ -2639,29 +2821,42 @@ export function OperationsDashboard({
               </select>
             </div>
 
+            {/* Clickable Metric Cards */}
             <div className="ops-stripe-metrics-grid">
-              <div className="ops-stripe-metric-card">
+              <div
+                className="ops-stripe-metric-card clickable"
+                onClick={() => navigateToSection("transactions")}
+              >
                 <div className="ops-stripe-metric-label">Total Volume</div>
                 <div className="ops-stripe-metric-value">
                   INR {formatAmount(dashboardVolume)}
                 </div>
               </div>
-              
-              <div className="ops-stripe-metric-card">
+
+              <div
+                className="ops-stripe-metric-card clickable"
+                onClick={() => navigateToSection("approvals")}
+              >
                 <div className="ops-stripe-metric-label">Pending Approvals</div>
                 <div className="ops-stripe-metric-value">
                   {approvalEntries.length}
                 </div>
               </div>
 
-              <div className="ops-stripe-metric-card">
+              <div
+                className="ops-stripe-metric-card clickable"
+                onClick={() => navigateToSection("beneficiaries")}
+              >
                 <div className="ops-stripe-metric-label">Active Beneficiaries</div>
                 <div className="ops-stripe-metric-value">
                   {approvedBeneficiaries.length}
                 </div>
               </div>
 
-              <div className="ops-stripe-metric-card">
+              <div
+                className="ops-stripe-metric-card clickable"
+                onClick={() => navigateToSection("transactions")}
+              >
                 <div className="ops-stripe-metric-label">Total Transactions</div>
                 <div className="ops-stripe-metric-value">
                   {dashboardTransactions.length}
@@ -2669,73 +2864,174 @@ export function OperationsDashboard({
               </div>
             </div>
 
-            <div className="ops-stripe-section-title" style={{ marginTop: "32px" }}>
-              <span>Recent Activity</span>
-              <button
-                className="ops-button secondary ops-mini"
-                onClick={() => navigateToSection("transactions")}
-                type="button"
-              >
-                View all
-              </button>
-            </div>
+            {/* Responsive Two-Column Grid */}
+            <div className="ops-dashboard-grid">
+              {/* Left Column: Recent Activity */}
+              <div style={{ minWidth: 0 }}>
+                <div className="ops-stripe-section-title" style={{ borderBottom: "none", marginBottom: "8px", paddingBottom: 0 }}>
+                  <span>Recent Activity</span>
+                  <button
+                    className="ops-button secondary ops-mini"
+                    onClick={() => navigateToSection("transactions")}
+                    type="button"
+                  >
+                    View all
+                  </button>
+                </div>
 
-            <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end" }}>
-              <label style={{ minWidth: "240px", flex: 1 }}>
-                Search activity
-                <input
-                  value={homeSearch}
-                  onChange={(e) => setHomeSearch(e.target.value)}
-                  placeholder="Search by reference, beneficiary"
-                />
-              </label>
-            </div>
+                {/* Styled search field */}
+                <div className="ops-toolbar" style={{ marginBottom: "16px" }}>
+                  <div className="ops-search-input-wrapper">
+                    <span className="ops-search-icon">🔍</span>
+                    <input
+                      className="ops-search-input"
+                      value={homeSearch}
+                      onChange={(e) => setHomeSearch(e.target.value)}
+                      placeholder="Search by reference, beneficiary..."
+                    />
+                  </div>
+                </div>
 
-            <div className="ops-stripe-table-container">
-              <table className="ops-stripe-table">
-                <thead>
-                  <tr>
-                    <th>Reference</th>
-                    <th>Beneficiary</th>
-                    <th>Amount</th>
-                    <th>Date</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredHomeTransactions.slice(0, 8).map((transaction) => {
-                    const beneficiaryName =
-                      transaction.primaryBeneficiaryName ??
-                      beneficiaries.find(
-                        (b) => b.beneficiaryId === transaction.primaryBeneficiaryId
-                      )?.name ??
-                      "Unknown";
-
-                    return (
-                      <tr key={transaction.batchId}>
-                        <td>
-                          <strong>{transaction.title}</strong>
-                        </td>
-                        <td>{beneficiaryName}</td>
-                        <td>INR {formatAmount(transaction.totalAmount.value)}</td>
-                        <td>{formatDateTime(transaction.createdAt).split(' ')[0]}</td>
-                        <td>
-                          <span className={`ops-stripe-badge ${transaction.state}`}>
-                            {humanize(transaction.state)}
-                          </span>
-                        </td>
+                <div className="ops-stripe-table-container">
+                  <table className="ops-stripe-table">
+                    <thead>
+                      <tr>
+                        <th>Reference</th>
+                        <th>Beneficiary</th>
+                        <th>Amount</th>
+                        <th>Date</th>
+                        <th>Status</th>
                       </tr>
-                    );
-                  })}
-                  {filteredHomeTransactions.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} style={{ textAlign: "center", color: "#647382" }}>
-                        {dashboardTransactions.length > 0 ? "No transactions match the search filter." : "No transactions found for this period."}
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody>
+                      {filteredHomeTransactions.slice(0, 8).map((transaction) => {
+                        const beneficiaryName =
+                          transaction.primaryBeneficiaryName ??
+                          beneficiaries.find(
+                            (b) => b.beneficiaryId === transaction.primaryBeneficiaryId
+                          )?.name ??
+                          "Unknown";
+
+                        return (
+                          <tr key={transaction.batchId}>
+                            <td>
+                              <strong>{transaction.title}</strong>
+                            </td>
+                            <td>{beneficiaryName}</td>
+                            <td>INR {formatAmount(transaction.totalAmount.value)}</td>
+                            <td>{formatDateOnly(transaction.createdAt)}</td>
+                            <td>
+                              <span className={`ops-stripe-badge ${transaction.state}`}>
+                                {humanize(transaction.state)}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {filteredHomeTransactions.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} style={{ textAlign: "center", color: "#647382" }}>
+                            {dashboardTransactions.length > 0
+                              ? "No transactions match the search filter."
+                              : "No transactions found for this period."}
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Right Column: Widgets */}
+              <div>
+                {/* Quick Actions Card */}
+                <div className="ops-widget-card">
+                  <h3 className="ops-widget-title">Quick Actions</h3>
+                  <div className="ops-quick-actions-list">
+                    <button
+                      onClick={() => {
+                        setShowTransactionCreate(true);
+                        navigateToSection("transactions");
+                      }}
+                      className="ops-quick-action-btn"
+                      type="button"
+                    >
+                      <span className="ops-action-icon">💸</span>
+                      <div className="ops-action-info">
+                        <span className="ops-action-label">Create Payout</span>
+                        <span className="ops-action-desc">Single immediate bank transfer</span>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowTransactionBulkUpload(true);
+                        navigateToSection("transactions");
+                      }}
+                      className="ops-quick-action-btn"
+                      type="button"
+                    >
+                      <span className="ops-action-icon">📤</span>
+                      <div className="ops-action-info">
+                        <span className="ops-action-label">Upload Batch File</span>
+                        <span className="ops-action-desc">Excel/CSV bulk transactions</span>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowBeneficiaryCreate(true);
+                        navigateToSection("beneficiaries");
+                      }}
+                      className="ops-quick-action-btn"
+                      type="button"
+                    >
+                      <span className="ops-action-icon">👤</span>
+                      <div className="ops-action-info">
+                        <span className="ops-action-label">Add Beneficiary</span>
+                        <span className="ops-action-desc">Register new payout receiver</span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Approvals Queue Card */}
+                <div className="ops-widget-card" style={{ marginTop: "20px" }}>
+                  <div className="ops-widget-header">
+                    <h3 className="ops-widget-title">Approvals Queue</h3>
+                    {approvalEntries.length > 0 ? (
+                      <span className="ops-badge-count">{approvalEntries.length} pending</span>
+                    ) : null}
+                  </div>
+                  <div className="ops-approvals-widget-list">
+                    {approvalEntries.slice(0, 4).map((entry) => (
+                      <div
+                        key={`${entry.entity}-${entry.id}`}
+                        className="ops-approval-widget-item"
+                        onClick={() => navigateToSection("approvals")}
+                      >
+                        <div className="ops-approval-item-main">
+                          <span className="ops-approval-item-title">{entry.title}</span>
+                          <span className="ops-approval-item-meta">{entry.meta}</span>
+                        </div>
+                        <span className="ops-approval-item-arrow">→</span>
+                      </div>
+                    ))}
+                    {approvalEntries.length === 0 ? (
+                      <div className="ops-empty-widget">
+                        <span className="ops-empty-icon">✓</span>
+                        <p style={{ margin: 0, fontSize: "12px" }}>All clear! No pending approvals.</p>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => navigateToSection("approvals")}
+                        className="ops-widget-link-btn"
+                        type="button"
+                      >
+                        Go to Checker Workbench →
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
         ) : null}
@@ -3190,6 +3486,128 @@ export function OperationsDashboard({
               ) : null}
 
               <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0 24px" }}>
+                <div style={{ position: "relative" }}>
+                  <label style={{ display: "block", marginBottom: "6px" }}>Date Range</label>
+                  <button
+                    type="button"
+                    className="ops-button secondary"
+                    onClick={() => setShowFileUploadDatePicker((current) => !current)}
+                    style={{ display: "inline-flex", alignItems: "center", gap: "8px", minWidth: "200px" }}
+                  >
+                    <span style={{ opacity: 0.7 }}>
+                      {fileUploadDatePreset === "all"
+                        ? "All time"
+                        : fileUploadDatePreset === "today"
+                          ? "Today"
+                          : fileUploadDatePreset === "yesterday"
+                            ? "Yesterday"
+                            : fileUploadDatePreset === "week"
+                              ? "This week"
+                              : fileUploadDatePreset === "month"
+                                ? "This month"
+                                : "Custom"}
+                    </span>
+                  </button>
+
+                  {showFileUploadDatePicker ? (
+                    <>
+                      <div
+                        onClick={() => setShowFileUploadDatePicker(false)}
+                        style={{
+                          position: "fixed",
+                          inset: 0,
+                          zIndex: 39,
+                          background: "transparent"
+                        }}
+                      />
+                      <div
+                        onClick={(event) => event.stopPropagation()}
+                        style={{
+                          position: "absolute",
+                          top: "calc(100% + 10px)",
+                          left: 0,
+                          width: "440px",
+                          background: "var(--surface)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "18px",
+                          boxShadow: "0 24px 56px rgba(15, 23, 42, 0.16)",
+                          padding: "16px",
+                          zIndex: 40
+                        }}
+                      >
+                        <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: "14px" }}>
+                          <div style={{ display: "grid", gap: "8px" }}>
+                            {[
+                              ["all", "All time"],
+                              ["today", "Today"],
+                              ["yesterday", "Yesterday"],
+                              ["week", "This week"],
+                              ["month", "This month"],
+                              ["custom", "Custom"]
+                            ].map(([value, label]) => (
+                              <button
+                                key={value}
+                                type="button"
+                                className="ops-button secondary"
+                                onClick={() => setFileUploadDatePreset(value)}
+                                style={{
+                                  justifyContent: "flex-start",
+                                  width: "100%",
+                                  background: fileUploadDatePreset === value ? "var(--accent-soft)" : "var(--surface)"
+                                }}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                          <div style={{ display: "grid", gap: "12px", alignContent: "start" }}>
+                            {fileUploadDatePreset === "custom" ? (
+                              <>
+                                <label>
+                                  Start date
+                                  <input
+                                    onChange={(event) => setFileUploadCustomStart(event.target.value)}
+                                    type="date"
+                                    value={fileUploadCustomStart}
+                                  />
+                                </label>
+                                <label>
+                                  End date
+                                  <input
+                                    onChange={(event) => setFileUploadCustomEnd(event.target.value)}
+                                    type="date"
+                                    value={fileUploadCustomEnd}
+                                  />
+                                </label>
+                                <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                                  <button
+                                    type="button"
+                                    className="ops-button secondary"
+                                    onClick={() => setShowFileUploadDatePicker(false)}
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="ops-button primary"
+                                    onClick={() => setShowFileUploadDatePicker(false)}
+                                  >
+                                    Set date
+                                  </button>
+                                </div>
+                              </>
+                            ) : (
+                              <p className="ops-meta" style={{ margin: 0 }}>
+                                Choose a quick range or switch to custom to set start and end dates.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+
                 <label style={{ minWidth: "160px", flex: 1 }}>
                   Status
                   <select value={fileUploadStatusFilter} onChange={(e) => setFileUploadStatusFilter(e.target.value)}>
@@ -3602,61 +4020,34 @@ export function OperationsDashboard({
               </div>
 
               <div className="ops-stack">
-                <div className="ops-approval-summary">
+                <div className="ops-filter-tabs-container">
                   {[
                     {
-                      filter: "transaction" as const,
-                      label: "Payments",
-                      count: paymentApprovalEntries.length
+                      filter: "all" as const,
+                      label: "All queues",
+                      count:
+                        paymentApprovalEntries.length +
+                        fileApprovalEntries.length +
+                        beneficiaryApprovalEntries.length +
+                        roleApprovalEntries.length +
+                        userApprovalEntries.length
                     },
-                    {
-                      filter: "beneficiary" as const,
-                      label: "Beneficiaries",
-                      count: beneficiaryApprovalEntries.length
-                    },
-                    {
-                      filter: "role" as const,
-                      label: "Roles",
-                      count: roleApprovalEntries.length
-                    },
-                    {
-                      filter: "user" as const,
-                      label: "Users",
-                      count: userApprovalEntries.length
-                    }
+                    { filter: "transaction" as const, label: "Payments", count: paymentApprovalEntries.length },
+                    { filter: "file" as const, label: "Files", count: fileApprovalEntries.length },
+                    { filter: "beneficiary" as const, label: "Beneficiaries", count: beneficiaryApprovalEntries.length },
+                    { filter: "role" as const, label: "Roles", count: roleApprovalEntries.length },
+                    { filter: "user" as const, label: "Users", count: userApprovalEntries.length }
                   ].map((item) => (
                     <button
                       key={item.filter}
-                      className={`ops-summary-tile ${
-                        approvalSectionFilter === item.filter ? "ops-summary-tile-active" : ""
+                      className={`ops-filter-tab ${
+                        approvalSectionFilter === item.filter ? "active" : ""
                       }`}
                       onClick={() => jumpToApprovalSection(item.filter)}
                       type="button"
                     >
-                      <span className="ops-kicker">{item.label}</span>
-                      <strong>{item.count}</strong>
-                      <span className="ops-meta">Pending approvals</span>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="ops-actions ops-filter-tabs">
-                  {[
-                    { filter: "all" as const, label: "All queues" },
-                    { filter: "transaction" as const, label: "Payments" },
-                    { filter: "beneficiary" as const, label: "Beneficiaries" },
-                    { filter: "role" as const, label: "Roles" },
-                    { filter: "user" as const, label: "Users" }
-                  ].map((item) => (
-                    <button
-                      key={item.filter}
-                      className={`ops-mini ${
-                        approvalSectionFilter === item.filter ? "ops-mini-active" : ""
-                      }`}
-                      onClick={() => jumpToApprovalSection(item.filter)}
-                      type="button"
-                    >
-                      {item.label}
+                      <span>{item.label}</span>
+                      <span className="ops-filter-tab-badge">{item.count}</span>
                     </button>
                   ))}
                 </div>
@@ -3944,6 +4335,60 @@ export function OperationsDashboard({
                           <tr>
                             <td className="ops-empty-row" colSpan={5}>
                               No payment approvals pending.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                ) : null}
+
+                {(approvalSectionFilter === "all" || approvalSectionFilter === "file") ? (
+                <div className="ops-approval-block" ref={fileApprovalsRef}>
+                  <div className="ops-approval-head">
+                    <div>
+                      <h4>File approvals</h4>
+                    </div>
+                    <span className="ops-status pending_approval">
+                      {fileApprovalEntries.length} pending
+                    </span>
+                  </div>
+                  <div className="ops-table-shell">
+                    <table className="ops-table">
+                      <thead>
+                        <tr>
+                          <th>File Name</th>
+                          <th>Uploaded At</th>
+                          <th>Uploaded By</th>
+                          <th>Payments (Pending/Total)</th>
+                          <th>Total Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fileApprovalEntries.length > 0 ? (
+                          fileApprovalEntries.map((file) => (
+                            <tr
+                              className="ops-clickable-row"
+                              key={file.uploadId}
+                              onClick={() => void loadFileBatches(file.uploadId)}
+                            >
+                              <td><strong>{file.fileName}</strong></td>
+                              <td>{file.uploadedAt ? new Date(file.uploadedAt).toLocaleString("en-IN") : "Unknown"}</td>
+                              <td>{file.uploadedByName}</td>
+                              <td>
+                                <span style={{ fontWeight: 600, color: "var(--accent)" }}>
+                                  {file.pendingCount}
+                                </span>
+                                <span style={{ opacity: 0.6 }}> / {file.createdCount}</span>
+                              </td>
+                              <td>INR {formatAmount(file.totalAmount)}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td className="ops-empty-row" colSpan={5}>
+                              No file approvals pending.
                             </td>
                           </tr>
                         )}
@@ -4667,38 +5112,7 @@ export function OperationsDashboard({
         ) : null}
 
         {activeSection === "devportal" && canViewDevPortal ? (
-          <section className="ops-page active">
-            <section className="ops-panel">
-              <div className="ops-panel-head">
-                <div>
-                  <h3>Developer portal</h3>
-
-                </div>
-                <div className="ops-actions">
-                  <a
-                    className="ops-button secondary ops-link-button"
-                    href="/bank/dev-portal"
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    Open full portal
-                  </a>
-                  <a
-                    className="ops-button primary ops-link-button"
-                    href="/bank/dev-portal/openapi/swagger-download"
-                  >
-                    Download Swagger
-                  </a>
-                </div>
-              </div>
-
-              <iframe
-                className="ops-devportal-frame"
-                src="/bank/dev-portal"
-                title="Future Pay Developer Portal"
-              />
-            </section>
-          </section>
+          <DevPortalSection bankOpsPortalBase={process.env.NEXT_PUBLIC_BANK_OPS_WEB_URL || "http://127.0.0.1:3002"} />
         ) : null}
 
         {activeSection === "reports" ? (
@@ -5457,6 +5871,258 @@ export function OperationsDashboard({
             </aside>
           </div>
         ) : null}
+
+        {selectedFileApprovalId ? (
+          (() => {
+            const currentFile = fileUploads.find(f => f.uploadId === selectedFileApprovalId);
+            const filteredBatches = fileBatches.filter(b => {
+              const query = fileBatchesSearchQuery.trim().toLowerCase();
+              return !query ||
+                b.batchId.toLowerCase().includes(query) ||
+                b.title.toLowerCase().includes(query) ||
+                (b.primaryBeneficiaryName && b.primaryBeneficiaryName.toLowerCase().includes(query));
+            });
+            const pendingFileBatches = fileBatches.filter(
+              (b) => b.state === "pending_approval" || b.state === "partially_approved"
+            );
+            const pendingFilteredBatches = filteredBatches.filter(
+              (b) => b.state === "pending_approval" || b.state === "partially_approved"
+            );
+
+            const isBatchBulkEligible = (b: PayoutBatch) => {
+              if (!b.packageCode) return false;
+              const pkg = packages.find(p => p.packageCode === b.packageCode);
+              return pkg?.bulkApproveEnabled === true;
+            };
+
+            const eligiblePendingFileBatches = pendingFileBatches.filter(isBatchBulkEligible);
+            const eligiblePendingFilteredBatches = pendingFilteredBatches.filter(isBatchBulkEligible);
+
+            return (
+              <div
+                className="ops-sidesheet-backdrop"
+                onClick={() => {
+                  setSelectedFileApprovalId(null);
+                  setFileBatches([]);
+                  setCheckedFileBatchIds([]);
+                  setFileBulkComment("");
+                }}
+                role="presentation"
+              >
+                <aside
+                  aria-labelledby="file-approval-sidesheet-title"
+                  aria-modal="true"
+                  className="ops-sidesheet"
+                  onClick={(event) => event.stopPropagation()}
+                  role="dialog"
+                  style={{ width: "min(680px, calc(100vw - 40px))" }}
+                >
+                  <div className="ops-sidesheet-head">
+                    <div>
+                      <p className="ops-kicker">File approval details</p>
+                      <h3 id="file-approval-sidesheet-title">{currentFile?.fileName ?? "File upload details"}</h3>
+                      <p className="ops-meta" style={{ marginTop: "4px" }}>
+                        ID: {selectedFileApprovalId} · Pending: {pendingFileBatches.length} / {fileBatches.length}
+                      </p>
+                    </div>
+                    <button
+                      className="ops-kebab"
+                      onClick={() => {
+                        setSelectedFileApprovalId(null);
+                        setFileBatches([]);
+                        setCheckedFileBatchIds([]);
+                        setFileBulkComment("");
+                      }}
+                      type="button"
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  <div className="ops-stack" style={{ gap: "16px", flex: 1, overflow: "auto" }}>
+                    <div style={{ display: "flex", gap: "12px", background: "var(--surface-subtle)", padding: "12px 16px", borderRadius: "12px", border: "1px solid var(--border)" }}>
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontSize: "11px", textTransform: "uppercase", fontWeight: 600, color: "var(--text-secondary)" }}>Total Amount</span>
+                        <div style={{ fontSize: "16px", fontWeight: 700, marginTop: "2px" }}>
+                          INR {formatAmount(fileBatches.reduce((sum, b) => sum + (b.totalAmount?.value ?? 0), 0))}
+                        </div>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontSize: "11px", textTransform: "uppercase", fontWeight: 600, color: "var(--text-secondary)" }}>Validation</span>
+                        <div style={{ fontSize: "13px", fontWeight: 600, marginTop: "4px", display: "flex", gap: "10px" }}>
+                          <span style={{ color: "var(--success)" }}>✓ {currentFile?.createdCount ?? 0} created</span>
+                          {currentFile?.rejectedCount ? (
+                            <span style={{ color: "#DC2626" }}>✗ {currentFile.rejectedCount} rejected</span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="ops-toolbar" style={{ margin: 0 }}>
+                      <label style={{ width: "100%" }}>
+                        Search payments inside file
+                        <input
+                          value={fileBatchesSearchQuery}
+                          onChange={(e) => setFileBatchesSearchQuery(e.target.value)}
+                          placeholder="Search batch UUID, reference, beneficiary name..."
+                          style={{ background: "var(--surface)" }}
+                        />
+                      </label>
+                    </div>
+
+                    {eligiblePendingFileBatches.length > 0 && hasPermission(session, "transaction.checker") && (
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "10px",
+                          padding: "12px",
+                          background: "var(--accent-soft)",
+                          border: "1px solid var(--accent-border)",
+                          borderRadius: "10px"
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--accent)" }}>
+                            {checkedFileBatchIds.length} of {eligiblePendingFileBatches.length} payments selected
+                          </span>
+                          <button
+                            type="button"
+                            className="ops-mini"
+                            style={{ padding: "0 8px", height: "24px" }}
+                            onClick={() => setCheckedFileBatchIds(checkedFileBatchIds.length === eligiblePendingFileBatches.length ? [] : eligiblePendingFileBatches.map(b => b.batchId))}
+                          >
+                            {checkedFileBatchIds.length === eligiblePendingFileBatches.length ? "Deselect All" : "Select All Eligible"}
+                          </button>
+                        </div>
+                        {checkedFileBatchIds.length > 0 && (
+                          <div style={{ display: "flex", gap: "8px", alignItems: "center", marginTop: "4px" }}>
+                            <input
+                              type="text"
+                              placeholder="Comment for selection..."
+                              value={fileBulkComment}
+                              onChange={(e) => setFileBulkComment(e.target.value)}
+                              className="ops-input"
+                              style={{ flex: 1, minHeight: "32px", padding: "4px 8px", fontSize: "12px", background: "var(--surface)" }}
+                            />
+                            <button
+                              type="button"
+                              className="ops-button primary"
+                              disabled={busy}
+                              style={{ minHeight: "32px", padding: "0 12px", fontSize: "12px" }}
+                              onClick={() => executeFileBulkAction("approve")}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              className="ops-button secondary"
+                              disabled={busy}
+                              style={{ minHeight: "32px", padding: "0 12px", fontSize: "12px", color: "#DC2626", borderColor: "#FEE2E2" }}
+                              onClick={() => executeFileBulkAction("reject")}
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="ops-table-shell" style={{ border: "1px solid var(--border)", borderRadius: "10px" }}>
+                      <table className="ops-table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: "36px", textAlign: "center" }}>
+                              {eligiblePendingFilteredBatches.length > 0 && (
+                                <input
+                                  type="checkbox"
+                                  checked={
+                                    eligiblePendingFilteredBatches.length > 0 &&
+                                    eligiblePendingFilteredBatches.every(b => checkedFileBatchIds.includes(b.batchId))
+                                  }
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setCheckedFileBatchIds(prev => {
+                                        const newlyAdded = eligiblePendingFilteredBatches.map(b => b.batchId).filter(id => !prev.includes(id));
+                                        return [...prev, ...newlyAdded];
+                                      });
+                                    } else {
+                                      const eligiblePendingIds = eligiblePendingFilteredBatches.map(b => b.batchId);
+                                      setCheckedFileBatchIds(prev => prev.filter(id => !eligiblePendingIds.includes(id)));
+                                    }
+                                  }}
+                                />
+                              )}
+                            </th>
+                            <th>Reference</th>
+                            <th>Beneficiary</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredBatches.length > 0 ? (
+                            filteredBatches.map((batch) => {
+                              const isPending = batch.state === "pending_approval" || batch.state === "partially_approved";
+                              const bulkEnabled = isBatchBulkEligible(batch);
+                              return (
+                                <tr key={batch.batchId}>
+                                  <td style={{ textAlign: "center" }}>
+                                    {isPending ? (
+                                      bulkEnabled ? (
+                                        <input
+                                          type="checkbox"
+                                          checked={checkedFileBatchIds.includes(batch.batchId)}
+                                          onChange={(e) => {
+                                            if (e.target.checked) {
+                                              setCheckedFileBatchIds(prev => [...prev, batch.batchId]);
+                                            } else {
+                                              setCheckedFileBatchIds(prev => prev.filter(id => id !== batch.batchId));
+                                            }
+                                          }}
+                                        />
+                                      ) : (
+                                        <span
+                                          title="Bulk approval not enabled in package settings"
+                                          style={{ cursor: "not-allowed", opacity: 0.35, fontSize: "12px" }}
+                                        >
+                                          🚫
+                                        </span>
+                                      )
+                                    ) : (
+                                      <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>✓</span>
+                                    )}
+                                  </td>
+                                  <td>
+                                    <div>{batch.title}</div>
+                                    <span style={{ fontSize: "10px", opacity: 0.6 }}>{batch.batchId}</span>
+                                  </td>
+                                  <td>{batch.primaryBeneficiaryName ?? "Unknown"}</td>
+                                  <td>INR {formatAmount(batch.totalAmount?.value ?? 0)}</td>
+                                  <td>
+                                    <span className={`ops-status ${batch.state}`}>
+                                      {humanize(batch.state)}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          ) : (
+                            <tr>
+                              <td className="ops-empty-row" colSpan={5}>
+                                No payments found in this file.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </aside>
+              </div>
+            );
+          })()
+        ) : null}
       </main>
     </div>
   );
@@ -5599,6 +6265,18 @@ function formatDateTime(value: string | null) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit"
+  });
+}
+
+function formatDateOnly(value: string | null) {
+  if (!value) {
+    return "Not available";
+  }
+
+  return new Date(value).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric"
   });
 }
 

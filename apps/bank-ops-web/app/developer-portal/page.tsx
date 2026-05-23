@@ -1,11 +1,18 @@
 import { ConsoleNav } from "../ui/console-nav";
 import { DeveloperPortalPageClient } from "./page-client";
 
-export default function DeveloperPortalPage() {
+type PageProps = {
+  searchParams: Promise<{ embed?: string }> | { embed?: string };
+};
+
+export default async function DeveloperPortalPage({ searchParams }: PageProps) {
+  const resolvedParams = await searchParams;
+  const isEmbedded = resolvedParams?.embed === "true";
+
   return (
-    <main className="dashboard-shell">
-      <ConsoleNav current="developer-portal" />
-      <DeveloperPortalPageClient />
+    <main className="dashboard-shell" style={isEmbedded ? { width: "100%", maxWidth: "none", padding: 0, margin: 0 } : undefined}>
+      {!isEmbedded && <ConsoleNav current="developer-portal" />}
+      <DeveloperPortalPageClient isEmbedded={isEmbedded} />
     </main>
   );
 }

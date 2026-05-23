@@ -236,8 +236,15 @@ x-api-key: bank-alpha-dev-key`,
   }
 };
 
-export function DeveloperPortalPageClient() {
+export function DeveloperPortalPageClient({ isEmbedded = false }: { isEmbedded?: boolean }) {
   const [selectedSection, setSelectedSection] = useState("create-beneficiary");
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  function handleCopy(text: string, key: string) {
+    void navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  }
   const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([]);
   const [apiKeyForm, setApiKeyForm] = useState({
     label: "",
@@ -377,30 +384,6 @@ export function DeveloperPortalPageClient() {
 
   return (
     <>
-      <section className="hero">
-        <div>
-          <p className="eyebrow">Bank Ops Web</p>
-          <h1>Developer Portal</h1>
-          <p className="lead">
-            Publish partner-facing beneficiary and payment APIs, issue API keys, and manage
-            webhook subscriptions from a first-class bank operations surface.
-          </p>
-          <div className="hero-tags">
-            <span>Partner APIs</span>
-            <span>API key protected</span>
-            <span>Webhook management</span>
-          </div>
-        </div>
-
-        <aside className="hero-side">
-          <div className="hero-card">
-            <span className="hero-card-label">Published products</span>
-            <strong>Beneficiary + Payments</strong>
-            <p>Document the maker-checker lifecycle and manage partner access from one place.</p>
-          </div>
-        </aside>
-      </section>
-
       <section className="docs-layout">
         <aside className="api-nav-panel">
           <div className="panel-head">
@@ -434,138 +417,203 @@ export function DeveloperPortalPageClient() {
 
         {definition ? (
           <article className="docs-panel">
-            <div className="panel-head">
-              <div>
-                <p className="section-kicker">Partner API</p>
-                <h2>{definition.title}</h2>
-                <p className="api-meta">
-                  {definition.method} {definition.path}
-                </p>
+            {/* Left Column: API Documentation details */}
+            <div className="docs-panel-left" style={{ width: "100%", maxWidth: "none" }}>
+              <div className="panel-head" style={{ marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "16px", flexWrap: "wrap" }}>
+                <div>
+                  <p className="section-kicker">Partner API</p>
+                  <h2>{definition.title}</h2>
+                  <div className="api-path-badge-container">
+                    <span className={`method-badge ${definition.method.toLowerCase()}`}>{definition.method}</span>
+                    <code className="path-text">{definition.path}</code>
+                  </div>
+                </div>
+                <div className="docs-actions" style={{ display: "flex", gap: "16px", alignItems: "center", marginTop: "8px" }}>
+                  <a className="cta-text-link" href="/bank/dev-portal/openapi/swagger-download">
+                    <span className="cta-icon">↓</span>
+                    <span>Download Swagger</span>
+                  </a>
+                </div>
               </div>
-              <div className="docs-actions">
-                <a className="mini-button docs-link" href="/bank/dev-portal/openapi/catalog" target="_blank" rel="noreferrer">
-                  Open API catalog
-                </a>
-                <a className="mini-button docs-link" href="/bank/dev-portal/openapi/swagger-download">
-                  Download Swagger
-                </a>
-              </div>
-            </div>
 
-            <p className="lead compact-lead">{definition.summary}</p>
+              <p className="lead compact-lead" style={{ marginTop: "14px", marginBottom: "20px" }}>{definition.summary}</p>
 
-            <div className="detail-grid">
-              <div className="detail-card">
-                <strong>Auth</strong>
-                <p>Header: <code>x-api-key</code></p>
-                <p>Use the bank-provisioned partner API key for authentication.</p>
+              <div className="detail-grid">
+                <div className="detail-card">
+                  <strong>Auth</strong>
+                  <p>Header: <code>x-api-key</code></p>
+                  <p>Use the bank-provisioned partner API key for authentication.</p>
+                </div>
+                <div className="detail-card">
+                  <strong>Usage Notes</strong>
+                  <ul className="docs-list">
+                    {definition.notes.map((note) => (
+                      <li key={note}>{note}</li>
+                    ))}
+                  </ul>
+                </div>
               </div>
-              <div className="detail-card">
-                <strong>Usage Notes</strong>
-                <ul className="docs-list">
-                  {definition.notes.map((note) => (
-                    <li key={note}>{note}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
 
-            <div className="docs-block">
-              <h3>Request Fields</h3>
-              <table className="docs-table">
-                <thead>
-                  <tr>
-                    <th>Field</th>
-                    <th>Required</th>
-                    <th>Description</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <div className="docs-block">
+                <h3>Request Fields</h3>
+                <div className="property-list">
                   {definition.fields.map(([field, required, description]) => (
-                    <tr key={field}>
-                      <td><code>{field}</code></td>
-                      <td>{required}</td>
-                      <td>{description}</td>
-                    </tr>
+                    <div key={field} className="property-item">
+                      <div className="property-header">
+                        <code className="property-name">{field}</code>
+                        <span className="property-type">string</span>
+                        <span className={`property-req ${required.toLowerCase() === 'yes' ? 'required' : 'optional'}`}>
+                          {required.toLowerCase() === 'yes' ? 'required' : 'optional'}
+                        </span>
+                      </div>
+                      <p className="property-desc">{description}</p>
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              </div>
             </div>
 
-            <section className="detail-card">
-              <strong>Request Example</strong>
-              <pre className="response-box">{definition.example}</pre>
-            </section>
+            {/* Bottom Section: API Playground (Full Width, split into two halves) */}
+            <div className="playground-bottom-grid">
+              {/* Left Column: Request Example */}
+              <div className="playground-column-left">
+                <div className="code-container" style={{ height: "100%" }}>
+                  <div className="code-header">
+                    <span>Request Example</span>
+                    <button
+                      type="button"
+                      className="copy-btn"
+                      onClick={() => handleCopy(definition.example, 'req')}
+                    >
+                      {copiedKey === 'req' ? "✓ Copied" : "Copy"}
+                    </button>
+                  </div>
+                  <pre style={{ height: "calc(100% - 32px)", maxHeight: "none" }}>{definition.example}</pre>
+                </div>
+              </div>
 
-            <div className="detail-grid response-grid">
-              <section className="detail-card">
-                <strong>Sample Success Response</strong>
-                <pre className="response-box response-box-compact">{definition.successResponse}</pre>
-              </section>
-              <section className="detail-card">
-                <strong>Sample Error Response</strong>
-                <pre className="response-box response-box-compact">{definition.errorResponse}</pre>
-              </section>
+              {/* Right Column: Success & Error Responses */}
+              <div className="playground-column-right">
+                <div className="code-container">
+                  <div className="code-header">
+                    <span>Sample Success Response</span>
+                    <button
+                      type="button"
+                      className="copy-btn"
+                      onClick={() => handleCopy(definition.successResponse, 'success')}
+                    >
+                      {copiedKey === 'success' ? "✓ Copied" : "Copy"}
+                    </button>
+                  </div>
+                  <pre>{definition.successResponse}</pre>
+                </div>
+
+                <div className="code-container">
+                  <div className="code-header">
+                    <span>Sample Error Response</span>
+                    <button
+                      type="button"
+                      className="copy-btn"
+                      onClick={() => handleCopy(definition.errorResponse, 'error')}
+                    >
+                      {copiedKey === 'error' ? "✓ Copied" : "Copy"}
+                    </button>
+                  </div>
+                  <pre>{definition.errorResponse}</pre>
+                </div>
+              </div>
             </div>
           </article>
         ) : null}
 
         {selectedSection === "api-keys" ? (
           <article className="docs-panel">
-            <div className="panel-head">
-              <div>
-                <p className="section-kicker">API Keys</p>
-                <h2>Generate and manage keys</h2>
-              </div>
-            </div>
+            <div className="docs-panel-grid">
+              {/* Left Column: Form Controls */}
+              <div className="docs-panel-left">
+                <div className="panel-head" style={{ marginBottom: "20px" }}>
+                  <div>
+                    <p className="section-kicker">API Keys</p>
+                    <h2>Generate and manage keys</h2>
+                  </div>
+                </div>
 
-            <form className="action-form" onSubmit={onGenerateApiKey}>
-              <div className="action-grid">
-                <label>
-                  <span>Label</span>
-                  <input value={apiKeyForm.label} onChange={(event) => setApiKeyForm((current) => ({ ...current, label: event.target.value }))} placeholder="Maya Pharma production key" />
-                </label>
-                <label>
-                  <span>Scope</span>
-                  <select value={apiKeyForm.productScope} onChange={(event) => setApiKeyForm((current) => ({ ...current, productScope: event.target.value }))}>
-                    <option value="all">All products</option>
-                    <option value="beneficiary">Beneficiary</option>
-                    <option value="payments">Payments</option>
-                  </select>
-                </label>
-              </div>
+                <form className="action-form" onSubmit={onGenerateApiKey}>
+                  <div className="action-grid">
+                    <label>
+                      <span>Label</span>
+                      <input value={apiKeyForm.label} onChange={(event) => setApiKeyForm((current) => ({ ...current, label: event.target.value }))} placeholder="Maya Pharma production key" />
+                    </label>
+                    <label>
+                      <span>Scope</span>
+                      <select value={apiKeyForm.productScope} onChange={(event) => setApiKeyForm((current) => ({ ...current, productScope: event.target.value }))}>
+                        <option value="all">All products</option>
+                        <option value="beneficiary">Beneficiary</option>
+                        <option value="payments">Payments</option>
+                      </select>
+                    </label>
+                  </div>
 
-              <label>
-                <span>Generated by</span>
-                <input value={apiKeyForm.createdBy} onChange={(event) => setApiKeyForm((current) => ({ ...current, createdBy: event.target.value }))} />
-              </label>
+                  <label>
+                    <span>Generated by</span>
+                    <input value={apiKeyForm.createdBy} onChange={(event) => setApiKeyForm((current) => ({ ...current, createdBy: event.target.value }))} />
+                  </label>
 
-              <div className="action-buttons">
-                <button className="button button-primary">Generate API Key</button>
-              </div>
-            </form>
+                  <div className="action-buttons">
+                    <button className="button button-primary">Generate API Key</button>
+                  </div>
+                </form>
 
-            <pre className="response-box">{apiKeyOutput}</pre>
-
-            <div className="docs-block">
-              <h3>Active keys</h3>
-              <div className="queue-list">
-                {apiKeys.length === 0 ? (
-                  <div className="empty-state">No active keys yet.</div>
-                ) : (
-                  apiKeys.map((item) => (
-                    <article key={item.keyId} className="key-card">
-                      <div className="key-card-row">
-                        <strong>{item.label}</strong>
-                        <span className="state-pill">{item.status}</span>
-                      </div>
-                      <p className="queue-meta">{item.maskedKey}</p>
-                      <p className="queue-meta">
-                        Scope: {item.productScope} | Created by: {item.createdBy ?? "system"}
-                      </p>
-                    </article>
-                  ))
+                {apiKeyOutput !== "Ready." && (
+                  <div className="code-container" style={{ marginTop: "24px" }}>
+                    <div className="code-header">
+                      <span>Result Console</span>
+                      <button
+                        type="button"
+                        className="copy-btn"
+                        onClick={() => handleCopy(apiKeyOutput, 'apiKeyResult')}
+                      >
+                        {copiedKey === 'apiKeyResult' ? "✓ Copied" : "Copy"}
+                      </button>
+                    </div>
+                    <pre style={{ maxHeight: "200px" }}>{apiKeyOutput}</pre>
+                  </div>
                 )}
+              </div>
+
+              {/* Right Column: Active Keys */}
+              <div className="key-management-list">
+                <h3 className="ops-widget-title" style={{ margin: 0, fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted)", fontWeight: 600 }}>
+                  Active keys
+                </h3>
+                <div className="queue-list" style={{ marginTop: 0 }}>
+                  {apiKeys.length === 0 ? (
+                    <div className="empty-state">No active keys yet.</div>
+                  ) : (
+                    apiKeys.map((item) => (
+                      <article key={item.keyId} className="key-card">
+                        <div className="key-card-row">
+                          <strong>{item.label}</strong>
+                          <span className="state-pill">{item.status}</span>
+                        </div>
+                        <div className="key-copy-row">
+                          <span className="key-copy-text">{item.maskedKey}</span>
+                          <button
+                            type="button"
+                            className="copy-btn"
+                            style={{ padding: "2px 6px", background: "var(--surface)", border: "1px solid var(--border)" }}
+                            onClick={() => handleCopy(item.maskedKey, item.keyId)}
+                          >
+                            {copiedKey === item.keyId ? "✓" : "Copy"}
+                          </button>
+                        </div>
+                        <p className="queue-meta" style={{ marginTop: "8px" }}>
+                          Scope: {item.productScope} | Created by: {item.createdBy ?? "system"}
+                        </p>
+                      </article>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           </article>
@@ -573,69 +621,89 @@ export function DeveloperPortalPageClient() {
 
         {selectedSection === "webhooks" ? (
           <article className="docs-panel">
-            <div className="panel-head">
-              <div>
-                <p className="section-kicker">Webhooks</p>
-                <h2>Register and manage webhooks</h2>
-                <p className="api-meta">
-                  Create callback endpoints for partner events and monitor recent deliveries.
-                </p>
-              </div>
-            </div>
-
-            <form className="action-form" onSubmit={onRegisterWebhook}>
-              <label>
-                <span>Label</span>
-                <input value={webhookForm.label} onChange={(event) => setWebhookForm((current) => ({ ...current, label: event.target.value }))} placeholder="Maya Pharma production webhook" />
-              </label>
-
-              <label>
-                <span>Webhook URL</span>
-                <input required value={webhookForm.webhookUrl} onChange={(event) => setWebhookForm((current) => ({ ...current, webhookUrl: event.target.value }))} placeholder="https://partner.example.com/future-pay/webhooks" />
-              </label>
-
-              <label>
-                <span>Description</span>
-                <textarea value={webhookForm.description} onChange={(event) => setWebhookForm((current) => ({ ...current, description: event.target.value }))} />
-              </label>
-
-              <fieldset className="action-fieldset">
-                <legend>Subscriptions</legend>
-                <div className="selected-chip-list">
-                  {visiblePresets.map((preset) => {
-                    const selected = selectedWebhookPresets.includes(preset.key);
-                    return (
-                      <button
-                        key={preset.key}
-                        className="selected-chip"
-                        onClick={() =>
-                          setSelectedWebhookPresets((current) =>
-                            selected
-                              ? current.filter((item) => item !== preset.key)
-                              : [...current, preset.key]
-                          )
-                        }
-                        type="button"
-                      >
-                        <span>{preset.label}</span>
-                        <strong>{selected ? "Selected" : "Add"}</strong>
-                      </button>
-                    );
-                  })}
+            <div className="docs-panel-grid">
+              {/* Left Column: Register webhook form */}
+              <div className="docs-panel-left">
+                <div className="panel-head" style={{ marginBottom: "20px" }}>
+                  <div>
+                    <p className="section-kicker">Webhooks</p>
+                    <h2>Register webhooks</h2>
+                    <p className="api-meta" style={{ marginTop: "4px" }}>
+                      Create callback endpoints for partner events and monitor recent deliveries.
+                    </p>
+                  </div>
                 </div>
-              </fieldset>
 
-              <div className="action-buttons">
-                <button className="button button-primary">Register webhook</button>
+                <form className="action-form" onSubmit={onRegisterWebhook}>
+                  <label>
+                    <span>Label</span>
+                    <input value={webhookForm.label} onChange={(event) => setWebhookForm((current) => ({ ...current, label: event.target.value }))} placeholder="Maya Pharma production webhook" />
+                  </label>
+
+                  <label>
+                    <span>Webhook URL</span>
+                    <input required value={webhookForm.webhookUrl} onChange={(event) => setWebhookForm((current) => ({ ...current, webhookUrl: event.target.value }))} placeholder="https://partner.example.com/future-pay/webhooks" />
+                  </label>
+
+                  <label>
+                    <span>Description</span>
+                    <textarea value={webhookForm.description} onChange={(event) => setWebhookForm((current) => ({ ...current, description: event.target.value }))} />
+                  </label>
+
+                  <fieldset className="action-fieldset">
+                    <legend>Subscriptions</legend>
+                    <div className="selected-chip-list">
+                      {visiblePresets.map((preset) => {
+                        const selected = selectedWebhookPresets.includes(preset.key);
+                        return (
+                          <button
+                            key={preset.key}
+                            className="selected-chip"
+                            onClick={() =>
+                              setSelectedWebhookPresets((current) =>
+                                selected
+                                  ? current.filter((item) => item !== preset.key)
+                                  : [...current, preset.key]
+                              )
+                            }
+                            type="button"
+                          >
+                            <span>{preset.label}</span>
+                            <strong>{selected ? "Selected" : "Add"}</strong>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+
+                  <div className="action-buttons">
+                    <button className="button button-primary">Register webhook</button>
+                  </div>
+                </form>
+
+                {webhookOutput !== "Ready." && (
+                  <div className="code-container" style={{ marginTop: "24px" }}>
+                    <div className="code-header">
+                      <span>Result Console</span>
+                      <button
+                        type="button"
+                        className="copy-btn"
+                        onClick={() => handleCopy(webhookOutput, 'webhookResult')}
+                      >
+                        {copiedKey === 'webhookResult' ? "✓ Copied" : "Copy"}
+                      </button>
+                    </div>
+                    <pre style={{ maxHeight: "200px" }}>{webhookOutput}</pre>
+                  </div>
+                )}
               </div>
-            </form>
 
-            <pre className="response-box">{webhookOutput}</pre>
-
-            <div className="detail-grid">
-              <section className="detail-card">
-                <strong>Registered webhooks</strong>
-                <div className="queue-list">
+              {/* Right Column: Webhooks and delivery logs */}
+              <div className="key-management-list">
+                <h3 className="ops-widget-title" style={{ margin: 0, fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted)", fontWeight: 600 }}>
+                  Registered webhooks
+                </h3>
+                <div className="queue-list" style={{ marginTop: 0 }}>
                   {webhooks.length === 0 ? (
                     <div className="empty-state">No webhooks registered yet.</div>
                   ) : (
@@ -645,12 +713,22 @@ export function DeveloperPortalPageClient() {
                           <strong>{item.label}</strong>
                           <span className="state-pill">{item.status}</span>
                         </div>
-                        <p className="queue-meta">{item.webhookUrl}</p>
-                        <p className="queue-meta">
+                        <p className="queue-meta" style={{ fontWeight: 500, color: "var(--ink)", wordBreak: "break-all", marginTop: "4px" }}>{item.webhookUrl}</p>
+                        <p className="queue-meta" style={{ marginTop: "4px" }}>
                           Subscriptions: {summarizeWebhookSubscriptions(item.eventTypes)}
                         </p>
-                        <p className="queue-meta">Secret: {item.maskedSigningSecret}</p>
-                        <p className="queue-meta">
+                        <div className="key-copy-row" style={{ marginTop: "6px" }}>
+                          <span className="key-copy-text" style={{ fontSize: "11px" }}>Secret: {item.maskedSigningSecret}</span>
+                          <button
+                            type="button"
+                            className="copy-btn"
+                            style={{ padding: "2px 6px", background: "var(--surface)", border: "1px solid var(--border)" }}
+                            onClick={() => handleCopy(item.maskedSigningSecret, item.webhookId)}
+                          >
+                            {copiedKey === item.webhookId ? "✓" : "Copy"}
+                          </button>
+                        </div>
+                        <p className="queue-meta" style={{ marginTop: "6px" }}>
                           Last delivery:{" "}
                           {item.lastDeliveryStatus
                             ? `${item.lastDeliveryStatus}${
@@ -660,7 +738,7 @@ export function DeveloperPortalPageClient() {
                               }`
                             : "No delivery yet"}
                         </p>
-                        <div className="action-buttons compact-actions">
+                        <div className="action-buttons compact-actions" style={{ marginTop: "8px" }}>
                           <button
                             className="mini-button"
                             onClick={() =>
@@ -670,6 +748,7 @@ export function DeveloperPortalPageClient() {
                               )
                             }
                             type="button"
+                            style={{ width: "100%", height: "30px", fontSize: "12px" }}
                           >
                             {item.status === "active" ? "Deactivate" : "Activate"}
                           </button>
@@ -678,33 +757,33 @@ export function DeveloperPortalPageClient() {
                     ))
                   )}
                 </div>
-              </section>
-              <section className="detail-card">
-                <strong>Recent delivery logs</strong>
-                <div className="queue-list">
+
+                <h3 className="ops-widget-title" style={{ margin: "16px 0 0 0", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted)", fontWeight: 600 }}>
+                  Recent delivery logs
+                </h3>
+                <div className="queue-list" style={{ marginTop: 0 }}>
                   {deliveries.length === 0 ? (
                     <div className="empty-state">No delivery attempts yet.</div>
                   ) : (
-                    deliveries.map((item) => (
+                    deliveries.slice(0, 5).map((item) => (
                       <article key={item.deliveryId} className="key-card">
                         <div className="key-card-row">
                           <strong>{item.eventType}</strong>
                           <span className="state-pill">{item.status}</span>
                         </div>
-                        <p className="queue-meta">{item.targetUrl}</p>
-                        <p className="queue-meta">Webhook: {item.webhookId}</p>
-                        <p className="queue-meta">
+                        <p className="queue-meta" style={{ wordBreak: "break-all", marginTop: "4px" }}>{item.targetUrl}</p>
+                        <p className="queue-meta" style={{ marginTop: "4px" }}>
                           Response: {item.responseStatus ?? "N/A"}
                           {item.responseBody ? ` | ${item.responseBody}` : ""}
                         </p>
-                        <p className="queue-meta">
-                          Attempted: {item.attemptedAt ? new Date(item.attemptedAt).toLocaleString() : "Unknown"}
+                        <p className="queue-meta" style={{ fontSize: "11px", marginTop: "4px" }}>
+                          {item.attemptedAt ? new Date(item.attemptedAt).toLocaleString() : "Unknown"}
                         </p>
                       </article>
                     ))
                   )}
                 </div>
-              </section>
+              </div>
             </div>
           </article>
         ) : null}
