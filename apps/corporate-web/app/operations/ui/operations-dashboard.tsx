@@ -631,6 +631,10 @@ export function OperationsDashboard({
   );
 
   const [editingApprovalMatrixId, setEditingApprovalMatrixId] = useState<string | null>(null);
+  const [approvalMatrixRoleNamesL1, setApprovalMatrixRoleNamesL1] = useState<string[]>([]);
+  const [approvalMatrixRoleNamesL2, setApprovalMatrixRoleNamesL2] = useState<string[]>([]);
+  const [approvalMatrixRoleNamesL3, setApprovalMatrixRoleNamesL3] = useState<string[]>([]);
+  const [approvalMatrixLevels, setApprovalMatrixLevels] = useState<number>(1);
   const editingApprovalMatrix = useMemo(
     () => (editingApprovalMatrixId ? approvalMatrices.find((item) => item.matrixId === editingApprovalMatrixId) ?? null : null),
     [editingApprovalMatrixId, approvalMatrices]
@@ -640,11 +644,36 @@ export function OperationsDashboard({
     if (editingApprovalMatrix) {
       setApprovalMatrixSubscriptionId(editingApprovalMatrix.subscriptionId ?? "");
       setApprovalMatrixDebitAccountIds(editingApprovalMatrix.debitAccountIds ?? []);
-      setApprovalMatrixRoleNames(editingApprovalMatrix.roles ?? []);
+      setApprovalMatrixLevels(editingApprovalMatrix.approvalLevels || 1);
+
+      const l1: string[] = [];
+      const l2: string[] = [];
+      const l3: string[] = [];
+      if (editingApprovalMatrix.roles) {
+        for (const roleStr of editingApprovalMatrix.roles) {
+          if (roleStr.startsWith("1:")) {
+            l1.push(roleStr.substring(2));
+          } else if (roleStr.startsWith("2:")) {
+            l2.push(roleStr.substring(2));
+          } else if (roleStr.startsWith("3:")) {
+            l3.push(roleStr.substring(2));
+          } else {
+            l1.push(roleStr);
+            l2.push(roleStr);
+            l3.push(roleStr);
+          }
+        }
+      }
+      setApprovalMatrixRoleNamesL1([...new Set(l1)]);
+      setApprovalMatrixRoleNamesL2([...new Set(l2)]);
+      setApprovalMatrixRoleNamesL3([...new Set(l3)]);
     } else {
       setApprovalMatrixSubscriptionId("");
       setApprovalMatrixDebitAccountIds([]);
-      setApprovalMatrixRoleNames([]);
+      setApprovalMatrixLevels(1);
+      setApprovalMatrixRoleNamesL1([]);
+      setApprovalMatrixRoleNamesL2([]);
+      setApprovalMatrixRoleNamesL3([]);
     }
   }, [editingApprovalMatrix]);
 
@@ -1540,7 +1569,7 @@ export function OperationsDashboard({
   const approvalEntries = useMemo<ApprovalEntry[]>(() => {
     return [
       ...transactions
-        .filter((item) => item.state === "pending_approval")
+        .filter((item) => item.state === "pending_approval" || item.state === "partially_approved")
         .filter((item) => {
           if (!item.createdAt) {
             return true;
@@ -2292,11 +2321,22 @@ export function OperationsDashboard({
 
     const form = event.currentTarget;
     const formData = new FormData(form);
-    const roles = formData
-      .getAll("roles")
-      .map((value) => String(value))
-      .filter(Boolean);
-    const selectedRoles = approvalMatrixRoleNames.length > 0 ? approvalMatrixRoleNames : roles;
+
+    const selectedRoles: string[] = [];
+    if (approvalMatrixLevels >= 1) {
+      approvalMatrixRoleNamesL1.forEach((role) => selectedRoles.push(`1:${role}`));
+    }
+    if (approvalMatrixLevels >= 2) {
+      approvalMatrixRoleNamesL2.forEach((role) => selectedRoles.push(`2:${role}`));
+    }
+    if (approvalMatrixLevels >= 3) {
+      approvalMatrixRoleNamesL3.forEach((role) => selectedRoles.push(`3:${role}`));
+    }
+
+    if (selectedRoles.length === 0) {
+      setNotice({ tone: "error", text: "Please select at least one role for approval." });
+      return;
+    }
 
     if (!approvalMatrixSubscriptionId) {
       setNotice({ tone: "error", text: "Please select a package subscription." });
@@ -2323,7 +2363,7 @@ export function OperationsDashboard({
       debitAccountIds: approvalMatrixDebitAccountIds,
       amountFrom: Number(formData.get("amountFrom")),
       amountTo: Number(formData.get("amountTo")),
-      approvalLevels: Number(formData.get("approvalLevels")),
+      approvalLevels: approvalMatrixLevels,
       roles: selectedRoles,
       status: isEdit && editingApprovalMatrix ? editingApprovalMatrix.status : "active"
     }, method);
@@ -2476,6 +2516,16 @@ export function OperationsDashboard({
         scopes = ["users"];
       }
       void refreshWorkspace(session, selectedCorporateId, { scopes });
+
+      // Refresh file batches if drawer is active
+      if (selectedFileApprovalId) {
+        const reloadResult = await fetchJson<{ items: PayoutBatch[] }>(
+          `/v1/payouts/file-uploads/${encodeURIComponent(selectedFileApprovalId)}/batches`
+        );
+        if (reloadResult.ok) {
+          setFileBatches(reloadResult.data.items ?? []);
+        }
+      }
     }
   }
 
@@ -5019,7 +5069,13 @@ export function OperationsDashboard({
                     <div className="ops-fields two">
                       <label>
                         Number of Approval Level
-                        <select defaultValue={editingApprovalMatrix?.approvalLevels ?? "1"} name="approvalLevels" required disabled={isMatrixViewOnly}>
+                        <select
+                          value={approvalMatrixLevels}
+                          onChange={(event) => setApprovalMatrixLevels(Number(event.target.value))}
+                          name="approvalLevels"
+                          required
+                          disabled={isMatrixViewOnly}
+                        >
                           <option value="1">1</option>
                           <option value="2">2</option>
                           <option value="3">3</option>
@@ -5054,21 +5110,57 @@ export function OperationsDashboard({
                       </label>
                     </div>
 
-                    <div className="ops-fields one">
-                      <label>
-                        Roles
-                        <CompactMultiDropdown
-                          label="approval matrix roles"
-                          options={approvedTransactionCheckerRoles.map((role) => ({
-                            value: role.name,
-                            label: role.name
-                          }))}
-                          values={approvalMatrixRoleNames}
-                          onChange={setApprovalMatrixRoleNames}
-                          placeholder="Select roles"
-                          disabled={isMatrixViewOnly}
-                        />
-                      </label>
+                    <div className="ops-fields one" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                      {approvalMatrixLevels >= 1 && (
+                        <label>
+                          Level 1 Approval Roles *
+                          <CompactMultiDropdown
+                            label="level 1 approval roles"
+                            options={approvedTransactionCheckerRoles.map((role) => ({
+                              value: role.name,
+                              label: role.name
+                            }))}
+                            values={approvalMatrixRoleNamesL1}
+                            onChange={setApprovalMatrixRoleNamesL1}
+                            placeholder="Select Level 1 roles"
+                            disabled={isMatrixViewOnly}
+                          />
+                        </label>
+                      )}
+
+                      {approvalMatrixLevels >= 2 && (
+                        <label style={{ marginTop: "8px" }}>
+                          Level 2 Approval Roles *
+                          <CompactMultiDropdown
+                            label="level 2 approval roles"
+                            options={approvedTransactionCheckerRoles.map((role) => ({
+                              value: role.name,
+                              label: role.name
+                            }))}
+                            values={approvalMatrixRoleNamesL2}
+                            onChange={setApprovalMatrixRoleNamesL2}
+                            placeholder="Select Level 2 roles"
+                            disabled={isMatrixViewOnly}
+                          />
+                        </label>
+                      )}
+
+                      {approvalMatrixLevels >= 3 && (
+                        <label style={{ marginTop: "8px" }}>
+                          Level 3 Approval Roles *
+                          <CompactMultiDropdown
+                            label="level 3 approval roles"
+                            options={approvedTransactionCheckerRoles.map((role) => ({
+                              value: role.name,
+                              label: role.name
+                            }))}
+                            values={approvalMatrixRoleNamesL3}
+                            onChange={setApprovalMatrixRoleNamesL3}
+                            placeholder="Select Level 3 roles"
+                            disabled={isMatrixViewOnly}
+                          />
+                        </label>
+                      )}
                     </div>
 
                     <div className="ops-actions">
@@ -6527,9 +6619,7 @@ export function OperationsDashboard({
             );
 
             const isBatchBulkEligible = (b: PayoutBatch) => {
-              if (!b.packageCode) return false;
-              const pkg = packages.find(p => p.packageCode === b.packageCode);
-              return pkg?.bulkApproveEnabled === true;
+              return true;
             };
 
             const eligiblePendingFileBatches = pendingFileBatches.filter(isBatchBulkEligible);
@@ -6607,63 +6697,7 @@ export function OperationsDashboard({
                       </label>
                     </div>
 
-                    {eligiblePendingFileBatches.length > 0 && hasPermission(session, "transaction.checker") && (
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "10px",
-                          padding: "12px",
-                          background: "var(--accent-soft)",
-                          border: "1px solid var(--accent-border)",
-                          borderRadius: "10px"
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--accent)" }}>
-                            {checkedFileBatchIds.length} of {eligiblePendingFileBatches.length} payments selected
-                          </span>
-                          <button
-                            type="button"
-                            className="ops-mini"
-                            style={{ padding: "0 8px", height: "24px" }}
-                            onClick={() => setCheckedFileBatchIds(checkedFileBatchIds.length === eligiblePendingFileBatches.length ? [] : eligiblePendingFileBatches.map(b => b.batchId))}
-                          >
-                            {checkedFileBatchIds.length === eligiblePendingFileBatches.length ? "Deselect All" : "Select All Eligible"}
-                          </button>
-                        </div>
-                        {checkedFileBatchIds.length > 0 && (
-                          <div style={{ display: "flex", gap: "8px", alignItems: "center", marginTop: "4px" }}>
-                            <input
-                              type="text"
-                              placeholder="Comment for selection..."
-                              value={fileBulkComment}
-                              onChange={(e) => setFileBulkComment(e.target.value)}
-                              className="ops-input"
-                              style={{ flex: 1, minHeight: "32px", padding: "4px 8px", fontSize: "12px", background: "var(--surface)" }}
-                            />
-                            <button
-                              type="button"
-                              className="ops-button primary"
-                              disabled={busy}
-                              style={{ minHeight: "32px", padding: "0 12px", fontSize: "12px" }}
-                              onClick={() => executeFileBulkAction("approve")}
-                            >
-                              Approve
-                            </button>
-                            <button
-                              type="button"
-                              className="ops-button secondary"
-                              disabled={busy}
-                              style={{ minHeight: "32px", padding: "0 12px", fontSize: "12px", color: "#DC2626", borderColor: "#FEE2E2" }}
-                              onClick={() => executeFileBulkAction("reject")}
-                            >
-                              Reject
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    {/* Bulk panel removed from top */}
 
                     <div className="ops-table-shell" style={{ border: "1px solid var(--border)", borderRadius: "10px" }}>
                       <table className="ops-table">
@@ -6695,6 +6729,7 @@ export function OperationsDashboard({
                             <th>Beneficiary</th>
                             <th>Amount</th>
                             <th>Status</th>
+                            {hasPermission(session, "transaction.checker") && <th>Action</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -6703,8 +6738,16 @@ export function OperationsDashboard({
                               const isPending = batch.state === "pending_approval" || batch.state === "partially_approved";
                               const bulkEnabled = isBatchBulkEligible(batch);
                               return (
-                                <tr key={batch.batchId}>
-                                  <td style={{ textAlign: "center" }}>
+                                <tr
+                                  className="ops-clickable-row"
+                                  key={batch.batchId}
+                                  onClick={() => {
+                                    setSelectedApprovalKey(`transaction:${batch.batchId}`);
+                                    setApprovalComment("");
+                                    void loadTransactionDetail(batch.batchId);
+                                  }}
+                                >
+                                  <td onClick={(e) => e.stopPropagation()} style={{ textAlign: "center" }}>
                                     {isPending ? (
                                       bulkEnabled ? (
                                         <input
@@ -6741,12 +6784,42 @@ export function OperationsDashboard({
                                       {humanize(batch.state)}
                                     </span>
                                   </td>
+                                  {hasPermission(session, "transaction.checker") && (
+                                    <td onClick={(e) => e.stopPropagation()}>
+                                      {isPending ? (
+                                        <div style={{ display: "flex", gap: "12px", whiteSpace: "nowrap" }}>
+                                          <button
+                                            type="button"
+                                            style={{ background: "none", border: "none", color: "var(--success)", fontWeight: 600, padding: 0, fontSize: "12px", cursor: "pointer" }}
+                                            onClick={() => {
+                                              void handleApproval("transaction", batch.batchId, "approve");
+                                            }}
+                                            disabled={busy}
+                                          >
+                                            Approve
+                                          </button>
+                                          <button
+                                            type="button"
+                                            style={{ background: "none", border: "none", color: "#DC2626", fontWeight: 600, padding: 0, fontSize: "12px", cursor: "pointer" }}
+                                            onClick={() => {
+                                              void handleApproval("transaction", batch.batchId, "reject");
+                                            }}
+                                            disabled={busy}
+                                          >
+                                            Reject
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <span style={{ fontSize: "11px", opacity: 0.5 }}>-</span>
+                                      )}
+                                    </td>
+                                  )}
                                 </tr>
                               );
                             })
                           ) : (
                             <tr>
-                              <td className="ops-empty-row" colSpan={5}>
+                              <td className="ops-empty-row" colSpan={hasPermission(session, "transaction.checker") ? 6 : 5}>
                                 No payments found in this file.
                               </td>
                             </tr>
@@ -6755,6 +6828,65 @@ export function OperationsDashboard({
                       </table>
                     </div>
                   </div>
+                  {/* Sticky Footer Bulk Action Panel */}
+                  {eligiblePendingFileBatches.length > 0 && hasPermission(session, "transaction.checker") && (
+                    <div
+                      style={{
+                        marginTop: "auto",
+                        padding: "16px",
+                        background: "var(--surface-subtle)",
+                        borderTop: "1px solid var(--border)",
+                        borderRadius: "0 0 18px 18px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "12px",
+                        zIndex: 10
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-secondary)" }}>
+                          {checkedFileBatchIds.length} of {eligiblePendingFileBatches.length} payments selected
+                        </span>
+                        <button
+                          type="button"
+                          className="ops-mini"
+                          style={{ padding: "0 10px", height: "26px", fontSize: "11px", fontWeight: 600 }}
+                          onClick={() => setCheckedFileBatchIds(checkedFileBatchIds.length === eligiblePendingFileBatches.length ? [] : eligiblePendingFileBatches.map(b => b.batchId))}
+                        >
+                          {checkedFileBatchIds.length === eligiblePendingFileBatches.length ? "Deselect All" : "Select All"}
+                        </button>
+                      </div>
+                      
+                      <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                        <input
+                          type="text"
+                          placeholder="Add a review note/comment for selected payments..."
+                          value={fileBulkComment}
+                          onChange={(e) => setFileBulkComment(e.target.value)}
+                          className="ops-input"
+                          style={{ flex: 1, minHeight: "36px", padding: "6px 12px", fontSize: "12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "8px" }}
+                        />
+                        <button
+                          type="button"
+                          className="ops-button primary"
+                          disabled={busy || checkedFileBatchIds.length === 0}
+                          style={{ minHeight: "36px", padding: "0 16px", fontSize: "12px", borderRadius: "8px" }}
+                          onClick={() => executeFileBulkAction("approve")}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          className="ops-button secondary"
+                          disabled={busy || checkedFileBatchIds.length === 0}
+                          style={{ minHeight: "36px", padding: "0 16px", fontSize: "12px", color: "#DC2626", borderColor: "#FEE2E2", borderRadius: "8px" }}
+                          onClick={() => executeFileBulkAction("reject")}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </aside>
               </div>
             );
@@ -6856,10 +6988,30 @@ function hasPermission(
     return false;
   }
 
+  const roleLower = (session.role ?? "").toLowerCase();
+  const customPermissions = [...(session.permissions ?? [])];
+
+  if (roleLower.includes("checker") && !customPermissions.includes("transaction.checker")) {
+    customPermissions.push(
+      "transaction.checker",
+      "beneficiary.checker",
+      "roles.checker",
+      "user.checker"
+    );
+  }
+  if (roleLower.includes("maker") && !customPermissions.includes("transaction.make")) {
+    customPermissions.push(
+      "transaction.make",
+      "beneficiary.make",
+      "roles.make",
+      "user.make"
+    );
+  }
+
   const effectivePermissions =
-    session.permissions?.length > 0
-      ? session.permissions
-      : DEFAULT_ROLE_PERMISSIONS[session.role.toLowerCase()] ?? [];
+    customPermissions.length > 0
+      ? customPermissions
+      : DEFAULT_ROLE_PERMISSIONS[roleLower] ?? [];
 
   return effectivePermissions.includes(permission);
 }

@@ -117,7 +117,10 @@ export class ApprovalMatrixManagementService {
       )
     );
 
-    const invalidRoles = payload.roles.filter((role) => !validRoleNames.has(role));
+    const invalidRoles = payload.roles.filter((role) => {
+      const bareRoleName = role.includes(":") ? role.substring(role.indexOf(":") + 1) : role;
+      return !validRoleNames.has(bareRoleName);
+    });
     if (invalidRoles.length > 0) {
       return {
         error: "invalid_roles" as const,
@@ -141,7 +144,10 @@ export class ApprovalMatrixManagementService {
     }
 
     const rolesMissingDebitAccountAccess: string[] = [];
-    for (const roleName of payload.roles) {
+    for (const rawRoleName of payload.roles) {
+      const roleName = rawRoleName.includes(":")
+        ? rawRoleName.substring(rawRoleName.indexOf(":") + 1)
+        : rawRoleName;
       const allowedDebitAccountIds =
         await this.identityAccessService.getAllowedDebitAccountIdsForRole(
           payload.corporateTenantId,
@@ -154,7 +160,7 @@ export class ApprovalMatrixManagementService {
           (debitAccountId) => !allowedDebitAccountIds.includes(debitAccountId)
         )
       ) {
-        rolesMissingDebitAccountAccess.push(roleName);
+        rolesMissingDebitAccountAccess.push(rawRoleName);
       }
     }
 
@@ -301,7 +307,17 @@ export class ApprovalMatrixManagementService {
       const roles = [...new Set(
         matrices
           .filter((matrix) => matrix.approvalLevels >= level)
-          .flatMap((matrix) => matrix.roles)
+          .flatMap((matrix) => {
+            const levelRoles: string[] = [];
+            for (const r of matrix.roles) {
+              if (r.startsWith(`${level}:`)) {
+                levelRoles.push(r.substring(r.indexOf(":") + 1));
+              } else if (!r.includes(":")) {
+                levelRoles.push(r);
+              }
+            }
+            return levelRoles;
+          })
       )];
 
       return {
@@ -346,7 +362,10 @@ export class ApprovalMatrixManagementService {
       )
     );
 
-    const invalidRoles = payload.roles.filter((role) => !validRoleNames.has(role));
+    const invalidRoles = payload.roles.filter((role) => {
+      const bareRoleName = role.includes(":") ? role.substring(role.indexOf(":") + 1) : role;
+      return !validRoleNames.has(bareRoleName);
+    });
     if (invalidRoles.length > 0) {
       return {
         error: "invalid_roles" as const,
@@ -370,7 +389,10 @@ export class ApprovalMatrixManagementService {
     }
 
     const rolesMissingDebitAccountAccess: string[] = [];
-    for (const roleName of payload.roles) {
+    for (const rawRoleName of payload.roles) {
+      const roleName = rawRoleName.includes(":")
+        ? rawRoleName.substring(rawRoleName.indexOf(":") + 1)
+        : rawRoleName;
       const allowedDebitAccountIds =
         await this.identityAccessService.getAllowedDebitAccountIdsForRole(
           payload.corporateTenantId,
@@ -383,7 +405,7 @@ export class ApprovalMatrixManagementService {
           (debitAccountId) => !allowedDebitAccountIds.includes(debitAccountId)
         )
       ) {
-        rolesMissingDebitAccountAccess.push(roleName);
+        rolesMissingDebitAccountAccess.push(rawRoleName);
       }
     }
 
