@@ -65,6 +65,7 @@ type ApprovalEntry =
       meta: string;
       status: string;
       createdAt?: string;
+      packageCode?: string | null;
     }
   | {
       entity: "beneficiary";
@@ -481,6 +482,9 @@ export function OperationsDashboard({
     initialData.debitAccounts ?? []
   );
   const [transactionDetailCache, setTransactionDetailCache] = useState<Record<string, PayoutBatch>>({});
+  const [packages, setPackages] = useState<any[]>([]);
+  const [checkedBatchIds, setCheckedBatchIds] = useState<string[]>([]);
+  const [bulkApprovalComment, setBulkApprovalComment] = useState("");
 
   const [selectedCorporateId, setSelectedCorporateId] = useState(initialData.selectedCorporateId);
 
@@ -684,6 +688,12 @@ export function OperationsDashboard({
           data: null
         });
 
+    const packagesRequest = fetchJson<{ items: any[] }>(
+      `/v1/package-catalog/packages?ownerType=corporate&corporateTenantId=${encodeURIComponent(
+        currentSession.corporateTenantId
+      )}&corporateId=${encodeURIComponent(corporateId)}`
+    );
+
     const [
       transactionsResult,
       fileUploadsResult,
@@ -693,7 +703,8 @@ export function OperationsDashboard({
       usersResult,
       subscriptionsResult,
       debitAccountsResult,
-      settingsResult
+      settingsResult,
+      packagesResult
     ] = await Promise.all([
       fetchJson<{ items: PayoutBatch[] }>(
         `/v1/payouts/batches?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
@@ -719,7 +730,8 @@ export function OperationsDashboard({
       fetchJson<{ items: CorporateDebitAccount[] }>(
         `/v1/debit-accounts?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
       ),
-      settingsRequest
+      settingsRequest,
+      packagesRequest
     ]);
 
     if (transactionsResult.ok) {
@@ -754,6 +766,9 @@ export function OperationsDashboard({
 
     if (settingsResult.ok && settingsResult.data) {
       setSettings(settingsResult.data);
+    }
+    if (packagesResult.ok) {
+      setPackages(packagesResult.data?.items ?? []);
     }
 
     const failures = [
@@ -1340,7 +1355,8 @@ export function OperationsDashboard({
           title: item.title,
           meta: `${item.batchId} | INR ${formatAmount(item.totalAmount.value)}`,
           status: item.state,
-          createdAt: item.createdAt ?? undefined
+          createdAt: item.createdAt ?? undefined,
+          packageCode: item.packageCode
         })),
       ...beneficiaries
         .filter((item) => item.approvalState === "pending_approval")
@@ -1626,6 +1642,8 @@ export function OperationsDashboard({
 
   function jumpToApprovalSection(filter: ApprovalSectionFilter) {
     setApprovalSectionFilter(filter);
+    setCheckedBatchIds([]);
+    setBulkApprovalComment("");
 
     const sectionRef =
       filter === "transaction"
@@ -2110,6 +2128,71 @@ export function OperationsDashboard({
       setSelectedApprovalKey(null);
       void refreshWorkspace(session, selectedCorporateId);
     }
+  }
+
+  const isBulkApproveEligible = (entry: ApprovalEntry) => {
+    if (entry.entity !== "transaction") return false;
+    if (!entry.packageCode) return false;
+    const pkg = packages.find((p) => p.packageCode === entry.packageCode);
+    return pkg?.bulkApproveEnabled === true;
+  };
+
+  async function executeBulkApproval(action: "approve" | "reject") {
+    if (!session || checkedBatchIds.length === 0) {
+      return;
+    }
+
+    if (!hasPermission(session, "transaction.checker")) {
+      setNotice({ tone: "error", text: "You do not have permission to check transactions." });
+      return;
+    }
+
+    setBusy(true);
+    let successCount = 0;
+    let failCount = 0;
+    let lastErrorMessage = "";
+
+    await Promise.all(
+      checkedBatchIds.map(async (id) => {
+        try {
+          const endpoint = `/v1/payouts/batches/${encodeURIComponent(id)}/actions`;
+          const result = await postJson(endpoint, {
+            action,
+            actedByUserId: session.userId,
+            comment:
+              bulkApprovalComment.trim() ||
+              `${capitalize(action)}d by checker ${session.username} (Bulk)`
+          });
+          if (result.ok) {
+            successCount++;
+          } else {
+            failCount++;
+            lastErrorMessage = result.message || "Failed";
+          }
+        } catch {
+          failCount++;
+          lastErrorMessage = "Network error";
+        }
+      })
+    );
+
+    setBusy(false);
+    setCheckedBatchIds([]);
+    setBulkApprovalComment("");
+
+    if (failCount === 0) {
+      setNotice({
+        tone: "success",
+        text: `Bulk ${action}d ${successCount} transactions successfully.`
+      });
+    } else {
+      setNotice({
+        tone: "error",
+        text: `Bulk ${action}: ${successCount} succeeded, ${failCount} failed. Last error: ${lastErrorMessage}`
+      });
+    }
+
+    void refreshWorkspace(session, selectedCorporateId);
   }
 
   async function handleNotificationClick(notification: Notification) {
@@ -3715,16 +3798,95 @@ export function OperationsDashboard({
                   <div className="ops-approval-head">
                     <div>
                       <h4>Payment approvals</h4>
-
                     </div>
                     <span className="ops-status pending_approval">
                       {paymentApprovalEntries.length} pending
                     </span>
                   </div>
+
+                  {checkedBatchIds.length > 0 && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "12px 16px",
+                        background: "var(--accent-soft)",
+                        border: "1px solid var(--accent-border)",
+                        borderRadius: "12px",
+                        marginBottom: "6px"
+                      }}
+                    >
+                      <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--accent)" }}>
+                        {checkedBatchIds.length} payments selected for bulk action
+                      </span>
+                      <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                        <input
+                          type="text"
+                          placeholder="Optional comment..."
+                          value={bulkApprovalComment}
+                          onChange={(e) => setBulkApprovalComment(e.target.value)}
+                          className="ops-input"
+                          style={{ width: "220px", minHeight: "32px", padding: "4px 10px", fontSize: "12px", background: "var(--surface)" }}
+                        />
+                        <button
+                          type="button"
+                          className="ops-button primary"
+                          disabled={busy}
+                          style={{ minHeight: "32px", padding: "0 12px", fontSize: "12px" }}
+                          onClick={() => executeBulkApproval("approve")}
+                        >
+                          Approve Selected
+                        </button>
+                        <button
+                          type="button"
+                          className="ops-button secondary"
+                          disabled={busy}
+                          style={{ minHeight: "32px", padding: "0 12px", fontSize: "12px", color: "#DC2626", borderColor: "#FEE2E2" }}
+                          onClick={() => executeBulkApproval("reject")}
+                        >
+                          Reject Selected
+                        </button>
+                        <button
+                          type="button"
+                          className="ops-mini"
+                          style={{ minHeight: "32px" }}
+                          onClick={() => {
+                            setCheckedBatchIds([]);
+                            setBulkApprovalComment("");
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="ops-table-shell">
                     <table className="ops-table">
                       <thead>
                         <tr>
+                          <th style={{ width: "40px", textAlign: "center" }}>
+                            {paymentApprovalEntries.some(isBulkApproveEligible) && (
+                              <input
+                                type="checkbox"
+                                checked={
+                                  paymentApprovalEntries.filter(isBulkApproveEligible).length > 0 &&
+                                  paymentApprovalEntries
+                                    .filter(isBulkApproveEligible)
+                                    .every((entry) => checkedBatchIds.includes(entry.id))
+                                }
+                                onChange={(e) => {
+                                  const eligibleEntries = paymentApprovalEntries.filter(isBulkApproveEligible);
+                                  if (e.target.checked) {
+                                    setCheckedBatchIds(eligibleEntries.map((entry) => entry.id));
+                                  } else {
+                                    setCheckedBatchIds([]);
+                                  }
+                                }}
+                              />
+                            )}
+                          </th>
                           <th>Transaction Reference</th>
                           <th>Txn UUID</th>
                           <th>Amount</th>
@@ -3733,29 +3895,54 @@ export function OperationsDashboard({
                       </thead>
                       <tbody>
                         {paymentApprovalEntries.length > 0 ? (
-                          paymentApprovalEntries.map((entry) => (
-                            <tr
-                              className="ops-clickable-row"
-                              key={`transaction:${entry.id}`}
-                              onClick={() => {
-                                setSelectedApprovalKey(`transaction:${entry.id}`);
-                                setApprovalComment("");
-                                void loadTransactionDetail(entry.id);
-                              }}
-                            >
-                              <td>{entry.title}</td>
-                              <td>{entry.id}</td>
-                              <td>{entry.meta.split("|")[1]?.trim() ?? entry.meta}</td>
-                              <td>
-                                <span className={`ops-status ${entry.status}`}>
-                                  {humanize(entry.status)}
-                                </span>
-                              </td>
-                            </tr>
-                          ))
+                          paymentApprovalEntries.map((entry) => {
+                            const bulkEnabled = isBulkApproveEligible(entry);
+                            return (
+                              <tr
+                                className="ops-clickable-row"
+                                key={`transaction:${entry.id}`}
+                                onClick={() => {
+                                  setSelectedApprovalKey(`transaction:${entry.id}`);
+                                  setApprovalComment("");
+                                  void loadTransactionDetail(entry.id);
+                                }}
+                              >
+                                <td onClick={(e) => e.stopPropagation()} style={{ textAlign: "center" }}>
+                                  {bulkEnabled ? (
+                                    <input
+                                      type="checkbox"
+                                      checked={checkedBatchIds.includes(entry.id)}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setCheckedBatchIds((prev) => [...prev, entry.id]);
+                                        } else {
+                                          setCheckedBatchIds((prev) => prev.filter((id) => id !== entry.id));
+                                        }
+                                      }}
+                                    />
+                                  ) : (
+                                    <span
+                                      title="Bulk approval not enabled in package settings"
+                                      style={{ cursor: "not-allowed", opacity: 0.35, fontSize: "12px" }}
+                                    >
+                                      🚫
+                                    </span>
+                                  )}
+                                </td>
+                                <td>{entry.title}</td>
+                                <td>{entry.id}</td>
+                                <td>{entry.meta.split("|")[1]?.trim() ?? entry.meta}</td>
+                                <td>
+                                  <span className={`ops-status ${entry.status}`}>
+                                    {humanize(entry.status)}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })
                         ) : (
                           <tr>
-                            <td className="ops-empty-row" colSpan={4}>
+                            <td className="ops-empty-row" colSpan={5}>
                               No payment approvals pending.
                             </td>
                           </tr>

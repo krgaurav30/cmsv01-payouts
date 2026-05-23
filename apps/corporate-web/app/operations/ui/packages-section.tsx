@@ -24,6 +24,7 @@ type PackageItem = {
   debitAccountIds: string[];
   defaultDebitAccountId: string | null;
   maxPaymentsPerBatch: number;
+  bulkApproveEnabled?: boolean;
 };
 
 interface PackagesSectionProps {
@@ -385,7 +386,7 @@ export function PackagesSection({
       description: description.trim() || null,
       useCase,
       allowedBeneficiaryTypes,
-      bulkApproveEnabled: false,
+      bulkApproveEnabled,
       debitModesAllowed: [debitModeAllowed],
       fileRejectionModesAllowed: [fileRejectionMode],
       maxPaymentsPerBatch,
@@ -436,7 +437,7 @@ export function PackagesSection({
     setDebitAccountIds(item.debitAccountIds ?? []);
     setDefaultDebitAccountId(item.defaultDebitAccountId ?? "");
     setMaxPaymentsPerBatch(item.maxPaymentsPerBatch);
-    setBulkApproveEnabled(false);
+    setBulkApproveEnabled(item.bulkApproveEnabled ?? false);
   }
 
   async function updatePackageStatus(item: PackageItem, nextStatus: "active" | "inactive") {
@@ -453,7 +454,7 @@ export function PackagesSection({
         description: item.description,
         useCase: item.useCase,
         allowedBeneficiaryTypes: item.allowedBeneficiaryTypes,
-        bulkApproveEnabled: false,
+        bulkApproveEnabled: item.bulkApproveEnabled ?? false,
         debitModesAllowed: item.debitModesAllowed,
         fileRejectionModesAllowed: item.fileRejectionModesAllowed,
         maxPaymentsPerBatch: item.maxPaymentsPerBatch,
