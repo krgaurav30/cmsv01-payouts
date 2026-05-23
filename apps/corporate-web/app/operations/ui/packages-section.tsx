@@ -233,6 +233,23 @@ export function PackagesSection({
   const [toast, setToast] = useState<string | null>(null);
   const [actionMenuItem, setActionMenuItem] = useState<PackageItem | null>(null);
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [useCaseFilter, setUseCaseFilter] = useState("");
+
+  const filteredItems = useMemo(() => {
+    return items.filter((item) => {
+      const matchesSearch =
+        !searchQuery ||
+        item.packageCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
+
+      const matchesUseCase = !useCaseFilter || item.useCase === useCaseFilter;
+
+      return matchesSearch && matchesUseCase;
+    });
+  }, [items, searchQuery, useCaseFilter]);
+
   const [packageCode, setPackageCode] = useState("");
   const [name, setName] = useState("");
   const [useCase, setUseCase] = useState<"vendor_payments" | "salary" | "statutory">(
@@ -699,9 +716,29 @@ export function PackagesSection({
         <div className="ops-panel-head" style={{ marginBottom: "16px" }}>
           <div>
             <h3 style={{ margin: 0 }}>Packages</h3>
-
           </div>
         </div>
+
+        <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end" }}>
+          <label style={{ minWidth: "160px", flex: 1 }}>
+            Use Case
+            <select value={useCaseFilter} onChange={(e) => setUseCaseFilter(e.target.value)}>
+              <option value="">All use cases</option>
+              <option value="vendor_payments">vendor_payments</option>
+              <option value="salary">salary</option>
+              <option value="statutory">statutory</option>
+            </select>
+          </label>
+          <label style={{ minWidth: "240px", flex: 1.5 }}>
+            Search packages
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by code, name, description"
+            />
+          </label>
+        </div>
+
         <div className="ops-table-shell">
           <table className="ops-table">
             <thead>
@@ -713,8 +750,8 @@ export function PackagesSection({
               </tr>
             </thead>
             <tbody>
-              {items.length > 0 ? (
-                items.map((item) => (
+              {filteredItems.length > 0 ? (
+                filteredItems.map((item) => (
                   <tr key={item.packageId}>
                     <td>{item.packageCode}</td>
                     <td>{item.name}</td>
@@ -733,7 +770,7 @@ export function PackagesSection({
               ) : (
                 <tr>
                   <td className="ops-empty-row" colSpan={4}>
-                    No packages found.
+                    {items.length > 0 ? "No packages match the current filters." : "No packages found."}
                   </td>
                 </tr>
               )}

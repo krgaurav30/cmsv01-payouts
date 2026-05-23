@@ -1,6 +1,6 @@
-﻿"use client";
+"use client";
 
-import { useState, FormEvent, useEffect } from "react";
+import { useState, FormEvent, useEffect, useMemo } from "react";
 import type { CorporateDebitAccount, CorporateSubscription, CorporateSession } from "../../../lib/types";
 
 interface DebitAccountsSectionProps {
@@ -23,6 +23,23 @@ export function DebitAccountsSection({
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<CorporateDebitAccount | null>(null);
   const [actionMenuItem, setActionMenuItem] = useState<CorporateDebitAccount | null>(null);
+  
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+
+  const filteredAccounts = useMemo(() => {
+    return debitAccounts.filter((account) => {
+      const matchesSearch =
+        !searchQuery ||
+        account.accountName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        account.accountNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        account.ifsc.toLowerCase().includes(searchQuery.toLowerCase());
+
+      const matchesStatus = !statusFilter || account.status === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [debitAccounts, searchQuery, statusFilter]);
   
   // State for unmasked account numbers
   const [unmaskedIds, setUnmaskedIds] = useState<Record<string, boolean>>({});
@@ -265,7 +282,27 @@ export function DebitAccountsSection({
       </div>
 
       {/* Main Table Panel */}
-      <section className="ops-panel" style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-xl)", background: "var(--surface)", overflow: "hidden" }}>
+      <section className="ops-panel" style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-xl)", background: "var(--surface)", overflow: "hidden", padding: "20px" }}>
+        
+        <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end" }}>
+          <label style={{ minWidth: "160px", flex: 1 }}>
+            Status
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="">All statuses</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </label>
+          <label style={{ minWidth: "240px", flex: 1.5 }}>
+            Search debit accounts
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by holder name, account number, IFSC"
+            />
+          </label>
+        </div>
+
         <div style={{ overflowX: "auto" }}>
           <table className="ops-table" style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
             <thead>
@@ -280,14 +317,14 @@ export function DebitAccountsSection({
               </tr>
             </thead>
             <tbody>
-              {debitAccounts.length === 0 ? (
+              {filteredAccounts.length === 0 ? (
                 <tr>
                   <td colSpan={canEdit ? 7 : 6} style={{ padding: "40px", textAlign: "center", color: "var(--text-secondary)" }}>
-                    No debit accounts found. Add one to start routing payments.
+                    {debitAccounts.length > 0 ? "No debit accounts match the current filters." : "No debit accounts found. Add one to start routing payments."}
                   </td>
                 </tr>
               ) : (
-                debitAccounts.map((account) => {
+                filteredAccounts.map((account) => {
                   const mappedSubs = getMappedSubscriptions(account.debitAccountId);
                   const showFull = !!unmaskedIds[account.debitAccountId];
                   const displayNum = showFull 

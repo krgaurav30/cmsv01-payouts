@@ -526,6 +526,25 @@ export function OperationsDashboard({
   const [approvalCustomEnd, setApprovalCustomEnd] = useState("");
   const [showApprovalDatePicker, setShowApprovalDatePicker] = useState(false);
 
+  // Search and filter states per menu
+  const [homeSearch, setHomeSearch] = useState("");
+  const [fileUploadSearch, setFileUploadSearch] = useState("");
+  const [fileUploadStatusFilter, setFileUploadStatusFilter] = useState("");
+  const [approvalSearch, setApprovalSearch] = useState("");
+  const [matrixSearch, setMatrixSearch] = useState("");
+  const [matrixStatusFilter, setMatrixStatusFilter] = useState("");
+  const [roleSearch, setRoleSearch] = useState("");
+  const [roleStatusFilter, setRoleStatusFilter] = useState("");
+  const [userSearch, setUserSearch] = useState("");
+  const [userStatusFilter, setUserStatusFilter] = useState("");
+  const [reportDatePreset, setReportDatePreset] = useState("all");
+  const [reportCustomStart, setReportCustomStart] = useState("");
+  const [reportCustomEnd, setReportCustomEnd] = useState("");
+  const [showReportDatePicker, setShowReportDatePicker] = useState(false);
+  const [reportSearch, setReportSearch] = useState("");
+  const [auditSearch, setAuditSearch] = useState("");
+  const [auditEntityFilter, setAuditEntityFilter] = useState("");
+
   const editingBeneficiary = useMemo(
     () => (editingBeneficiaryId ? beneficiaries.find((item) => item.beneficiaryId === editingBeneficiaryId) ?? null : null),
     [editingBeneficiaryId, beneficiaries]
@@ -1133,6 +1152,22 @@ export function OperationsDashboard({
     [approvalCustomEnd, approvalCustomStart, approvalDatePreset]
   );
 
+  const reportDateRange = useMemo(
+    () => buildDateRange(reportDatePreset, reportCustomStart, reportCustomEnd),
+    [reportCustomEnd, reportCustomStart, reportDatePreset]
+  );
+
+  const filteredReportTransactions = useMemo(() => {
+    return transactions.filter((t) => {
+      if (!t.createdAt) return false;
+      const createdAt = new Date(t.createdAt);
+      return (
+        (!reportDateRange.start || createdAt >= reportDateRange.start) &&
+        (!reportDateRange.end || createdAt <= reportDateRange.end)
+      );
+    });
+  }, [transactions, reportDateRange]);
+
   const activeTimelineTransaction = useMemo(() => {
     if (!activeTimelineId) {
       return null;
@@ -1167,6 +1202,75 @@ export function OperationsDashboard({
       ) ?? null
     );
   }, [activeTimelineTransaction, debitAccounts]);
+
+  const filteredHomeTransactions = useMemo(() => {
+    return dashboardTransactions.filter((transaction) => {
+      const beneficiaryName =
+        transaction.primaryBeneficiaryName ??
+        beneficiaries.find((b) => b.beneficiaryId === transaction.primaryBeneficiaryId)?.name ??
+        "Unknown";
+      return (
+        !homeSearch ||
+        transaction.title.toLowerCase().includes(homeSearch.toLowerCase()) ||
+        beneficiaryName.toLowerCase().includes(homeSearch.toLowerCase())
+      );
+    });
+  }, [dashboardTransactions, homeSearch, beneficiaries]);
+
+  const filteredFileUploads = useMemo(() => {
+    return fileUploads.filter((file) => {
+      const matchesSearch =
+        !fileUploadSearch ||
+        file.fileName.toLowerCase().includes(fileUploadSearch.toLowerCase()) ||
+        (file.uploadedByName && file.uploadedByName.toLowerCase().includes(fileUploadSearch.toLowerCase())) ||
+        file.uploadedByUserId.toLowerCase().includes(fileUploadSearch.toLowerCase());
+
+      const matchesStatus = !fileUploadStatusFilter || file.status === fileUploadStatusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [fileUploads, fileUploadSearch, fileUploadStatusFilter]);
+
+  const filteredApprovalMatrices = useMemo(() => {
+    return approvalMatrices.filter((matrix) => {
+      const matchesSearch =
+        !matrixSearch ||
+        matrix.name.toLowerCase().includes(matrixSearch.toLowerCase()) ||
+        matrix.roles.some((r) => r.toLowerCase().includes(matrixSearch.toLowerCase()));
+
+      const matchesStatus = !matrixStatusFilter || matrix.status === matrixStatusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [approvalMatrices, matrixSearch, matrixStatusFilter]);
+
+  const filteredRoles = useMemo(() => {
+    return roles.filter((role) => {
+      const matchesSearch =
+        !roleSearch ||
+        role.name.toLowerCase().includes(roleSearch.toLowerCase()) ||
+        role.roleId.toLowerCase().includes(roleSearch.toLowerCase()) ||
+        (role.description && role.description.toLowerCase().includes(roleSearch.toLowerCase())) ||
+        role.permissions.some((p) => p.toLowerCase().includes(roleSearch.toLowerCase()));
+
+      const matchesStatus = !roleStatusFilter || role.status === roleStatusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [roles, roleSearch, roleStatusFilter]);
+
+  const filteredUsers = useMemo(() => {
+    return users.filter((user) => {
+      const matchesSearch =
+        !userSearch ||
+        user.displayName.toLowerCase().includes(userSearch.toLowerCase()) ||
+        user.username.toLowerCase().includes(userSearch.toLowerCase());
+
+      const matchesStatus = !userStatusFilter || user.status === userStatusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [users, userSearch, userStatusFilter]);
 
   const beneficiaryRows = useMemo(() => {
     return beneficiaries.filter((beneficiary) => {
@@ -1505,6 +1609,20 @@ export function OperationsDashboard({
     });
   }, [roles, users]);
 
+  const filteredAuditEntries = useMemo(() => {
+    return setupAuditEntries.filter((entry) => {
+      const matchesSearch =
+        !auditSearch ||
+        entry.itemName.toLowerCase().includes(auditSearch.toLowerCase()) ||
+        (entry.actorRole && entry.actorRole.toLowerCase().includes(auditSearch.toLowerCase())) ||
+        (entry.remark && entry.remark.toLowerCase().includes(auditSearch.toLowerCase()));
+
+      const matchesEntity = !auditEntityFilter || entry.entity === auditEntityFilter;
+
+      return matchesSearch && matchesEntity;
+    });
+  }, [setupAuditEntries, auditSearch, auditEntityFilter]);
+
   function jumpToApprovalSection(filter: ApprovalSectionFilter) {
     setApprovalSectionFilter(filter);
 
@@ -1536,6 +1654,13 @@ export function OperationsDashboard({
     }, {});
   }, [transactions]);
 
+  const reportTransactionStateSummary = useMemo(() => {
+    return filteredReportTransactions.reduce<Record<string, number>>((accumulator, item) => {
+      accumulator[item.state] = (accumulator[item.state] ?? 0) + 1;
+      return accumulator;
+    }, {});
+  }, [filteredReportTransactions]);
+
   const reportMetrics = useMemo(() => {
     const approvalPendingCount = approvalEntries.length;
     const approvedBeneficiaryCount = beneficiaries.filter(
@@ -1546,7 +1671,7 @@ export function OperationsDashboard({
       (sum, upload) => sum + upload.totalRows,
       0
     );
-    const totalProcessedAmount = transactions
+    const totalProcessedAmount = filteredReportTransactions
       .filter((transaction) =>
         ["approved", "sent_to_bank", "paid"].includes(
           transaction.state
@@ -1554,14 +1679,14 @@ export function OperationsDashboard({
       )
       .reduce((sum, transaction) => sum + transaction.totalAmount.value, 0);
 
-    const transactionStatusRows = Object.entries(transactionStateSummary)
+    const transactionStatusRows = Object.entries(reportTransactionStateSummary)
       .sort((left, right) => right[1] - left[1])
       .map(([state, count]) => ({
         state,
         count,
         share:
-          transactions.length > 0
-            ? Math.round((count / transactions.length) * 100)
+          filteredReportTransactions.length > 0
+            ? Math.round((count / filteredReportTransactions.length) * 100)
             : 0
       }));
 
@@ -1591,7 +1716,7 @@ export function OperationsDashboard({
         count
       }));
 
-    const recentTransactions = [...transactions]
+    const recentTransactions = [...filteredReportTransactions]
       .sort((left, right) => {
         const leftTime = left.createdAt ? new Date(left.createdAt).getTime() : 0;
         const rightTime = right.createdAt ? new Date(right.createdAt).getTime() : 0;
@@ -1609,7 +1734,17 @@ export function OperationsDashboard({
       uploadStatusRows,
       recentTransactions
     };
-  }, [approvalEntries, beneficiaries, fileUploads, transactionStateSummary, transactions]);
+  }, [approvalEntries, beneficiaries, fileUploads, reportTransactionStateSummary, filteredReportTransactions]);
+
+  const filteredReportRecentTransactions = useMemo(() => {
+    return reportMetrics.recentTransactions.filter((transaction) => {
+      if (!reportSearch) return true;
+      return (
+        transaction.title.toLowerCase().includes(reportSearch.toLowerCase()) ||
+        transaction.batchId.toLowerCase().includes(reportSearch.toLowerCase())
+      );
+    });
+  }, [reportMetrics.recentTransactions, reportSearch]);
 
   async function handleBeneficiarySubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2460,6 +2595,17 @@ export function OperationsDashboard({
               </button>
             </div>
 
+            <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end" }}>
+              <label style={{ minWidth: "240px", flex: 1 }}>
+                Search activity
+                <input
+                  value={homeSearch}
+                  onChange={(e) => setHomeSearch(e.target.value)}
+                  placeholder="Search by reference, beneficiary"
+                />
+              </label>
+            </div>
+
             <div className="ops-stripe-table-container">
               <table className="ops-stripe-table">
                 <thead>
@@ -2472,7 +2618,7 @@ export function OperationsDashboard({
                   </tr>
                 </thead>
                 <tbody>
-                  {dashboardTransactions.slice(0, 8).map((transaction) => {
+                  {filteredHomeTransactions.slice(0, 8).map((transaction) => {
                     const beneficiaryName =
                       transaction.primaryBeneficiaryName ??
                       beneficiaries.find(
@@ -2496,10 +2642,10 @@ export function OperationsDashboard({
                       </tr>
                     );
                   })}
-                  {dashboardTransactions.length === 0 ? (
+                  {filteredHomeTransactions.length === 0 ? (
                     <tr>
                       <td colSpan={5} style={{ textAlign: "center", color: "#647382" }}>
-                        No transactions found for this period.
+                        {dashboardTransactions.length > 0 ? "No transactions match the search filter." : "No transactions found for this period."}
                       </td>
                     </tr>
                   ) : null}
@@ -2958,6 +3104,27 @@ export function OperationsDashboard({
                 </div>
               ) : null}
 
+              <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0 24px" }}>
+                <label style={{ minWidth: "160px", flex: 1 }}>
+                  Status
+                  <select value={fileUploadStatusFilter} onChange={(e) => setFileUploadStatusFilter(e.target.value)}>
+                    <option value="">All statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="processed">Processed</option>
+                    <option value="failed">Failed</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                </label>
+                <label style={{ minWidth: "240px", flex: 1.5 }}>
+                  Search uploads
+                  <input
+                    value={fileUploadSearch}
+                    onChange={(e) => setFileUploadSearch(e.target.value)}
+                    placeholder="Search by file name, uploader"
+                  />
+                </label>
+              </div>
+
               <div className="ops-table-shell">
                 <table className="ops-table">
                   <thead>
@@ -2970,8 +3137,8 @@ export function OperationsDashboard({
                     </tr>
                   </thead>
                   <tbody>
-                    {fileUploads.length > 0 ? (
-                      fileUploads.map((fileUpload) => (
+                    {filteredFileUploads.length > 0 ? (
+                      filteredFileUploads.map((fileUpload) => (
                         <tr key={fileUpload.uploadId}>
                           <td>{fileUpload.fileName}</td>
                           <td>{formatDateTime(fileUpload.uploadedAt)}</td>
@@ -2993,7 +3160,7 @@ export function OperationsDashboard({
                     ) : (
                       <tr>
                         <td className="ops-empty-row" colSpan={5}>
-                          No files uploaded yet.
+                          {fileUploads.length > 0 ? "No file uploads match the current filters." : "No files uploaded yet."}
                         </td>
                       </tr>
                     )}
@@ -3387,7 +3554,15 @@ export function OperationsDashboard({
                 </div>
 
                 <div className="ops-toolbar" style={{ display: "flex", alignItems: "end", gap: "12px", flexWrap: "wrap" }}>
-                  <div style={{ position: "relative" }}>
+                  <label style={{ minWidth: "240px", flex: 1.5, order: 2 }}>
+                    Search approvals
+                    <input
+                      value={approvalSearch}
+                      onChange={(e) => setApprovalSearch(e.target.value)}
+                      placeholder="Search title, ID, creator..."
+                    />
+                  </label>
+                  <div style={{ position: "relative", order: 1 }}>
                     <label style={{ display: "block", marginBottom: "6px" }}>Date Range</label>
                     <button
                       type="button"
@@ -3830,6 +4005,25 @@ export function OperationsDashboard({
                 </div>
               ) : null}
 
+              <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0 24px" }}>
+                <label style={{ minWidth: "160px", flex: 1 }}>
+                  Status
+                  <select value={matrixStatusFilter} onChange={(e) => setMatrixStatusFilter(e.target.value)}>
+                    <option value="">All statuses</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Deactive</option>
+                  </select>
+                </label>
+                <label style={{ minWidth: "240px", flex: 1.5 }}>
+                  Search matrices
+                  <input
+                    value={matrixSearch}
+                    onChange={(e) => setMatrixSearch(e.target.value)}
+                    placeholder="Search by matrix name, roles"
+                  />
+                </label>
+              </div>
+
               <div className="ops-table-shell">
                 <table className="ops-table">
                   <thead>
@@ -3843,7 +4037,7 @@ export function OperationsDashboard({
                     </tr>
                   </thead>
                   <tbody>
-                    {approvalMatrices.map((matrix) => (
+                    {filteredApprovalMatrices.map((matrix) => (
                       <tr key={matrix.matrixId}>
                         <td>{matrix.name}</td>
                         <td>INR {formatAmount(matrix.amountFrom)}</td>
@@ -3857,10 +4051,10 @@ export function OperationsDashboard({
                         </td>
                       </tr>
                     ))}
-                    {approvalMatrices.length === 0 ? (
+                    {filteredApprovalMatrices.length === 0 ? (
                       <tr>
                         <td className="ops-empty" colSpan={6}>
-                          No approval matrices configured yet.
+                          {approvalMatrices.length > 0 ? "No approval matrices match the current filters." : "No approval matrices configured yet."}
                         </td>
                       </tr>
                     ) : null}
@@ -3982,6 +4176,25 @@ export function OperationsDashboard({
                 </div>
               ) : null}
 
+              <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0 24px" }}>
+                <label style={{ minWidth: "160px", flex: 1 }}>
+                  Status
+                  <select value={roleStatusFilter} onChange={(e) => setRoleStatusFilter(e.target.value)}>
+                    <option value="">All statuses</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Deactive</option>
+                  </select>
+                </label>
+                <label style={{ minWidth: "240px", flex: 1.5 }}>
+                  Search roles
+                  <input
+                    value={roleSearch}
+                    onChange={(e) => setRoleSearch(e.target.value)}
+                    placeholder="Search by role name, ID, permissions"
+                  />
+                </label>
+              </div>
+
               <div className="ops-table-shell">
                 <table className="ops-table">
                   <thead>
@@ -3996,7 +4209,7 @@ export function OperationsDashboard({
                     </tr>
                   </thead>
                   <tbody>
-                    {roles.map((role) => (
+                    {filteredRoles.map((role) => (
                       <tr key={role.roleId}>
                         <td>{role.name}</td>
                         <td>{role.roleId}</td>
@@ -4027,9 +4240,17 @@ export function OperationsDashboard({
                         </td>
                       </tr>
                     ))}
+                    {filteredRoles.length === 0 ? (
+                      <tr>
+                        <td className="ops-empty-row" colSpan={7} style={{ textAlign: "center", padding: "24px", color: "var(--text-secondary)" }}>
+                          {roles.length > 0 ? "No roles match the current filters." : "No roles configured yet."}
+                        </td>
+                      </tr>
+                    ) : null}
                   </tbody>
                 </table>
               </div>
+
               {roleActionItem ? (
                 <div className="ops-row-action-modal" onMouseDown={() => setRoleActionItem(null)}>
                   <div className="ops-row-action-card" onMouseDown={(event) => event.stopPropagation()}>
@@ -4142,6 +4363,25 @@ export function OperationsDashboard({
                 </div>
               ) : null}
 
+              <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0 24px" }}>
+                <label style={{ minWidth: "160px", flex: 1 }}>
+                  Status
+                  <select value={userStatusFilter} onChange={(e) => setUserStatusFilter(e.target.value)}>
+                    <option value="">All statuses</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Deactive</option>
+                  </select>
+                </label>
+                <label style={{ minWidth: "240px", flex: 1.5 }}>
+                  Search users
+                  <input
+                    value={userSearch}
+                    onChange={(e) => setUserSearch(e.target.value)}
+                    placeholder="Search by display name, username"
+                  />
+                </label>
+              </div>
+
               <div className="ops-table-shell">
                 <table className="ops-table">
                   <thead>
@@ -4155,7 +4395,7 @@ export function OperationsDashboard({
                     </tr>
                   </thead>
                   <tbody>
-                    {users.map((user) => (
+                    {filteredUsers.map((user) => (
                       <tr key={user.userId}>
                         <td>{user.displayName}</td>
                         <td>{user.username}</td>
@@ -4171,6 +4411,13 @@ export function OperationsDashboard({
                         <td>{user.corporateId ?? "Parent tenant access"}</td>
                       </tr>
                     ))}
+                    {filteredUsers.length === 0 ? (
+                      <tr>
+                        <td className="ops-empty-row" colSpan={6} style={{ textAlign: "center", padding: "24px", color: "var(--text-secondary)" }}>
+                          {users.length > 0 ? "No users match the current filters." : "No users configured yet."}
+                        </td>
+                      </tr>
+                    ) : null}
                   </tbody>
                 </table>
               </div>
@@ -4215,6 +4462,130 @@ export function OperationsDashboard({
 
         {activeSection === "reports" ? (
           <section className="ops-page active">
+            <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "24px", flexWrap: "wrap", alignItems: "end", padding: "0" }}>
+              <div style={{ position: "relative" }}>
+                <label style={{ display: "block", marginBottom: "6px" }}>Date Range</label>
+                <button
+                  type="button"
+                  className="ops-button secondary"
+                  onClick={() => setShowReportDatePicker((current) => !current)}
+                  style={{ display: "inline-flex", alignItems: "center", gap: "8px", minWidth: "200px" }}
+                >
+                  <span style={{ opacity: 0.7 }}>
+                    {reportDatePreset === "all"
+                      ? "All time"
+                      : reportDatePreset === "today"
+                        ? "Today"
+                        : reportDatePreset === "yesterday"
+                          ? "Yesterday"
+                          : reportDatePreset === "week"
+                            ? "This week"
+                            : reportDatePreset === "month"
+                              ? "This month"
+                              : "Custom"}
+                  </span>
+                </button>
+
+                {showReportDatePicker ? (
+                  <>
+                    <div
+                      onClick={() => setShowReportDatePicker(false)}
+                      style={{
+                        position: "fixed",
+                        inset: 0,
+                        zIndex: 39,
+                        background: "transparent"
+                      }}
+                    />
+                    <div
+                      onClick={(event) => event.stopPropagation()}
+                      style={{
+                        position: "absolute",
+                        top: "calc(100% + 10px)",
+                        left: 0,
+                        width: "440px",
+                        background: "var(--surface)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "18px",
+                        boxShadow: "0 24px 56px rgba(15, 23, 42, 0.16)",
+                        padding: "16px",
+                        zIndex: 40
+                      }}
+                    >
+                      <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: "14px" }}>
+                        <div style={{ display: "grid", gap: "8px" }}>
+                          {[
+                            ["all", "All time"],
+                            ["today", "Today"],
+                            ["yesterday", "Yesterday"],
+                            ["week", "This week"],
+                            ["month", "This month"],
+                            ["custom", "Custom"]
+                          ].map(([value, label]) => (
+                            <button
+                              key={value}
+                              type="button"
+                              className="ops-button secondary"
+                              onClick={() => setReportDatePreset(value)}
+                              style={{
+                                justifyContent: "flex-start",
+                                width: "100%",
+                                background: reportDatePreset === value ? "var(--accent-soft)" : "var(--surface)"
+                              }}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        <div style={{ display: "grid", gap: "12px", alignContent: "start" }}>
+                          {reportDatePreset === "custom" ? (
+                            <>
+                              <label>
+                                Start date
+                                <input
+                                  onChange={(event) => setReportCustomStart(event.target.value)}
+                                  type="date"
+                                  value={reportCustomStart}
+                                />
+                              </label>
+                              <label>
+                                End date
+                                <input
+                                  onChange={(event) => setReportCustomEnd(event.target.value)}
+                                  type="date"
+                                  value={reportCustomEnd}
+                                />
+                              </label>
+                              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                                <button
+                                  type="button"
+                                  className="ops-button secondary"
+                                  onClick={() => setShowReportDatePicker(false)}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  className="ops-button primary"
+                                  onClick={() => setShowReportDatePicker(false)}
+                                >
+                                  Set date
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <p className="ops-meta" style={{ margin: 0 }}>
+                              Choose a quick range or switch to custom to set start and end dates.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            </div>
+
             <div className="ops-summary">
               <article className="ops-stat">
                 <strong>{transactions.length}</strong>
@@ -4352,9 +4723,20 @@ export function OperationsDashboard({
                 <div className="ops-panel-head">
                   <div>
                     <h3>Recent transactions</h3>
-
                   </div>
                 </div>
+
+                <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", padding: "0 24px" }}>
+                  <label style={{ minWidth: "240px", flex: 1 }}>
+                    Search recent transactions
+                    <input
+                      value={reportSearch}
+                      onChange={(e) => setReportSearch(e.target.value)}
+                      placeholder="Search by reference, batch ID"
+                    />
+                  </label>
+                </div>
+
                 <div className="ops-table-shell">
                   <table className="ops-table">
                     <thead>
@@ -4366,8 +4748,8 @@ export function OperationsDashboard({
                       </tr>
                     </thead>
                     <tbody>
-                      {reportMetrics.recentTransactions.length > 0 ? (
-                        reportMetrics.recentTransactions.map((transaction) => (
+                      {filteredReportRecentTransactions.length > 0 ? (
+                        filteredReportRecentTransactions.map((transaction) => (
                           <tr key={transaction.batchId}>
                             <td>
                               <strong>{transaction.title}</strong>
@@ -4386,7 +4768,7 @@ export function OperationsDashboard({
                       ) : (
                         <tr>
                           <td className="ops-empty-row" colSpan={4}>
-                            No recent transactions yet.
+                            {reportMetrics.recentTransactions.length > 0 ? "No recent transactions match the search filter." : "No recent transactions yet."}
                           </td>
                         </tr>
                       )}
@@ -4404,8 +4786,26 @@ export function OperationsDashboard({
               <div className="ops-panel-head">
                 <div>
                   <h3>{activeSectionLabel}</h3>
-
                 </div>
+              </div>
+
+              <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0 24px" }}>
+                <label style={{ minWidth: "160px", flex: 1 }}>
+                  Entity Type
+                  <select value={auditEntityFilter} onChange={(e) => setAuditEntityFilter(e.target.value)}>
+                    <option value="">All types</option>
+                    <option value="user">User</option>
+                    <option value="role">Role</option>
+                  </select>
+                </label>
+                <label style={{ minWidth: "240px", flex: 1.5 }}>
+                  Search audit logs
+                  <input
+                    value={auditSearch}
+                    onChange={(e) => setAuditSearch(e.target.value)}
+                    placeholder="Search by item name, actor role, remark"
+                  />
+                </label>
               </div>
 
               <div className="ops-table-shell">
@@ -4422,8 +4822,8 @@ export function OperationsDashboard({
                     </tr>
                   </thead>
                   <tbody>
-                    {setupAuditEntries.length > 0 ? (
-                      setupAuditEntries.map((entry) => (
+                    {filteredAuditEntries.length > 0 ? (
+                      filteredAuditEntries.map((entry) => (
                         <tr key={entry.id}>
                           <td>{capitalize(entry.entity)}</td>
                           <td>{entry.itemName}</td>
@@ -4440,8 +4840,8 @@ export function OperationsDashboard({
                       ))
                     ) : (
                       <tr>
-                        <td className="ops-empty-row" colSpan={7}>
-                          No setup audit activity yet.
+                        <td className="ops-empty-row" colSpan={7} style={{ textAlign: "center", padding: "24px", color: "var(--text-secondary)" }}>
+                          {setupAuditEntries.length > 0 ? "No audit logs match the current filters." : "No setup audit activity yet."}
                         </td>
                       </tr>
                     )}
