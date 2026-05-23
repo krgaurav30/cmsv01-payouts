@@ -167,15 +167,24 @@ function CompactMultiDropdown({
         onClick={() => setOpen((current) => !current)}
         style={{
           width: "100%",
-          minHeight: "44px",
+          height: "36px",
           textAlign: "left",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           gap: "10px",
-          padding: "10px 14px",
+          padding: "0 10px",
           whiteSpace: "normal",
-          background: "#ffffff"
+          background: "var(--surface)",
+          border: open ? "1px solid var(--border-focus)" : "1px solid var(--border)",
+          boxShadow: open ? "0 0 0 2px rgba(37, 99, 235, 0.12)" : "none",
+          borderRadius: "var(--radius-md)",
+          fontSize: "13px",
+          color: "var(--text-primary)",
+          fontFamily: "inherit",
+          outline: "none",
+          cursor: "pointer",
+          transition: "border-color 120ms ease, box-shadow 120ms ease"
         }}
       >
         <span
@@ -4012,7 +4021,7 @@ export function OperationsDashboard({
                     <option value="inactive">Inactive</option>
                   </select>
                 </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label>
                   Filter by Packages
                   <CompactMultiDropdown
                     label="Packages Filter"
