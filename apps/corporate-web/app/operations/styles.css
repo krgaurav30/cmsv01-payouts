@@ -731,18 +731,17 @@
 }
 
 .ops-button.primary {
-  background: linear-gradient(180deg, #34D399 0%, var(--action-text) 100%);
+  background: var(--action-text);
   border: 1px solid var(--action-text);
   color: #ffffff;
   font-weight: 600;
-  box-shadow: 0 10px 22px rgba(16, 185, 129, 0.18);
+  box-shadow: var(--shadow-sm);
 }
 
 .ops-button.primary:hover {
-  background: linear-gradient(180deg, #2DD4BF 0%, #10B981 100%);
-  border-color: #10B981;
-  box-shadow: 0 12px 26px rgba(16, 185, 129, 0.24);
-  transform: translateY(-1px);
+  background: #166534; /* Highly premium deep forest green matching the theme accent */
+  border-color: #166534;
+  box-shadow: var(--shadow-md);
 }
 
 .ops-button.secondary {
@@ -1181,8 +1180,8 @@
 
 .ops-table th {
   background: #ffffff;
-  color: var(--text-secondary);
-  font-size: 11px;
+  color: var(--text-primary);
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-weight: 700;
@@ -1602,9 +1601,9 @@
 .ops-stripe-table th {
   text-align: left;
   padding: 10px 14px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   border-bottom: 1px solid var(--border);
