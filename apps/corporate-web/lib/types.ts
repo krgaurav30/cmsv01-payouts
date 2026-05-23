@@ -64,6 +64,10 @@ export type ApprovalMatrix = {
   matrixId: string;
   name: string;
   corporateTenantId: string;
+  subscriptionId: string | null;
+  packageCode: string | null;
+  packageDisplayName: string | null;
+  debitAccountIds: string[];
   entityType: "transaction";
   amountFrom: number;
   amountTo: number;

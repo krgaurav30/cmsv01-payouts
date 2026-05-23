@@ -620,6 +620,24 @@ export function OperationsDashboard({
     [editingBeneficiaryId, beneficiaries]
   );
 
+  const [editingApprovalMatrixId, setEditingApprovalMatrixId] = useState<string | null>(null);
+  const editingApprovalMatrix = useMemo(
+    () => (editingApprovalMatrixId ? approvalMatrices.find((item) => item.matrixId === editingApprovalMatrixId) ?? null : null),
+    [editingApprovalMatrixId, approvalMatrices]
+  );
+
+  useEffect(() => {
+    if (editingApprovalMatrix) {
+      setApprovalMatrixSubscriptionId(editingApprovalMatrix.subscriptionId ?? "");
+      setApprovalMatrixDebitAccountIds(editingApprovalMatrix.debitAccountIds ?? []);
+      setApprovalMatrixRoleNames(editingApprovalMatrix.roles ?? []);
+    } else {
+      setApprovalMatrixSubscriptionId("");
+      setApprovalMatrixDebitAccountIds([]);
+      setApprovalMatrixRoleNames([]);
+    }
+  }, [editingApprovalMatrix]);
+
   async function copyText(text: string) {
     try {
       await navigator.clipboard.writeText(text);
@@ -2261,8 +2279,14 @@ export function OperationsDashboard({
       return;
     }
 
+    const isEdit = Boolean(editingApprovalMatrixId);
+    const url = isEdit
+      ? `/v1/approval-matrices/${encodeURIComponent(editingApprovalMatrixId as string)}`
+      : "/v1/approval-matrices";
+    const method = isEdit ? "PUT" : "POST";
+
     setBusy(true);
-    const result = await postJson<ApprovalMatrix>("/v1/approval-matrices", {
+    const result = await postJson<ApprovalMatrix>(url, {
       name: String(formData.get("name")),
       corporateTenantId: session.corporateTenantId,
       createdByUserId: session.userId,
@@ -2272,8 +2296,8 @@ export function OperationsDashboard({
       amountTo: Number(formData.get("amountTo")),
       approvalLevels: Number(formData.get("approvalLevels")),
       roles: selectedRoles,
-      status: "active"
-    });
+      status: isEdit && editingApprovalMatrix ? editingApprovalMatrix.status : "active"
+    }, method);
     setBusy(false);
 
     if (!result.ok) {
@@ -2281,15 +2305,60 @@ export function OperationsDashboard({
       return;
     }
 
-    setApprovalMatrices((current) => [result.data, ...current]);
+    if (isEdit) {
+      setApprovalMatrices((current) =>
+        current.map((item) => (item.matrixId === editingApprovalMatrixId ? result.data : item))
+      );
+    } else {
+      setApprovalMatrices((current) => [result.data, ...current]);
+    }
+
     form.reset();
     setApprovalMatrixSubscriptionId("");
     setApprovalMatrixDebitAccountIds([]);
     setApprovalMatrixRoleNames([]);
+    setEditingApprovalMatrixId(null);
     setShowApprovalMatrixCreate(false);
     setNotice({
       tone: "success",
-      text: "Approval matrix created successfully."
+      text: isEdit ? "Approval matrix updated successfully." : "Approval matrix created successfully."
+    });
+  }
+
+  async function handleToggleMatrixStatus(matrix: ApprovalMatrix) {
+    if (!session || !isRoleMaker) return;
+
+    const newStatus = matrix.status === "active" ? "inactive" : "active";
+    setBusy(true);
+    const result = await postJson<ApprovalMatrix>(
+      `/v1/approval-matrices/${encodeURIComponent(matrix.matrixId)}`,
+      {
+        name: matrix.name,
+        corporateTenantId: session.corporateTenantId,
+        createdByUserId: session.userId,
+        subscriptionId: matrix.subscriptionId || "",
+        debitAccountIds: matrix.debitAccountIds,
+        amountFrom: matrix.amountFrom,
+        amountTo: matrix.amountTo,
+        approvalLevels: matrix.approvalLevels,
+        roles: matrix.roles,
+        status: newStatus
+      },
+      "PUT"
+    );
+    setBusy(false);
+
+    if (!result.ok) {
+      setNotice({ tone: "error", text: result.message });
+      return;
+    }
+
+    setApprovalMatrices((current) =>
+      current.map((item) => (item.matrixId === matrix.matrixId ? result.data : item))
+    );
+    setNotice({
+      tone: "success",
+      text: `Approval matrix status updated to ${newStatus}.`
     });
   }
 
@@ -4758,21 +4827,38 @@ export function OperationsDashboard({
                 {isRoleMaker ? (
                   <button
                     className="ops-button primary"
-                    onClick={() => setShowApprovalMatrixCreate((current) => !current)}
+                    onClick={() => {
+                      if (showApprovalMatrixCreate) {
+                        setEditingApprovalMatrixId(null);
+                      }
+                      setShowApprovalMatrixCreate((current) => !current);
+                    }}
                     type="button"
                   >
-                    {showApprovalMatrixCreate ? "Close form" : "Create matrix"}
+                    {showApprovalMatrixCreate ? (editingApprovalMatrixId ? "Close edit" : "Close form") : "Create matrix"}
                   </button>
                 ) : null}
               </div>
 
               {showApprovalMatrixCreate && isRoleMaker ? (
                 <div className="ops-drawer">
-                  <form className="ops-form" onSubmit={handleApprovalMatrixSubmit}>
+                  <form
+                    className="ops-form"
+                    key={editingApprovalMatrixId ?? "create"}
+                    onSubmit={handleApprovalMatrixSubmit}
+                  >
+                    <h4 style={{ marginBottom: "16px" }}>
+                      {editingApprovalMatrixId ? "Edit Approval Matrix" : "Create Approval Matrix"}
+                    </h4>
                     <div className="ops-fields two">
                       <label>
                         Matrix name
-                        <input name="name" placeholder="Vendor payment standard matrix" required />
+                        <input
+                          defaultValue={editingApprovalMatrix?.name ?? ""}
+                          name="name"
+                          placeholder="Vendor payment standard matrix"
+                          required
+                        />
                       </label>
                       <label>
                         Package subscription
@@ -4794,18 +4880,32 @@ export function OperationsDashboard({
                       </label>
                       <label>
                         From Amount
-                        <input min="0" name="amountFrom" required step="0.01" type="number" />
+                        <input
+                          defaultValue={editingApprovalMatrix?.amountFrom ?? ""}
+                          min="0"
+                          name="amountFrom"
+                          required
+                          step="0.01"
+                          type="number"
+                        />
                       </label>
                       <label>
                         To Amount
-                        <input min="0" name="amountTo" required step="0.01" type="number" />
+                        <input
+                          defaultValue={editingApprovalMatrix?.amountTo ?? ""}
+                          min="0"
+                          name="amountTo"
+                          required
+                          step="0.01"
+                          type="number"
+                        />
                       </label>
                     </div>
 
                     <div className="ops-fields two">
                       <label>
                         Number of Approval Level
-                        <select defaultValue="1" name="approvalLevels" required>
+                        <select defaultValue={editingApprovalMatrix?.approvalLevels ?? "1"} name="approvalLevels" required>
                           <option value="1">1</option>
                           <option value="2">2</option>
                           <option value="3">3</option>
@@ -4846,7 +4946,7 @@ export function OperationsDashboard({
 
                     <div className="ops-actions">
                       <button className="ops-button primary" disabled={busy} type="submit">
-                        {busy ? "Saving..." : "Create approval matrix"}
+                        {busy ? "Saving..." : editingApprovalMatrixId ? "Save updates" : "Create approval matrix"}
                       </button>
                     </div>
                   </form>
@@ -4882,6 +4982,7 @@ export function OperationsDashboard({
                       <th>Number of Approval Level</th>
                       <th>Roles</th>
                       <th>Status</th>
+                      {isRoleMaker && <th>Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -4897,11 +4998,34 @@ export function OperationsDashboard({
                             {humanize(matrix.status)}
                           </span>
                         </td>
+                        {isRoleMaker && (
+                          <td>
+                            <div style={{ display: "flex", gap: "8px" }}>
+                              <button
+                                className="ops-button mini"
+                                onClick={() => {
+                                  setEditingApprovalMatrixId(matrix.matrixId);
+                                  setShowApprovalMatrixCreate(true);
+                                }}
+                                type="button"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className="ops-button mini secondary"
+                                onClick={() => void handleToggleMatrixStatus(matrix)}
+                                type="button"
+                              >
+                                {matrix.status === "active" ? "Deactivate" : "Activate"}
+                              </button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     ))}
                     {filteredApprovalMatrices.length === 0 ? (
                       <tr>
-                        <td className="ops-empty" colSpan={6}>
+                        <td className="ops-empty" colSpan={isRoleMaker ? 7 : 6}>
                           {approvalMatrices.length > 0 ? "No approval matrices match the current filters." : "No approval matrices configured yet."}
                         </td>
                       </tr>
@@ -6340,10 +6464,10 @@ async function fetchJson<T>(url: string): Promise<ApiResult<T>> {
   }
 }
 
-async function postJson<T>(url: string, body: unknown): Promise<ApiResult<T>> {
+async function postJson<T>(url: string, body: unknown, method: string = "POST"): Promise<ApiResult<T>> {
   try {
     const response = await fetch(url, {
-      method: "POST",
+      method: method,
       headers: {
         "Content-Type": "application/json"
       },
