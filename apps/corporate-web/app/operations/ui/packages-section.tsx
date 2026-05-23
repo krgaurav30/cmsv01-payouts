@@ -237,6 +237,7 @@ export function PackagesSection({
 
   const [searchQuery, setSearchQuery] = useState("");
   const [useCaseFilter, setUseCaseFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
@@ -248,9 +249,12 @@ export function PackagesSection({
 
       const matchesUseCase = !useCaseFilter || item.useCase === useCaseFilter;
 
-      return matchesSearch && matchesUseCase;
+      const itemStatus = item.status ?? "active";
+      const matchesStatus = !statusFilter || itemStatus === statusFilter;
+
+      return matchesSearch && matchesUseCase && matchesStatus;
     });
-  }, [items, searchQuery, useCaseFilter]);
+  }, [items, searchQuery, useCaseFilter, statusFilter]);
 
   const [packageCode, setPackageCode] = useState("");
   const [name, setName] = useState("");
@@ -714,6 +718,14 @@ export function PackagesSection({
         ) : null}
 
         <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end" }}>
+          <label style={{ minWidth: "160px", flex: 1 }}>
+            Status
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="">All statuses</option>
+              <option value="active">Active</option>
+              <option value="inactive">Deactive</option>
+            </select>
+          </label>
           <label style={{ minWidth: "160px", flex: 1 }}>
             Use Case
             <select value={useCaseFilter} onChange={(e) => setUseCaseFilter(e.target.value)}>
