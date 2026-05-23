@@ -2,10 +2,27 @@
 
 import { useRouter, usePathname } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { PackagesSection } from "./packages-section";
-import { DebitAccountsSection } from "./debit-accounts-section";
-import { TransactionDetailsBody } from "./detail-panels";
-import { DevPortalSection } from "./devportal-section";
+import dynamic from "next/dynamic";
+
+const PackagesSection = dynamic(() => import("./packages-section").then((mod) => mod.PackagesSection), {
+  ssr: false,
+  loading: () => <div className="ops-loading" style={{ padding: "24px", color: "var(--text-secondary)" }}>Loading packages...</div>
+});
+
+const DebitAccountsSection = dynamic(() => import("./debit-accounts-section").then((mod) => mod.DebitAccountsSection), {
+  ssr: false,
+  loading: () => <div className="ops-loading" style={{ padding: "24px", color: "var(--text-secondary)" }}>Loading accounts...</div>
+});
+
+const DevPortalSection = dynamic(() => import("./devportal-section").then((mod) => mod.DevPortalSection), {
+  ssr: false,
+  loading: () => <div className="ops-loading" style={{ padding: "24px", color: "var(--text-secondary)" }}>Loading developer portal...</div>
+});
+
+const TransactionDetailsBody = dynamic(() => import("./detail-panels").then((mod) => mod.TransactionDetailsBody), {
+  ssr: false,
+  loading: () => <div style={{ padding: "16px", textAlign: "center", color: "var(--text-secondary)" }}>Loading details...</div>
+});
 
 import {
   clearSession,
@@ -412,6 +429,18 @@ type OperationsDashboardProps = {
 
 type RefreshWorkspaceOptions = {
   silent?: boolean;
+  scopes?: Array<
+    | "transactions"
+    | "file-uploads"
+    | "beneficiaries"
+    | "approval-matrices"
+    | "roles"
+    | "users"
+    | "subscriptions"
+    | "debit-accounts"
+    | "settings"
+    | "packages"
+  >;
 };
 
 export function OperationsDashboard({
@@ -435,7 +464,10 @@ export function OperationsDashboard({
   const latestCorporateIdRef = useRef(initialData.selectedCorporateId);
 
   const [session, setSession] = useState<CorporateSession | null>(initialSession);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => {
+    const hasData = initialData && initialData.corporates && initialData.corporates.length > 0;
+    return !hasData;
+  });
   const [busy, setBusy] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -507,6 +539,7 @@ export function OperationsDashboard({
 
   const [showBeneficiaryCreate, setShowBeneficiaryCreate] = useState(false);
   const [editingBeneficiaryId, setEditingBeneficiaryId] = useState<string | null>(null);
+  const [beneIdError, setBeneIdError] = useState("");
   const [beneficiaryActionItem, setBeneficiaryActionItem] = useState<Beneficiary | null>(null);
   const [beneficiaryActionMenuOpen, setBeneficiaryActionMenuOpen] = useState(false);
   const [showTransactionCreate, setShowTransactionCreate] = useState(false);
@@ -530,6 +563,7 @@ export function OperationsDashboard({
 
   const [beneficiarySearch, setBeneficiarySearch] = useState("");
   const [beneficiaryStatusFilter, setBeneficiaryStatusFilter] = useState("");
+  const [beneficiaryFilterPackages, setBeneficiaryFilterPackages] = useState<string[]>([]);
   const [beneficiaryPackageCodes, setBeneficiaryPackageCodes] = useState<string[]>([]);
   const editingRole = useMemo(
     () => (editingRoleId ? roles.find((item) => item.roleId === editingRoleId) ?? null : null),
@@ -591,14 +625,15 @@ export function OperationsDashboard({
 
     bootstrappedRef.current = true;
 
-    if (initialSession && initialData.selectedCorporateId) {
+    const hasData = initialData && initialData.corporates && initialData.corporates.length > 0;
+    if (initialSession && initialData.selectedCorporateId && hasData) {
       if (initialData.selectedCorporateId) {
         persistSelectedCorporateId(initialData.selectedCorporateId);
       }
       return;
     }
 
-    const currentSession = readSession();
+    const currentSession = initialSession ?? readSession();
     if (!currentSession) {
       router.replace("/login");
       return;
@@ -681,6 +716,8 @@ export function OperationsDashboard({
     options: RefreshWorkspaceOptions = {}
   ) {
     const silent = options.silent ?? false;
+    const scopes = options.scopes ?? [];
+    const shouldFetch = (scope: any) => scopes.length === 0 || scopes.includes(scope);
 
     if (!corporateId) {
       setTransactions([]);
@@ -700,20 +737,25 @@ export function OperationsDashboard({
     if (!silent) {
       setBusy(true);
     }
-    const settingsRequest = hasPermission(currentSession, "settings.view")
+    const settingsRequest = shouldFetch("settings") && hasPermission(currentSession, "settings.view")
       ? fetchJson<CorporateTenantSettings>(
           `/v1/settings/corporate-tenant?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&actedByUserId=${encodeURIComponent(currentSession.userId)}`
         )
       : Promise.resolve({
           ok: true as const,
-          data: null
+          data: settings
         });
 
-    const packagesRequest = fetchJson<{ items: any[] }>(
-      `/v1/package-catalog/packages?ownerType=corporate&corporateTenantId=${encodeURIComponent(
-        currentSession.corporateTenantId
-      )}&corporateId=${encodeURIComponent(corporateId)}`
-    );
+    const packagesRequest = shouldFetch("packages")
+      ? fetchJson<{ items: any[] }>(
+          `/v1/package-catalog/packages?ownerType=corporate&corporateTenantId=${encodeURIComponent(
+            currentSession.corporateTenantId
+          )}&corporateId=${encodeURIComponent(corporateId)}`
+        )
+      : Promise.resolve({
+          ok: true as const,
+          data: { items: packages }
+        });
 
     const [
       transactionsResult,
@@ -727,30 +769,46 @@ export function OperationsDashboard({
       settingsResult,
       packagesResult
     ] = await Promise.all([
-      fetchJson<{ items: PayoutBatch[] }>(
-        `/v1/payouts/batches?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
-      ),
-      fetchJson<{ items: PayoutFileUpload[] }>(
-        `/v1/payouts/file-uploads?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
-      ),
-      fetchJson<{ items: Beneficiary[] }>(
-        `/v1/beneficiaries?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
-      ),
-      fetchJson<{ items: ApprovalMatrix[] }>(
-        `/v1/approval-matrices?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}`
-      ),
-      fetchJson<{ items: CorporateRole[] }>(
-        `/v1/auth/corporate-roles?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}`
-      ),
-      fetchJson<{ items: CorporateUser[] }>(
-        `/v1/auth/users?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
-      ),
-      fetchJson<{ items: CorporateSubscription[] }>(
-        `/v1/subscriptions?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
-      ),
-      fetchJson<{ items: CorporateDebitAccount[] }>(
-        `/v1/debit-accounts?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
-      ),
+      shouldFetch("transactions")
+        ? fetchJson<{ items: PayoutBatch[] }>(
+            `/v1/payouts/batches?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
+          )
+        : Promise.resolve({ ok: true as const, data: { items: transactions } }),
+      shouldFetch("file-uploads")
+        ? fetchJson<{ items: PayoutFileUpload[] }>(
+            `/v1/payouts/file-uploads?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
+          )
+        : Promise.resolve({ ok: true as const, data: { items: fileUploads } }),
+      shouldFetch("beneficiaries")
+        ? fetchJson<{ items: Beneficiary[] }>(
+            `/v1/beneficiaries?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
+          )
+        : Promise.resolve({ ok: true as const, data: { items: beneficiaries } }),
+      shouldFetch("approval-matrices")
+        ? fetchJson<{ items: ApprovalMatrix[] }>(
+            `/v1/approval-matrices?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}`
+          )
+        : Promise.resolve({ ok: true as const, data: { items: approvalMatrices } }),
+      shouldFetch("roles")
+        ? fetchJson<{ items: CorporateRole[] }>(
+            `/v1/auth/corporate-roles?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}`
+          )
+        : Promise.resolve({ ok: true as const, data: { items: roles } }),
+      shouldFetch("users")
+        ? fetchJson<{ items: CorporateUser[] }>(
+            `/v1/auth/users?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
+          )
+        : Promise.resolve({ ok: true as const, data: { items: users } }),
+      shouldFetch("subscriptions")
+        ? fetchJson<{ items: CorporateSubscription[] }>(
+            `/v1/subscriptions?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
+          )
+        : Promise.resolve({ ok: true as const, data: { items: subscriptions } }),
+      shouldFetch("debit-accounts")
+        ? fetchJson<{ items: CorporateDebitAccount[] }>(
+            `/v1/debit-accounts?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
+          )
+        : Promise.resolve({ ok: true as const, data: { items: debitAccounts } }),
       settingsRequest,
       packagesRequest
     ]);
@@ -902,15 +960,42 @@ export function OperationsDashboard({
 
       autoRefreshInFlightRef.current = true;
 
+      let scopes: RefreshWorkspaceOptions["scopes"] = [];
+      if (activeSection === "transactions") {
+        scopes = ["transactions", "debit-accounts"];
+      } else if (activeSection === "file-uploads") {
+        scopes = ["file-uploads", "transactions"];
+      } else if (activeSection === "approvals") {
+        scopes = ["transactions", "file-uploads", "beneficiaries", "roles", "users"];
+      } else if (activeSection === "home") {
+        scopes = ["transactions", "debit-accounts", "file-uploads"];
+      } else if (activeSection === "beneficiaries") {
+        scopes = ["beneficiaries", "packages"];
+      } else if (activeSection === "debit-accounts") {
+        scopes = ["debit-accounts", "subscriptions"];
+      } else if (activeSection === "users") {
+        scopes = ["users", "roles"];
+      } else if (activeSection === "roles") {
+        scopes = ["roles"];
+      } else if (activeSection === "settings") {
+        scopes = ["settings"];
+      } else if (activeSection === "packages") {
+        scopes = ["packages"];
+      } else {
+        scopes = ["debit-accounts"];
+      }
+
       try {
         await Promise.all([
-          refreshWorkspace(currentSession, corporateId, { silent: true }),
+          refreshWorkspace(currentSession, corporateId, { scopes, silent: true }),
           refreshNotifications(currentSession.userId)
         ]);
       } finally {
         autoRefreshInFlightRef.current = false;
       }
     }
+
+    void runAutoRefresh();
 
     const refreshMs =
       activeSection === "transactions" ||
@@ -1326,6 +1411,24 @@ export function OperationsDashboard({
     });
   }, [users, userSearch, userStatusFilter]);
 
+  const filterPackageOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const pkg of packages) {
+      if (pkg.packageCode) {
+        map.set(pkg.packageCode, pkg.displayName || pkg.name || pkg.packageCode);
+      }
+    }
+    for (const sub of subscriptions) {
+      if (sub.packageCode) {
+        map.set(sub.packageCode, sub.displayName || sub.packageCode);
+      }
+    }
+    return Array.from(map.entries()).map(([code, name]) => ({
+      value: code,
+      label: `${name} (${code})`
+    }));
+  }, [packages, subscriptions]);
+
   const beneficiaryRows = useMemo(() => {
     return beneficiaries.filter((beneficiary) => {
       const searchTerm = beneficiarySearch.trim().toLowerCase();
@@ -1340,9 +1443,13 @@ export function OperationsDashboard({
         beneficiaryStatusFilter.length === 0 ||
         beneficiary.status === beneficiaryStatusFilter;
 
-      return matchesSearch && matchesStatus;
+      const matchesPackages =
+        beneficiaryFilterPackages.length === 0 ||
+        beneficiary.assignedPackages.some((pkg) => beneficiaryFilterPackages.includes(pkg.packageCode));
+
+      return matchesSearch && matchesStatus && matchesPackages;
     });
-  }, [beneficiaries, beneficiarySearch, beneficiaryStatusFilter]);
+  }, [beneficiaries, beneficiarySearch, beneficiaryStatusFilter, beneficiaryFilterPackages]);
 
   const transactionRows = useMemo(() => {
     return transactions.filter((transaction) => {
@@ -1849,6 +1956,20 @@ export function OperationsDashboard({
 
     const form = event.currentTarget;
     const formData = new FormData(form);
+    const isEdit = Boolean(editingBeneficiaryId);
+
+    const beneId = String(formData.get("beneficiaryId")).trim();
+    if (!isEdit) {
+      if (beneIdError) {
+        setNotice({ tone: "error", text: "Please resolve the Beneficiary ID duplicate error before submitting." });
+        return;
+      }
+      if (beneficiaries.some((b) => b.beneficiaryId.trim().toLowerCase() === beneId.toLowerCase())) {
+        setNotice({ tone: "error", text: "This Beneficiary ID already exists." });
+        return;
+      }
+    }
+
     if (beneficiaryPackageCodes.length === 0) {
       setNotice({ tone: "error", text: "Please attach at least one package to the beneficiary." });
       return;
@@ -1868,7 +1989,6 @@ export function OperationsDashboard({
       packageCodes: beneficiaryPackageCodes
     };
 
-    const isEdit = Boolean(editingBeneficiaryId);
     const result = isEdit
       ? await postJson<Beneficiary>(
           `/v1/beneficiaries/${encodeURIComponent(editingBeneficiaryId as string)}`,
@@ -1888,6 +2008,7 @@ export function OperationsDashboard({
     setBeneficiaries((current) => [result.data, ...current.filter((item) => item.beneficiaryId !== result.data.beneficiaryId)]);
     form.reset();
     setBeneficiaryPackageCodes([]);
+    setBeneIdError("");
     setShowBeneficiaryCreate(false);
     setEditingBeneficiaryId(null);
     setNotice({
@@ -1898,10 +2019,26 @@ export function OperationsDashboard({
     });
   }
 
+  const handleBeneIdChange = (val: string) => {
+    if (!val) {
+      setBeneIdError("");
+      return;
+    }
+    const duplicate = beneficiaries.some(
+      (b) => b.beneficiaryId.trim().toLowerCase() === val.trim().toLowerCase()
+    );
+    if (duplicate) {
+      setBeneIdError("This Beneficiary ID already exists.");
+    } else {
+      setBeneIdError("");
+    }
+  };
+
   function beginEditBeneficiary(beneficiary: Beneficiary) {
     setBeneficiaryActionItem(null);
     setBeneficiaryActionMenuOpen(false);
     setEditingBeneficiaryId(beneficiary.beneficiaryId);
+    setBeneIdError("");
     setShowBeneficiaryCreate(true);
     setBeneficiaryPackageCodes(beneficiary.assignedPackages.map((item) => item.packageCode));
   }
@@ -1941,7 +2078,7 @@ export function OperationsDashboard({
             : item
         )
       );
-      void refreshWorkspace(session, selectedCorporateId);
+      void refreshWorkspace(session, selectedCorporateId, { scopes: ["beneficiaries"] });
     }
   }
 
@@ -2021,7 +2158,7 @@ export function OperationsDashboard({
         `${payload.title} accepted for background processing. It will appear here shortly.`
     });
     window.setTimeout(() => {
-      void refreshWorkspace(session, selectedCorporateId);
+      void refreshWorkspace(session, selectedCorporateId, { scopes: ["transactions", "debit-accounts"] });
     }, 1200);
   }
 
@@ -2087,7 +2224,7 @@ export function OperationsDashboard({
         data.message ??
         `${data.fileUpload?.fileName ?? "File"} accepted for background processing.`
     });
-    void refreshWorkspace(session, selectedCorporateId);
+    void refreshWorkspace(session, selectedCorporateId, { scopes: ["file-uploads", "transactions"] });
   }
 
   async function handleApprovalMatrixSubmit(event: FormEvent<HTMLFormElement>) {
@@ -2192,17 +2329,31 @@ export function OperationsDashboard({
           : result.message
     });
 
-    if (result.ok) {
+    if (result.ok || result.message === "An action is already in progress by another user, please recheck the status after sometime") {
       setApprovalComment("");
       setSelectedApprovalKey(null);
-      void refreshWorkspace(session, selectedCorporateId);
-    } else if (
-      result.message ===
-      "An action is already in progress by another user, please recheck the status after sometime"
-    ) {
-      setApprovalComment("");
-      setSelectedApprovalKey(null);
-      void refreshWorkspace(session, selectedCorporateId);
+      let scopes: Array<
+        | "transactions"
+        | "file-uploads"
+        | "beneficiaries"
+        | "approval-matrices"
+        | "roles"
+        | "users"
+        | "subscriptions"
+        | "debit-accounts"
+        | "settings"
+        | "packages"
+      > = [];
+      if (entity === "transaction") {
+        scopes = ["transactions", "debit-accounts"];
+      } else if (entity === "beneficiary") {
+        scopes = ["beneficiaries"];
+      } else if (entity === "role") {
+        scopes = ["roles"];
+      } else if (entity === "user") {
+        scopes = ["users"];
+      }
+      void refreshWorkspace(session, selectedCorporateId, { scopes });
     }
   }
 
@@ -2268,7 +2419,7 @@ export function OperationsDashboard({
       });
     }
 
-    void refreshWorkspace(session, selectedCorporateId);
+    void refreshWorkspace(session, selectedCorporateId, { scopes: ["transactions", "debit-accounts"] });
   }
 
   async function loadFileBatches(uploadId: string) {
@@ -2356,7 +2507,7 @@ export function OperationsDashboard({
       }
     }
 
-    void refreshWorkspace(session, selectedCorporateId);
+    void refreshWorkspace(session, selectedCorporateId, { scopes: ["transactions", "debit-accounts", "file-uploads"] });
   }
 
   async function handleNotificationClick(notification: Notification) {
@@ -2472,7 +2623,7 @@ export function OperationsDashboard({
 
     if (result.ok) {
       setRoles((current) => [result.data, ...current.filter((item) => item.roleId !== result.data.roleId)]);
-      void refreshWorkspace(session!, selectedCorporateId, { silent: true });
+      void refreshWorkspace(session!, selectedCorporateId, { scopes: ["roles"], silent: true });
     }
   }
 
@@ -3485,7 +3636,7 @@ export function OperationsDashboard({
                 </div>
               ) : null}
 
-              <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0 24px" }}>
+              <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0" }}>
                 <div style={{ position: "relative" }}>
                   <label style={{ display: "block", marginBottom: "6px" }}>Date Range</label>
                   <button
@@ -3721,7 +3872,14 @@ export function OperationsDashboard({
                           placeholder="KUMAR123"
                           required
                           disabled={Boolean(editingBeneficiary)}
+                          onChange={(e) => handleBeneIdChange(e.target.value)}
+                          style={beneIdError ? { borderColor: "#DC2626" } : undefined}
                         />
+                        {beneIdError ? (
+                          <span style={{ color: "#DC2626", fontSize: "12px", marginTop: "4px", display: "block", fontWeight: 500 }}>
+                            {beneIdError}
+                          </span>
+                        ) : null}
                       </label>
                       <label>
                         Bene Name
@@ -3769,12 +3927,15 @@ export function OperationsDashboard({
                         Packages
                         <CompactMultiDropdown
                           label="beneficiary packages"
-                          options={subscriptions
-                            .filter((subscription) => subscription.status === "active")
-                            .map((subscription) => ({
-                              value: subscription.packageCode,
-                              label: `${subscription.displayName} (${subscription.packageCode})`
-                            }))}
+                          options={(() => {
+                            const activePkgs = packages.filter((p) => (p.status ?? "active") === "active");
+                            const activeSubs = subscriptions.filter((s) => s.status === "active");
+                            const list = activePkgs.length > 0 ? activePkgs : activeSubs;
+                            return list.map((item) => ({
+                              value: item.packageCode,
+                              label: `${item.name || item.displayName || item.packageCode} (${item.packageCode})`
+                            }));
+                          })()}
                           values={beneficiaryPackageCodes}
                           onChange={setBeneficiaryPackageCodes}
                           placeholder="Attach packages"
@@ -3806,6 +3967,7 @@ export function OperationsDashboard({
                             setShowBeneficiaryCreate(false);
                             setEditingBeneficiaryId(null);
                             setBeneficiaryPackageCodes([]);
+                            setBeneIdError("");
                           }}
                         >
                           Cancel
@@ -3818,6 +3980,7 @@ export function OperationsDashboard({
                           onClick={() => {
                             setBeneficiaryPackageCodes([]);
                             setShowBeneficiaryCreate(false);
+                            setBeneIdError("");
                           }}
                           >
                           Reset
@@ -3847,6 +4010,16 @@ export function OperationsDashboard({
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                   </select>
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  Filter by Packages
+                  <CompactMultiDropdown
+                    label="Packages Filter"
+                    options={filterPackageOptions}
+                    values={beneficiaryFilterPackages}
+                    onChange={setBeneficiaryFilterPackages}
+                    placeholder="All packages"
+                  />
                 </label>
               </div>
 
@@ -4670,7 +4843,7 @@ export function OperationsDashboard({
                 </div>
               ) : null}
 
-              <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0 24px" }}>
+              <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0" }}>
                 <label style={{ minWidth: "160px", flex: 1 }}>
                   Status
                   <select value={matrixStatusFilter} onChange={(e) => setMatrixStatusFilter(e.target.value)}>
@@ -4841,7 +5014,7 @@ export function OperationsDashboard({
                 </div>
               ) : null}
 
-              <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0 24px" }}>
+              <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0" }}>
                 <label style={{ minWidth: "160px", flex: 1 }}>
                   Status
                   <select value={roleStatusFilter} onChange={(e) => setRoleStatusFilter(e.target.value)}>
@@ -5049,7 +5222,7 @@ export function OperationsDashboard({
                 </div>
               ) : null}
 
-              <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0 24px" }}>
+              <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0" }}>
                 <label style={{ minWidth: "160px", flex: 1 }}>
                   Status
                   <select value={userStatusFilter} onChange={(e) => setUserStatusFilter(e.target.value)}>
@@ -5381,7 +5554,7 @@ export function OperationsDashboard({
                   </div>
                 </div>
 
-                <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", padding: "0 24px" }}>
+                <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", padding: "0" }}>
                   <label style={{ minWidth: "240px", flex: 1 }}>
                     Search recent transactions
                     <input
@@ -5444,7 +5617,7 @@ export function OperationsDashboard({
                 </div>
               </div>
 
-              <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0 24px" }}>
+              <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0" }}>
                 <label style={{ minWidth: "160px", flex: 1 }}>
                   Entity Type
                   <select value={auditEntityFilter} onChange={(e) => setAuditEntityFilter(e.target.value)}>
@@ -5525,7 +5698,7 @@ export function OperationsDashboard({
             selectedCorporateId={selectedCorporateId}
             onUpdate={async () => {
               if (session) {
-                await refreshWorkspace(session, selectedCorporateId, { silent: true });
+                await refreshWorkspace(session, selectedCorporateId, { scopes: ["debit-accounts", "subscriptions"], silent: true });
               }
             }}
           />
@@ -5728,7 +5901,7 @@ export function OperationsDashboard({
                 selectedCorporateId={selectedCorporateId}
                 onUpdate={async () => {
                   if (session) {
-                    await refreshWorkspace(session, selectedCorporateId, { silent: true });
+                    await refreshWorkspace(session, selectedCorporateId, { scopes: ["debit-accounts", "subscriptions"], silent: true });
                   }
                 }}
                 isNested={true}

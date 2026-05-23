@@ -1,5 +1,9 @@
 import { ConsoleNav } from "../ui/console-nav";
-import { DeveloperPortalPageClient } from "./page-client";
+import dynamic from "next/dynamic";
+
+const DeveloperPortalPageClient = dynamic(() => import("./page-client.js").then((mod) => mod.DeveloperPortalPageClient), {
+  loading: () => <div style={{ padding: "32px", textAlign: "center", color: "var(--text-secondary)" }}>Loading Developer Portal...</div>
+});
 
 type PageProps = {
   searchParams: Promise<{ embed?: string }> | { embed?: string };

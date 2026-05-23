@@ -45,7 +45,7 @@ export const approvalMatrixManagementRoutes: FastifyPluginAsync = async (app) =>
         });
       }
 
-      if (result.error === "subscription_access_forbidden") {
+      if ((result.error as string) === "subscription_access_forbidden") {
         return reply.status(403).send({
           message: "You do not have access to manage approval rules for this package subscription"
         });
@@ -109,7 +109,7 @@ export const approvalMatrixManagementRoutes: FastifyPluginAsync = async (app) =>
         });
       }
 
-      if (result.error === "subscription_access_forbidden") {
+      if ((result.error as string) === "subscription_access_forbidden") {
         return reply.status(403).send({
           message: "You do not have access to manage approval rules for this package subscription"
         });

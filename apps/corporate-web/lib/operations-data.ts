@@ -16,32 +16,51 @@ export async function loadOperationsInitialData(
     includeSettings: String(session.permissions.includes("settings.view"))
   });
 
-  return fetchApi<OperationsInitialData>(
-    bffBase,
-    `/bff/corporate/operations/initial-data?${query.toString()}`,
-    {
-      selectedCorporateId: "",
-      bankTenants: [],
-      corporateTenants: [],
-      corporates: [],
-      subscriptions: [],
-      activeSubscription: null,
-      beneficiaries: [],
-      transactions: [],
-      fileUploads: [],
-      approvalMatrices: [],
-      roles: [],
-      users: [],
-      settings: null,
-      debitAccounts: []
-    }
-  );
+  const cookieHeader = `cmsCorporateSession=${encodeURIComponent(JSON.stringify(session))}${
+    selectedCorporateCookieValue ? `; cmsSelectedCorporateId=${encodeURIComponent(selectedCorporateCookieValue)}` : ""
+  }`;
+
+  const startTime = Date.now();
+  const url = `/bff/corporate/operations/initial-data?${query.toString()}`;
+  console.log(`[SSR] Fetching initial data: ${bffBase}${url}`);
+
+  try {
+    const result = await fetchApi<OperationsInitialData>(
+      bffBase,
+      url,
+      cookieHeader,
+      {
+        selectedCorporateId: normalizeCookieValue(selectedCorporateCookieValue) ?? "",
+        bankTenants: [],
+        corporateTenants: [],
+        corporates: [],
+        subscriptions: [],
+        activeSubscription: null,
+        beneficiaries: [],
+        transactions: [],
+        fileUploads: [],
+        approvalMatrices: [],
+        roles: [],
+        users: [],
+        settings: null,
+        debitAccounts: []
+      }
+    );
+    console.log(`[SSR] Initial data fetch completed in ${Date.now() - startTime}ms`);
+    return result;
+  } catch (err: any) {
+    console.error(`[SSR] Initial data fetch failed after ${Date.now() - startTime}ms:`, err.message);
+    throw err;
+  }
 }
 
-async function fetchApi<T>(apiBase: string, path: string, fallback: T): Promise<T> {
+async function fetchApi<T>(apiBase: string, path: string, cookieHeader: string, fallback: T): Promise<T> {
   try {
     const response = await fetch(`${apiBase}${path}`, {
-      cache: "no-store"
+      cache: "no-store",
+      headers: {
+        "Cookie": cookieHeader
+      }
     });
 
     if (!response.ok) {
@@ -65,3 +84,4 @@ function normalizeCookieValue(value?: string | null) {
     return value;
   }
 }
+

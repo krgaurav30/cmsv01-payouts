@@ -1831,12 +1831,39 @@ export class PayoutManagementService {
              order by uploaded_at desc nulls last, upload_id desc`
           );
 
-    const items: PayoutFileUpload[] = [];
-    for (const row of result.rows) {
-      items.push(await this.mapFileUploadRow(row));
+    const userIds = [...new Set(result.rows.map((r) => r.uploaded_by_user_id).filter(Boolean))];
+    const userMap = new Map<string, string>();
+    if (userIds.length > 0) {
+      const usersResult = await this.db.query<{ user_id: string; display_name: string }>(
+        `select user_id, display_name
+         from corporate_users
+         where user_id = any($1)`,
+        [userIds]
+      );
+      for (const u of usersResult.rows) {
+        userMap.set(u.user_id, u.display_name);
+      }
     }
 
-    return items;
+    return result.rows.map((row) => ({
+      uploadId: row.upload_id,
+      bankTenantId: row.bank_tenant_id,
+      corporateTenantId: row.corporate_tenant_id,
+      corporateId: row.corporate_id,
+      subscriptionId: row.subscription_id,
+      packageCode: row.package_code,
+      debitAccountId: row.debit_account_id ?? null,
+      fileName: row.file_name,
+      uploadedByUserId: row.uploaded_by_user_id,
+      uploadedByRole: row.uploaded_by_role,
+      uploadedByName: userMap.get(row.uploaded_by_user_id) ?? null,
+      status: row.status,
+      remark: row.remark,
+      totalRows: row.total_rows,
+      createdCount: row.created_count,
+      rejectedCount: row.rejected_count,
+      uploadedAt: row.uploaded_at?.toISOString() ?? null
+    }));
   }
 
   async getFileUpload(uploadId: string) {

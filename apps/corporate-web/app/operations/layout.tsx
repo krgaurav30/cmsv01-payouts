@@ -12,6 +12,9 @@ type OperationsLayoutProps = {
 };
 
 export default async function OperationsLayout({ children }: OperationsLayoutProps) {
+  const layoutStartTime = Date.now();
+  console.log("[Layout] Rendering started");
+
   const cookieStore = await cookies();
   const headerStore = await headers();
   const session = parseSessionCookie(cookieStore.get(SESSION_COOKIE)?.value);
@@ -20,14 +23,38 @@ export default async function OperationsLayout({ children }: OperationsLayoutPro
   const requestOrigin = host ? `${protocol}://${host}` : null;
 
   if (!session) {
+    console.log(`[Layout] No session found, redirecting in ${Date.now() - layoutStartTime}ms`);
     redirect("/login");
   }
 
-  const initialData = await loadOperationsInitialData(
-    session,
-    cookieStore.get("cmsSelectedCorporateId")?.value,
-    requestOrigin
-  );
+  let initialData;
+  try {
+    initialData = await loadOperationsInitialData(
+      session,
+      cookieStore.get("cmsSelectedCorporateId")?.value,
+      requestOrigin
+    );
+  } catch (err: any) {
+    console.error("[Layout] loadOperationsInitialData failed:", err.message);
+    initialData = {
+      selectedCorporateId: cookieStore.get("cmsSelectedCorporateId")?.value ?? "",
+      bankTenants: [],
+      corporateTenants: [],
+      corporates: [],
+      subscriptions: [],
+      activeSubscription: null,
+      beneficiaries: [],
+      transactions: [],
+      fileUploads: [],
+      approvalMatrices: [],
+      roles: [],
+      users: [],
+      settings: null,
+      debitAccounts: []
+    };
+  }
+
+  console.log(`[Layout] Rendering completed in ${Date.now() - layoutStartTime}ms`);
 
   return (
     <>
