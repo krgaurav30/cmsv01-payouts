@@ -619,6 +619,7 @@ export function OperationsDashboard({
   const [auditEntityFilter, setAuditEntityFilter] = useState("");
 
   const [isRoleViewOnly, setIsRoleViewOnly] = useState(false);
+  const [roleSubscriptionIds, setRoleSubscriptionIds] = useState<string[]>([]);
   const [isMatrixViewOnly, setIsMatrixViewOnly] = useState(false);
   const [matrixActionItem, setMatrixActionItem] = useState<ApprovalMatrix | null>(null);
   const [userFilterPackages, setUserFilterPackages] = useState<string[]>([]);
@@ -646,6 +647,17 @@ export function OperationsDashboard({
       setApprovalMatrixRoleNames([]);
     }
   }, [editingApprovalMatrix]);
+
+  useEffect(() => {
+    if (editingRole) {
+      const allowedSubs = subscriptions
+        .filter((sub) => sub.userAccess.some((access) => access.roleName === editingRole.name))
+        .map((sub) => sub.subscriptionId);
+      setRoleSubscriptionIds(allowedSubs);
+    } else {
+      setRoleSubscriptionIds([]);
+    }
+  }, [editingRole, subscriptions]);
 
   async function copyText(text: string) {
     try {
@@ -2689,12 +2701,29 @@ export function OperationsDashboard({
     const result = editingRoleId
       ? await postJson<CorporateRole>(`/v1/auth/corporate-roles/${encodeURIComponent(editingRoleId)}`, payload)
       : await postJson<CorporateRole>("/v1/auth/corporate-roles", payload);
-    setBusy(false);
 
     if (!result.ok) {
+      setBusy(false);
       setNotice({ tone: "error", text: result.message });
       return;
     }
+
+    const roleName = String(formData.get("name"));
+    const accessResult = await postJson<{ items?: any[] }>("/v1/subscriptions/role-access", {
+      corporateTenantId: session.corporateTenantId,
+      roleName: roleName,
+      subscriptionIds: roleSubscriptionIds,
+      actedByUserId: session.userId
+    }, "PUT");
+
+    setBusy(false);
+
+    if (!accessResult.ok) {
+      setNotice({ tone: "error", text: accessResult.message });
+      return;
+    }
+
+    void refreshWorkspace(session, selectedCorporateId, { scopes: ["subscriptions"], silent: true });
 
     setRoles((current) => [result.data, ...current.filter((item) => item.roleId !== result.data.roleId)]);
     form.reset();
@@ -2702,7 +2731,7 @@ export function OperationsDashboard({
     setEditingRoleId(null);
     setNotice({
       tone: "success",
-      text: `${String(formData.get("name"))} ${editingRoleId ? "updated" : "created"} successfully and sent for approval.`
+      text: `${roleName} ${editingRoleId ? "updated" : "created"} successfully and sent for approval.`
     });
   }
 
@@ -5278,6 +5307,24 @@ export function OperationsDashboard({
                           defaultValue={editingRole?.description ?? ""}
                           name="description"
                           placeholder="Optional role note"
+                          disabled={isRoleViewOnly}
+                        />
+                      </label>
+                    </div>
+                    <div className="ops-fields one" style={{ marginTop: "12px" }}>
+                      <label>
+                        Allowed Packages
+                        <CompactMultiDropdown
+                          label="allowed packages"
+                          options={subscriptions
+                            .filter((sub) => sub.status === "active")
+                            .map((sub) => ({
+                              value: sub.subscriptionId,
+                              label: `${sub.displayName} (${sub.packageCode})`
+                            }))}
+                          values={roleSubscriptionIds}
+                          onChange={setRoleSubscriptionIds}
+                          placeholder="Select allowed packages for this role"
                           disabled={isRoleViewOnly}
                         />
                       </label>
