@@ -510,41 +510,7 @@ export function PackagesSection({
         </div>
       ) : null}
 
-      {actionMenuItem ? (
-        <div className="ops-row-action-modal" onMouseDown={() => setActionMenuItem(null)}>
-          <div className="ops-row-action-card" onMouseDown={(event) => event.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start" }}>
-              <div>
-                <h4 className="ops-row-action-title">Package actions</h4>
-                <p className="ops-row-action-subtitle">
-                  {actionMenuItem.packageCode} · {actionMenuItem.name}
-                </p>
-              </div>
-              <button type="button" className="ops-mini" onClick={() => setActionMenuItem(null)}>
-                Close
-              </button>
-            </div>
-            <div className="ops-row-action-list">
-              <button type="button" className="ops-mini" style={{ width: "100%", textAlign: "left" }} onClick={() => beginEdit(actionMenuItem)}>
-                Edit
-              </button>
-              <button
-                type="button"
-                className="ops-mini"
-                style={{ width: "100%", textAlign: "left" }}
-                onClick={() =>
-                  void updatePackageStatus(
-                    actionMenuItem,
-                    actionMenuItem.status === "active" ? "inactive" : "active"
-                  )
-                }
-              >
-                {actionMenuItem.status === "active" ? "Deactivate" : "Activate"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+
 
 
       <section className="ops-panel" style={{ padding: "24px" }}>
@@ -773,6 +739,62 @@ export function PackagesSection({
                             type="button"
                             onClick={() => setActionMenuItem((current) => (current?.packageId === item.packageId ? null : item))}
                           >⋮</button>
+                          {actionMenuItem?.packageId === item.packageId ? (
+                            <>
+                              <div
+                                style={{
+                                  position: "fixed",
+                                  inset: 0,
+                                  zIndex: 90,
+                                  background: "transparent",
+                                  cursor: "default"
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActionMenuItem(null);
+                                }}
+                              />
+                              <div
+                                className="ops-action-dropdown"
+                                style={{
+                                  position: "absolute",
+                                  right: 0,
+                                  top: "100%",
+                                  zIndex: 100,
+                                  minWidth: "160px",
+                                  margin: "4px 0 0 0",
+                                  padding: "6px",
+                                  background: "var(--surface)",
+                                  border: "1px solid var(--border)",
+                                  borderRadius: "8px",
+                                  boxShadow: "var(--shadow-lg)",
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: "2px"
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  className="ops-action-item"
+                                  onClick={() => beginEdit(item)}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  className="ops-action-item"
+                                  onClick={() =>
+                                    void updatePackageStatus(
+                                      item,
+                                      item.status === "active" ? "inactive" : "active"
+                                    )
+                                  }
+                                >
+                                  {item.status === "active" ? "Deactivate" : "Activate"}
+                                </button>
+                              </div>
+                            </>
+                          ) : null}
                         </div>
                       </div>
                     </td>

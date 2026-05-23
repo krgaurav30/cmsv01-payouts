@@ -3327,46 +3327,6 @@ export function OperationsDashboard({
                 </div>
               ) : null}
 
-              {beneficiaryActionItem && beneficiaryActionMenuOpen ? (
-                <div className="ops-row-action-modal" onMouseDown={() => setBeneficiaryActionMenuOpen(false)}>
-                  <div className="ops-row-action-card" onMouseDown={(event) => event.stopPropagation()}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start" }}>
-                      <div>
-                        <h4 className="ops-row-action-title">Beneficiary actions</h4>
-                        <p className="ops-row-action-subtitle">
-                          {beneficiaryActionItem.beneficiaryId} · {beneficiaryActionItem.name}
-                        </p>
-                      </div>
-                      <button type="button" className="ops-mini" onClick={() => setBeneficiaryActionMenuOpen(false)}>
-                        Close
-                      </button>
-                    </div>
-                    <div className="ops-row-action-list">
-                      <button
-                        className="ops-mini"
-                        type="button"
-                        onClick={() => beginEditBeneficiary(beneficiaryActionItem)}
-                        style={{ width: "100%", textAlign: "left" }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="ops-mini"
-                        type="button"
-                        onClick={() =>
-                          void updateBeneficiaryStatusFromMenu(
-                            beneficiaryActionItem.status === "active" ? "deactivate" : "activate"
-                          )
-                        }
-                        style={{ width: "100%", textAlign: "left" }}
-                      >
-                        {beneficiaryActionItem.status === "active" ? "Deactivate" : "Activate"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
               <div className="ops-toolbar ops-fields three">
                 <label>
                   Search
@@ -3454,11 +3414,74 @@ export function OperationsDashboard({
                             <div className="ops-row-action-wrap" style={{ justifyContent: "flex-end" }}>
                               <button
                                 className="ops-kebab"
-                                onClick={() => openBeneficiaryActions(beneficiary)}
+                                onClick={() => {
+                                  if (beneficiaryActionItem?.beneficiaryId === beneficiary.beneficiaryId && beneficiaryActionMenuOpen) {
+                                    setBeneficiaryActionMenuOpen(false);
+                                    setBeneficiaryActionItem(null);
+                                  } else {
+                                    openBeneficiaryActions(beneficiary);
+                                  }
+                                }}
                                 type="button"
                               >
                                 ⋮
                               </button>
+                              {beneficiaryActionItem?.beneficiaryId === beneficiary.beneficiaryId && beneficiaryActionMenuOpen ? (
+                                <>
+                                  <div
+                                    style={{
+                                      position: "fixed",
+                                      inset: 0,
+                                      zIndex: 90,
+                                      background: "transparent",
+                                      cursor: "default"
+                                    }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setBeneficiaryActionMenuOpen(false);
+                                      setBeneficiaryActionItem(null);
+                                    }}
+                                  />
+                                  <div
+                                    className="ops-action-dropdown"
+                                    style={{
+                                      position: "absolute",
+                                      right: 0,
+                                      top: "100%",
+                                      zIndex: 100,
+                                      minWidth: "160px",
+                                      margin: "4px 0 0 0",
+                                      padding: "6px",
+                                      background: "var(--surface)",
+                                      border: "1px solid var(--border)",
+                                      borderRadius: "8px",
+                                      boxShadow: "var(--shadow-lg)",
+                                      display: "flex",
+                                      flexDirection: "column",
+                                      gap: "2px"
+                                    }}
+                                  >
+                                    <button
+                                      type="button"
+                                      className="ops-action-item"
+                                      onClick={() => beginEditBeneficiary(beneficiary)}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="ops-action-item"
+                                      onClick={() =>
+                                        void updateBeneficiaryStatusFromMenu(
+                                          beneficiary.status === "active" ? "deactivate" : "activate"
+                                        )
+                                      }
+                                    >
+                                      {beneficiary.status === "active" ? "Deactivate" : "Activate"}
+                                    </button>
+                                  </div>
+                                </>
+                              ) : null}
                             </div>
                           ) : (
                             <span className="ops-meta">
@@ -4243,6 +4266,62 @@ export function OperationsDashboard({
                               >
                                 ⋮
                               </button>
+                              {roleActionItem?.roleId === role.roleId ? (
+                                <>
+                                  <div
+                                    style={{
+                                      position: "fixed",
+                                      inset: 0,
+                                      zIndex: 90,
+                                      background: "transparent",
+                                      cursor: "default"
+                                    }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setRoleActionItem(null);
+                                    }}
+                                  />
+                                  <div
+                                    className="ops-action-dropdown"
+                                    style={{
+                                      position: "absolute",
+                                      right: 0,
+                                      top: "100%",
+                                      zIndex: 100,
+                                      minWidth: "160px",
+                                      margin: "4px 0 0 0",
+                                      padding: "6px",
+                                      background: "var(--surface)",
+                                      border: "1px solid var(--border)",
+                                      borderRadius: "8px",
+                                      boxShadow: "var(--shadow-lg)",
+                                      display: "flex",
+                                      flexDirection: "column",
+                                      gap: "2px"
+                                    }}
+                                  >
+                                    <button
+                                      type="button"
+                                      className="ops-action-item"
+                                      onClick={() => beginEditRole(role)}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="ops-action-item"
+                                      onClick={() =>
+                                        void updateRoleStatus(
+                                          role,
+                                          role.status === "active" ? "inactive" : "active"
+                                        )
+                                      }
+                                    >
+                                      {role.status === "active" ? "Deactivate" : "Activate"}
+                                    </button>
+                                  </div>
+                                </>
+                              ) : null}
                             </div>
                           ) : (
                             <span className="ops-meta">Maker only</span>
@@ -4261,41 +4340,6 @@ export function OperationsDashboard({
                 </table>
               </div>
 
-              {roleActionItem ? (
-                <div className="ops-row-action-modal" onMouseDown={() => setRoleActionItem(null)}>
-                  <div className="ops-row-action-card" onMouseDown={(event) => event.stopPropagation()}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start" }}>
-                      <div>
-                        <h4 className="ops-row-action-title">Role actions</h4>
-                        <p className="ops-row-action-subtitle">
-                          {roleActionItem.roleId} · {roleActionItem.name}
-                        </p>
-                      </div>
-                      <button type="button" className="ops-mini" onClick={() => setRoleActionItem(null)}>
-                        Close
-                      </button>
-                    </div>
-                    <div className="ops-row-action-list">
-                      <button type="button" className="ops-mini" style={{ width: "100%", textAlign: "left" }} onClick={() => beginEditRole(roleActionItem)}>
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="ops-mini"
-                        style={{ width: "100%", textAlign: "left" }}
-                        onClick={() =>
-                          void updateRoleStatus(
-                            roleActionItem,
-                            roleActionItem.status === "active" ? "inactive" : "active"
-                          )
-                        }
-                      >
-                        {roleActionItem.status === "active" ? "Deactivate" : "Activate"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
             </section>
           </section>
         ) : null}
