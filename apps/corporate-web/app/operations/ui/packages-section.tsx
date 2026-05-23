@@ -712,14 +712,6 @@ export function PackagesSection({
           </div>
         </form>
         ) : null}
-      </section>
-
-      <section className="ops-panel" style={{ padding: "24px" }}>
-        <div className="ops-panel-head" style={{ marginBottom: "16px" }}>
-          <div>
-            <h3 style={{ margin: 0 }}>Packages</h3>
-          </div>
-        </div>
 
         <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end" }}>
           <label style={{ minWidth: "160px", flex: 1 }}>
