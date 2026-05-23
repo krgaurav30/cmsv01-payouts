@@ -88,9 +88,6 @@ export function ReportsSection({
           <div className="ops-panel-head">
             <div>
               <h3>Transaction status mix</h3>
-              <p className="ops-meta">
-                Live distribution of transactions by current lifecycle state.
-              </p>
             </div>
           </div>
           <div className="ops-stack">
@@ -118,9 +115,6 @@ export function ReportsSection({
           <div className="ops-panel-head">
             <div>
               <h3>Beneficiary type mix</h3>
-              <p className="ops-meta">
-                Where the current beneficiary base is concentrated by type.
-              </p>
             </div>
           </div>
           <div className="ops-stack">
@@ -160,7 +154,6 @@ export function ReportsSection({
           <div className="ops-panel-head">
             <div>
               <h3>Bulk upload performance</h3>
-              <p className="ops-meta">File upload outcomes and total rows processed so far.</p>
             </div>
           </div>
           <div className="ops-summary">
@@ -191,7 +184,6 @@ export function ReportsSection({
           <div className="ops-panel-head">
             <div>
               <h3>Recent transactions</h3>
-              <p className="ops-meta">The latest payout instructions moving through the system.</p>
             </div>
           </div>
           <div className="ops-table-shell">
@@ -251,10 +243,6 @@ export function AuditSection({
         <div className="ops-panel-head">
           <div>
             <h3>{activeSectionLabel}</h3>
-            <p className="ops-meta">
-              Setup-only audit trail for roles and users. Payment and beneficiary activity is
-              intentionally excluded here.
-            </p>
           </div>
         </div>
 

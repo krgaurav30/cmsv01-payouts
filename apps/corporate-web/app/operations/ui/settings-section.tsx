@@ -76,9 +76,6 @@ export function SettingsSection({
           <div className="ops-panel-head">
             <div>
               <h3>Transaction controls</h3>
-              <p className="ops-meta">
-                Set working limits for single transactions, daily cumulative usage, and bulk uploads.
-              </p>
             </div>
           </div>
 

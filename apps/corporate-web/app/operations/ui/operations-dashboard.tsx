@@ -2871,9 +2871,7 @@ export function OperationsDashboard({
               <div className="ops-panel-head">
                 <div>
                   <h3>File Uploads</h3>
-                  <p className="ops-meta">
-                    Track every bulk transaction file with file-level status, uploader details, and rejection remarks.
-                  </p>
+
                 </div>
                 <div className="ops-actions">
                   {isTransactionMaker ? (
@@ -2967,9 +2965,7 @@ export function OperationsDashboard({
               <div className="ops-panel-head">
                 <div>
                   <h3>Beneficiaries</h3>
-                  <p className="ops-meta">
-                    Searchable directory with maker-owned activation controls and clean approval visibility.
-                  </p>
+
                 </div>
                 <div className="ops-actions">
                   {isBeneficiaryMaker ? (
@@ -3474,7 +3470,7 @@ export function OperationsDashboard({
                   <div className="ops-approval-head">
                     <div>
                       <h4>Payment approvals</h4>
-                      <p className="ops-meta">Transactions waiting for checker action.</p>
+
                     </div>
                     <span className="ops-status pending_approval">
                       {paymentApprovalEntries.length} pending
@@ -3530,7 +3526,7 @@ export function OperationsDashboard({
                   <div className="ops-approval-head">
                     <div>
                       <h4>Beneficiary approvals</h4>
-                      <p className="ops-meta">Beneficiaries waiting to be approved or rejected.</p>
+
                     </div>
                     <span className="ops-status pending_approval">
                       {beneficiaryApprovalEntries.length} pending
@@ -3586,7 +3582,7 @@ export function OperationsDashboard({
                     <div className="ops-approval-head">
                       <div>
                         <h4>Role approvals</h4>
-                        <p className="ops-meta">New roles waiting for checker review.</p>
+
                       </div>
                       <span className="ops-status pending_approval">
                         {roleApprovalEntries.length} pending
@@ -3639,7 +3635,7 @@ export function OperationsDashboard({
                     <div className="ops-approval-head">
                       <div>
                         <h4>User approvals</h4>
-                        <p className="ops-meta">New user access requests waiting for approval.</p>
+
                       </div>
                       <span className="ops-status pending_approval">
                         {userApprovalEntries.length} pending
@@ -3698,9 +3694,7 @@ export function OperationsDashboard({
               <div className="ops-panel-head">
                 <div>
                   <h3>Approval Matrix</h3>
-                  <p className="ops-meta">
-                    Configure amount-based approval routing for payouts. If rules overlap, the transaction is sent to all matched roles and the first action is accepted.
-                  </p>
+
                 </div>
               </div>
 
@@ -3838,9 +3832,7 @@ export function OperationsDashboard({
               <div className="ops-panel-head">
                 <div>
                   <h3>Roles</h3>
-                  <p className="ops-meta">
-                    Define exactly what each role can make, approve, view, or edit.
-                  </p>
+
                 </div>
                 {isRoleMaker ? (
                   <button
@@ -4038,9 +4030,7 @@ export function OperationsDashboard({
               <div className="ops-panel-head">
                 <div>
                   <h3>Users</h3>
-                  <p className="ops-meta">
-                    Access roster with live roles, maker-created users, and checker approval states.
-                  </p>
+
                 </div>
                 {isUserMaker ? (
                   <button
@@ -4149,9 +4139,7 @@ export function OperationsDashboard({
               <div className="ops-panel-head">
                 <div>
                   <h3>Developer portal</h3>
-                  <p className="ops-meta">
-                    Open and share the published partner APIs for beneficiary and payment flows.
-                  </p>
+
                 </div>
                 <div className="ops-actions">
                   <a
@@ -4319,9 +4307,7 @@ export function OperationsDashboard({
                 <div className="ops-panel-head">
                   <div>
                     <h3>Recent transactions</h3>
-                    <p className="ops-meta">
-                      The latest payout instructions moving through the system.
-                    </p>
+
                   </div>
                 </div>
                 <div className="ops-table-shell">
@@ -4373,9 +4359,7 @@ export function OperationsDashboard({
               <div className="ops-panel-head">
                 <div>
                   <h3>{activeSectionLabel}</h3>
-                  <p className="ops-meta">
-                    Setup-only audit trail for roles and users. Payment and beneficiary activity is intentionally excluded here.
-                  </p>
+
                 </div>
               </div>
 

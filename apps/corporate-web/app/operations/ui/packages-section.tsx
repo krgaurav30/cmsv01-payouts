@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { CorporateDebitAccount } from "../../../lib/types";
@@ -699,9 +699,7 @@ export function PackagesSection({
         <div className="ops-panel-head" style={{ marginBottom: "16px" }}>
           <div>
             <h3 style={{ margin: 0 }}>Packages</h3>
-            <p className="ops-meta" style={{ margin: "4px 0 0 0" }}>
-              Edit existing packages from the same schema-driven form.
-            </p>
+
           </div>
         </div>
         <div className="ops-table-shell">
