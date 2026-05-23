@@ -43,7 +43,7 @@
   gap: 12px;
   align-items: center;
   border-radius: 0;
-  border: none;
+  border-bottom: 1px solid var(--border);
   background: #ffffff;
   box-shadow: none;
 }
@@ -731,16 +731,16 @@
 }
 
 .ops-button.primary {
-  background: var(--action-text);
-  border: 1px solid var(--action-text);
+  background: #0f172a; /* Sleek, dark enterprise charcoal (slate-900) */
+  border: 1px solid #0f172a;
   color: #ffffff;
   font-weight: 600;
   box-shadow: var(--shadow-sm);
 }
 
 .ops-button.primary:hover {
-  background: #166534; /* Highly premium deep forest green matching the theme accent */
-  border-color: #166534;
+  background: #1e293b; /* Premium slate-800 hover state */
+  border-color: #1e293b;
   box-shadow: var(--shadow-md);
 }
 
