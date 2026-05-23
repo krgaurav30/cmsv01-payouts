@@ -4932,7 +4932,23 @@ export function OperationsDashboard({
                           name="subscriptionId"
                           required
                           value={approvalMatrixSubscriptionId}
-                          onChange={(event) => setApprovalMatrixSubscriptionId(event.target.value)}
+                          onChange={(event) => {
+                            const nextSubId = event.target.value;
+                            setApprovalMatrixSubscriptionId(nextSubId);
+                            if (!nextSubId) {
+                              setApprovalMatrixDebitAccountIds([]);
+                            } else {
+                              const selectedSub = subscriptions.find(
+                                (sub) => sub.subscriptionId === nextSubId
+                              );
+                              const allowedIds = new Set(
+                                selectedSub ? selectedSub.debitAccounts.map((da) => da.debitAccountId) : []
+                              );
+                              setApprovalMatrixDebitAccountIds((current) =>
+                                current.filter((id) => allowedIds.has(id))
+                              );
+                            }
+                          }}
                           disabled={isMatrixViewOnly}
                         >
                           <option value="">Select package subscription</option>
@@ -4984,16 +5000,27 @@ export function OperationsDashboard({
                         Debit accounts
                         <CompactMultiDropdown
                           label="approval matrix debit accounts"
-                          options={debitAccounts
-                            .filter((account) => account.status === "active")
-                            .map((account) => ({
-                              value: account.debitAccountId,
-                              label: `${account.accountName} (${account.accountNumber})`
-                            }))}
+                          options={(() => {
+                            const selectedSubscription = subscriptions.find(
+                              (sub) => sub.subscriptionId === approvalMatrixSubscriptionId
+                            );
+                            if (!selectedSubscription) return [];
+                            const allowedIds = new Set(
+                              selectedSubscription.debitAccounts
+                                .filter((da) => da.status === "active")
+                                .map((da) => da.debitAccountId)
+                            );
+                            return debitAccounts
+                              .filter((account) => account.status === "active" && allowedIds.has(account.debitAccountId))
+                              .map((account) => ({
+                                value: account.debitAccountId,
+                                label: `${account.accountName} (${account.accountNumber})`
+                              }));
+                          })()}
                           values={approvalMatrixDebitAccountIds}
                           onChange={setApprovalMatrixDebitAccountIds}
-                          placeholder="Select debit accounts"
-                          disabled={isMatrixViewOnly}
+                          placeholder={approvalMatrixSubscriptionId ? "Select debit accounts" : "Select a subscription first"}
+                          disabled={isMatrixViewOnly || !approvalMatrixSubscriptionId}
                         />
                       </label>
                     </div>
