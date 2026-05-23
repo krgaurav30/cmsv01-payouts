@@ -740,7 +740,7 @@ export function PackagesSection({
                 <th>Code</th>
                 <th>Name</th>
                 <th>Use Case</th>
-                <th>Action</th>
+                <th>Status</th>
               </tr>
             </thead>
             <tbody>
@@ -751,12 +751,17 @@ export function PackagesSection({
                     <td>{item.name}</td>
                     <td>{item.useCase}</td>
                     <td>
-                      <div className="ops-row-action-wrap">
-                        <button
-                          className="ops-kebab"
-                          type="button"
-                          onClick={() => setActionMenuItem((current) => (current?.packageId === item.packageId ? null : item))}
-                        >⋮</button>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+                        <span className={`ops-status ${item.status ?? "active"}`}>
+                          {item.status ? (item.status === "active" ? "Active" : item.status === "inactive" ? "Inactive" : "Terminated") : "Active"}
+                        </span>
+                        <div className="ops-row-action-wrap" style={{ margin: 0 }}>
+                          <button
+                            className="ops-kebab"
+                            type="button"
+                            onClick={() => setActionMenuItem((current) => (current?.packageId === item.packageId ? null : item))}
+                          >⋮</button>
+                        </div>
                       </div>
                     </td>
                   </tr>
