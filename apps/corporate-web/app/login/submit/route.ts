@@ -26,7 +26,21 @@ export async function POST(request: NextRequest) {
       message?: string;
     };
 
-    if (!response.ok || !data.session) {
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 400) {
+        return NextResponse.redirect(new URL("/login?error=invalid_credentials", request.url), {
+          status: 303
+        });
+      }
+      
+      const errMsg = `(Server returned status ${response.status}. The backend services may be sleeping; please wait a few seconds and try again.)`;
+      return NextResponse.redirect(
+        new URL(`/login?error=service_unavailable&details=${encodeURIComponent(errMsg)}`, request.url),
+        { status: 303 }
+      );
+    }
+
+    if (!data.session) {
       return NextResponse.redirect(new URL("/login?error=invalid_credentials", request.url), {
         status: 303
       });

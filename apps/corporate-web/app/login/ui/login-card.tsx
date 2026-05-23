@@ -35,6 +35,17 @@ export function LoginCard({ error }: LoginCardProps) {
       </form>
 
       {error ? <div className="error-box">{error}</div> : null}
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `
+            (function() {
+              const bffUrl = "${process.env.NEXT_PUBLIC_BFF_URL || 'https://cmsv01-bff.onrender.com'}";
+              console.log("Waking up BFF and Core API in background via " + bffUrl + "/health ...");
+              fetch(bffUrl + "/health", { mode: "no-cors" }).catch(() => {});
+            })();
+          `
+        }}
+      />
     </section>
   );
 }
