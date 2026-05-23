@@ -128,13 +128,15 @@ function CompactMultiDropdown({
   options,
   values,
   onChange,
-  placeholder
+  placeholder,
+  disabled
 }: {
   label: string;
   options: Array<{ value: string; label: string }>;
   values: string[];
   onChange: (values: string[]) => void;
   placeholder: string;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -164,7 +166,7 @@ function CompactMultiDropdown({
       <button
         type="button"
         className="ops-input"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => !disabled && setOpen((current) => !current)}
         style={{
           width: "100%",
           height: "36px",
@@ -183,7 +185,8 @@ function CompactMultiDropdown({
           color: "var(--text-primary)",
           fontFamily: "inherit",
           outline: "none",
-          cursor: "pointer",
+          cursor: disabled ? "not-allowed" : "pointer",
+          opacity: disabled ? 0.76 : 1,
           transition: "border-color 120ms ease, box-shadow 120ms ease"
         }}
       >
@@ -614,6 +617,12 @@ export function OperationsDashboard({
   const [reportSearch, setReportSearch] = useState("");
   const [auditSearch, setAuditSearch] = useState("");
   const [auditEntityFilter, setAuditEntityFilter] = useState("");
+
+  const [isRoleViewOnly, setIsRoleViewOnly] = useState(false);
+  const [isMatrixViewOnly, setIsMatrixViewOnly] = useState(false);
+  const [matrixActionItem, setMatrixActionItem] = useState<ApprovalMatrix | null>(null);
+  const [userFilterPackages, setUserFilterPackages] = useState<string[]>([]);
+  const [userActionItem, setUserActionItem] = useState<CorporateUser | null>(null);
 
   const editingBeneficiary = useMemo(
     () => (editingBeneficiaryId ? beneficiaries.find((item) => item.beneficiaryId === editingBeneficiaryId) ?? null : null),
@@ -1435,9 +1444,17 @@ export function OperationsDashboard({
 
       const matchesStatus = !userStatusFilter || user.status === userStatusFilter;
 
-      return matchesSearch && matchesStatus;
+      const matchesPackages =
+        userFilterPackages.length === 0 ||
+        subscriptions.some(
+          (sub) =>
+            userFilterPackages.includes(sub.packageCode) &&
+            sub.userAccess.some((access) => access.roleName === user.role)
+        );
+
+      return matchesSearch && matchesStatus && matchesPackages;
     });
-  }, [users, userSearch, userStatusFilter]);
+  }, [users, userSearch, userStatusFilter, userFilterPackages, subscriptions]);
 
   const filterPackageOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -2362,6 +2379,20 @@ export function OperationsDashboard({
     });
   }
 
+  function beginEditMatrix(matrix: ApprovalMatrix) {
+    setMatrixActionItem(null);
+    setIsMatrixViewOnly(false);
+    setEditingApprovalMatrixId(matrix.matrixId);
+    setShowApprovalMatrixCreate(true);
+  }
+
+  function beginViewMatrix(matrix: ApprovalMatrix) {
+    setMatrixActionItem(null);
+    setIsMatrixViewOnly(true);
+    setEditingApprovalMatrixId(matrix.matrixId);
+    setShowApprovalMatrixCreate(true);
+  }
+
   async function handleApproval(
     entity: ApprovalEntry["entity"],
     id: string,
@@ -2678,6 +2709,15 @@ export function OperationsDashboard({
   function beginEditRole(role: CorporateRole) {
     setRoleActionItem(null);
     setRoleActionMenuOpen(false);
+    setIsRoleViewOnly(false);
+    setEditingRoleId(role.roleId);
+    setShowRoleCreate(true);
+  }
+
+  function beginViewRole(role: CorporateRole) {
+    setRoleActionItem(null);
+    setRoleActionMenuOpen(false);
+    setIsRoleViewOnly(true);
     setEditingRoleId(role.roleId);
     setShowRoleCreate(true);
   }
@@ -2704,6 +2744,31 @@ export function OperationsDashboard({
       setRoles((current) => [result.data, ...current.filter((item) => item.roleId !== result.data.roleId)]);
       void refreshWorkspace(session!, selectedCorporateId, { scopes: ["roles"], silent: true });
     }
+  }
+
+  async function updateCorporateUserStatus(user: CorporateUser, nextStatus: "active" | "inactive") {
+    setUserActionItem(null);
+    setBusy(true);
+    const result = await postJson<CorporateUser>(`/v1/auth/users/${encodeURIComponent(user.userId)}/status`, {
+      status: nextStatus,
+      actedByUserId: session?.userId ?? ""
+    }, "PUT");
+    setBusy(false);
+
+    if (!result.ok) {
+      setNotice({ tone: "error", text: result.message });
+      return;
+    }
+
+    setNotice({
+      tone: "success",
+      text: `User ${user.displayName} is now ${nextStatus === "active" ? "active" : "inactive"}.`
+    });
+
+    setUsers((current) =>
+      current.map((item) => (item.userId === user.userId ? result.data : item))
+    );
+    void refreshWorkspace(session!, selectedCorporateId, { scopes: ["users"], silent: true });
   }
 
   async function handleUserSubmit(event: FormEvent<HTMLFormElement>) {
@@ -4840,7 +4905,7 @@ export function OperationsDashboard({
                 ) : null}
               </div>
 
-              {showApprovalMatrixCreate && isRoleMaker ? (
+              {showApprovalMatrixCreate && (isRoleMaker || isMatrixViewOnly) ? (
                 <div className="ops-drawer">
                   <form
                     className="ops-form"
@@ -4848,7 +4913,7 @@ export function OperationsDashboard({
                     onSubmit={handleApprovalMatrixSubmit}
                   >
                     <h4 style={{ marginBottom: "16px" }}>
-                      {editingApprovalMatrixId ? "Edit Approval Matrix" : "Create Approval Matrix"}
+                      {isMatrixViewOnly ? "View Approval Matrix" : editingApprovalMatrixId ? "Edit Approval Matrix" : "Create Approval Matrix"}
                     </h4>
                     <div className="ops-fields two">
                       <label>
@@ -4858,6 +4923,7 @@ export function OperationsDashboard({
                           name="name"
                           placeholder="Vendor payment standard matrix"
                           required
+                          disabled={isMatrixViewOnly}
                         />
                       </label>
                       <label>
@@ -4867,6 +4933,7 @@ export function OperationsDashboard({
                           required
                           value={approvalMatrixSubscriptionId}
                           onChange={(event) => setApprovalMatrixSubscriptionId(event.target.value)}
+                          disabled={isMatrixViewOnly}
                         >
                           <option value="">Select package subscription</option>
                           {subscriptions
@@ -4887,6 +4954,7 @@ export function OperationsDashboard({
                           required
                           step="0.01"
                           type="number"
+                          disabled={isMatrixViewOnly}
                         />
                       </label>
                       <label>
@@ -4898,6 +4966,7 @@ export function OperationsDashboard({
                           required
                           step="0.01"
                           type="number"
+                          disabled={isMatrixViewOnly}
                         />
                       </label>
                     </div>
@@ -4905,7 +4974,7 @@ export function OperationsDashboard({
                     <div className="ops-fields two">
                       <label>
                         Number of Approval Level
-                        <select defaultValue={editingApprovalMatrix?.approvalLevels ?? "1"} name="approvalLevels" required>
+                        <select defaultValue={editingApprovalMatrix?.approvalLevels ?? "1"} name="approvalLevels" required disabled={isMatrixViewOnly}>
                           <option value="1">1</option>
                           <option value="2">2</option>
                           <option value="3">3</option>
@@ -4924,6 +4993,7 @@ export function OperationsDashboard({
                           values={approvalMatrixDebitAccountIds}
                           onChange={setApprovalMatrixDebitAccountIds}
                           placeholder="Select debit accounts"
+                          disabled={isMatrixViewOnly}
                         />
                       </label>
                     </div>
@@ -4940,14 +5010,45 @@ export function OperationsDashboard({
                           values={approvalMatrixRoleNames}
                           onChange={setApprovalMatrixRoleNames}
                           placeholder="Select roles"
+                          disabled={isMatrixViewOnly}
                         />
                       </label>
                     </div>
 
                     <div className="ops-actions">
-                      <button className="ops-button primary" disabled={busy} type="submit">
-                        {busy ? "Saving..." : editingApprovalMatrixId ? "Save updates" : "Create approval matrix"}
-                      </button>
+                      {isMatrixViewOnly ? (
+                        <button
+                          className="ops-button secondary"
+                          type="button"
+                          onClick={() => {
+                            setShowApprovalMatrixCreate(false);
+                            setEditingApprovalMatrixId(null);
+                            setIsMatrixViewOnly(false);
+                          }}
+                          style={{ minWidth: "120px" }}
+                        >
+                          Close
+                        </button>
+                      ) : (
+                        <>
+                          <button className="ops-button primary" disabled={busy} type="submit">
+                            {busy ? "Saving..." : editingApprovalMatrixId ? "Save updates" : "Create approval matrix"}
+                          </button>
+                          {editingApprovalMatrixId ? (
+                            <button
+                              className="ops-button"
+                              disabled={busy}
+                              type="button"
+                              onClick={() => {
+                                setShowApprovalMatrixCreate(false);
+                                setEditingApprovalMatrixId(null);
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          ) : null}
+                        </>
+                      )}
                     </div>
                   </form>
                 </div>
@@ -4982,7 +5083,7 @@ export function OperationsDashboard({
                       <th>Number of Approval Level</th>
                       <th>Roles</th>
                       <th>Status</th>
-                      {isRoleMaker && <th>Actions</th>}
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -4998,34 +5099,84 @@ export function OperationsDashboard({
                             {humanize(matrix.status)}
                           </span>
                         </td>
-                        {isRoleMaker && (
-                          <td>
-                            <div style={{ display: "flex", gap: "8px" }}>
-                              <button
-                                className="ops-button mini"
-                                onClick={() => {
-                                  setEditingApprovalMatrixId(matrix.matrixId);
-                                  setShowApprovalMatrixCreate(true);
-                                }}
-                                type="button"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                className="ops-button mini secondary"
-                                onClick={() => void handleToggleMatrixStatus(matrix)}
-                                type="button"
-                              >
-                                {matrix.status === "active" ? "Deactivate" : "Activate"}
-                              </button>
-                            </div>
-                          </td>
-                        )}
+                        <td>
+                          <div className="ops-row-action-wrap" style={{ justifyContent: "flex-end" }}>
+                            <button
+                              className="ops-kebab"
+                              onClick={() => setMatrixActionItem((current) => (current?.matrixId === matrix.matrixId ? null : matrix))}
+                              type="button"
+                            >
+                              ⋮
+                            </button>
+                            {matrixActionItem?.matrixId === matrix.matrixId ? (
+                              <>
+                                <div
+                                  style={{
+                                    position: "fixed",
+                                    inset: 0,
+                                    zIndex: 90,
+                                    background: "transparent",
+                                    cursor: "default"
+                                  }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setMatrixActionItem(null);
+                                  }}
+                                />
+                                <div
+                                  className="ops-action-dropdown"
+                                  style={{
+                                    position: "absolute",
+                                    right: 0,
+                                    top: "100%",
+                                    zIndex: 100,
+                                    minWidth: "160px",
+                                    margin: "4px 0 0 0",
+                                    padding: "6px",
+                                    background: "var(--surface)",
+                                    border: "1px solid var(--border)",
+                                    borderRadius: "8px",
+                                    boxShadow: "var(--shadow-lg)",
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: "2px"
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    className="ops-action-item"
+                                    onClick={() => beginViewMatrix(matrix)}
+                                  >
+                                    View
+                                  </button>
+                                  {isRoleMaker && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="ops-action-item"
+                                        onClick={() => beginEditMatrix(matrix)}
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="ops-action-item"
+                                        onClick={() => void handleToggleMatrixStatus(matrix)}
+                                      >
+                                        {matrix.status === "active" ? "Deactivate" : "Activate"}
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </>
+                            ) : null}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                     {filteredApprovalMatrices.length === 0 ? (
                       <tr>
-                        <td className="ops-empty" colSpan={isRoleMaker ? 7 : 6}>
+                        <td className="ops-empty" colSpan={7}>
                           {approvalMatrices.length > 0 ? "No approval matrices match the current filters." : "No approval matrices configured yet."}
                         </td>
                       </tr>
@@ -5052,8 +5203,10 @@ export function OperationsDashboard({
                       if (showRoleCreate) {
                         setShowRoleCreate(false);
                         setEditingRoleId(null);
+                        setIsRoleViewOnly(false);
                       } else {
                         setEditingRoleId(null);
+                        setIsRoleViewOnly(false);
                         setShowRoleCreate(true);
                       }
                     }}
@@ -5064,13 +5217,16 @@ export function OperationsDashboard({
                 ) : null}
               </div>
 
-              {showRoleCreate && isRoleMaker ? (
+              {showRoleCreate && (isRoleMaker || isRoleViewOnly) ? (
                 <div className="ops-drawer">
                   <form
                     className="ops-form"
                     key={editingRole?.roleId ?? "role-create"}
                     onSubmit={handleRoleSubmit}
                   >
+                    <h4 style={{ marginBottom: "16px" }}>
+                      {isRoleViewOnly ? "View Role" : editingRole ? "Edit Role" : "Create Role"}
+                    </h4>
                     <div className="ops-fields three">
                       <label>
                         Role name
@@ -5079,11 +5235,12 @@ export function OperationsDashboard({
                           name="name"
                           placeholder="Finance checker"
                           required
+                          disabled={isRoleViewOnly}
                         />
                       </label>
                       <label>
                         Status
-                        <select defaultValue={editingRole?.status ?? "inactive"} name="status" required>
+                        <select defaultValue={editingRole?.status ?? "inactive"} name="status" required disabled={isRoleViewOnly}>
                           <option value="inactive">Inactive</option>
                           <option value="active">Active</option>
                         </select>
@@ -5094,6 +5251,7 @@ export function OperationsDashboard({
                           defaultValue={editingRole?.description ?? ""}
                           name="description"
                           placeholder="Optional role note"
+                          disabled={isRoleViewOnly}
                         />
                       </label>
                     </div>
@@ -5103,12 +5261,13 @@ export function OperationsDashboard({
                           <h4>{group.label}</h4>
                           <div className="ops-permission-list">
                             {group.items.map((permission) => (
-                              <label className="ops-permission-item" key={permission.value}>
+                              <label className="ops-permission-item" key={permission.value} style={{ cursor: isRoleViewOnly ? "not-allowed" : "pointer" }}>
                                 <input
                                   name="permissions"
                                   type="checkbox"
                                   value={permission.value}
                                   defaultChecked={editingRole?.permissions.includes(permission.value) ?? false}
+                                  disabled={isRoleViewOnly}
                                 />
                                 <span>{permission.label}</span>
                               </label>
@@ -5118,30 +5277,47 @@ export function OperationsDashboard({
                       ))}
                     </div>
                     <div className="ops-actions">
-                      <button className="ops-button primary" disabled={busy} type="submit">
-                        {busy ? "Saving..." : editingRole ? "Save role" : "Create role"}
-                      </button>
-                      {editingRole ? (
+                      {isRoleViewOnly ? (
                         <button
-                          className="ops-button"
-                          disabled={busy}
+                          className="ops-button secondary"
                           type="button"
                           onClick={() => {
                             setShowRoleCreate(false);
                             setEditingRoleId(null);
+                            setIsRoleViewOnly(false);
                           }}
+                          style={{ minWidth: "120px" }}
                         >
-                          Cancel
+                          Close
                         </button>
                       ) : (
-                        <button
-                          className="ops-button"
-                          disabled={busy}
-                          type="button"
-                          onClick={() => setShowRoleCreate(false)}
-                        >
-                          Reset
-                        </button>
+                        <>
+                          <button className="ops-button primary" disabled={busy} type="submit">
+                            {busy ? "Saving..." : editingRole ? "Save role" : "Create role"}
+                          </button>
+                          {editingRole ? (
+                             <button
+                               className="ops-button"
+                               disabled={busy}
+                               type="button"
+                               onClick={() => {
+                                 setShowRoleCreate(false);
+                                 setEditingRoleId(null);
+                               }}
+                             >
+                               Cancel
+                             </button>
+                          ) : (
+                            <button
+                              className="ops-button"
+                              disabled={busy}
+                              type="button"
+                              onClick={() => setShowRoleCreate(false)}
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </form>
@@ -5174,7 +5350,6 @@ export function OperationsDashboard({
                       <th>Role</th>
                       <th>Role ID</th>
                       <th>Description</th>
-                      <th>Permissions</th>
                       <th>Status</th>
                       <th>Approval</th>
                       <th>Action</th>
@@ -5186,7 +5361,6 @@ export function OperationsDashboard({
                         <td>{role.name}</td>
                         <td>{role.roleId}</td>
                         <td>{role.description ?? "No description"}</td>
-                        <td>{role.permissions.join(", ") || "No permissions"}</td>
                         <td>
                           <span className={`ops-status ${role.status}`}>{humanize(role.status)}</span>
                         </td>
@@ -5196,81 +5370,88 @@ export function OperationsDashboard({
                           </span>
                         </td>
                         <td>
-                          {isRoleMaker ? (
-                            <div className="ops-row-action-wrap" style={{ justifyContent: "flex-end" }}>
-                              <button
-                                className="ops-kebab"
-                                onClick={() => setRoleActionItem((current) => (current?.roleId === role.roleId ? null : role))}
-                                type="button"
-                              >
-                                ⋮
-                              </button>
-                              {roleActionItem?.roleId === role.roleId ? (
-                                <>
-                                  <div
-                                    style={{
-                                      position: "fixed",
-                                      inset: 0,
-                                      zIndex: 90,
-                                      background: "transparent",
-                                      cursor: "default"
-                                    }}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setRoleActionItem(null);
-                                    }}
-                                  />
-                                  <div
-                                    className="ops-action-dropdown"
-                                    style={{
-                                      position: "absolute",
-                                      right: 0,
-                                      top: "100%",
-                                      zIndex: 100,
-                                      minWidth: "160px",
-                                      margin: "4px 0 0 0",
-                                      padding: "6px",
-                                      background: "var(--surface)",
-                                      border: "1px solid var(--border)",
-                                      borderRadius: "8px",
-                                      boxShadow: "var(--shadow-lg)",
-                                      display: "flex",
-                                      flexDirection: "column",
-                                      gap: "2px"
-                                    }}
+                          <div className="ops-row-action-wrap" style={{ justifyContent: "flex-end" }}>
+                            <button
+                              className="ops-kebab"
+                              onClick={() => setRoleActionItem((current) => (current?.roleId === role.roleId ? null : role))}
+                              type="button"
+                            >
+                              ⋮
+                            </button>
+                            {roleActionItem?.roleId === role.roleId ? (
+                              <>
+                                <div
+                                  style={{
+                                    position: "fixed",
+                                    inset: 0,
+                                    zIndex: 90,
+                                    background: "transparent",
+                                    cursor: "default"
+                                  }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setRoleActionItem(null);
+                                  }}
+                                />
+                                <div
+                                  className="ops-action-dropdown"
+                                  style={{
+                                    position: "absolute",
+                                    right: 0,
+                                    top: "100%",
+                                    zIndex: 100,
+                                    minWidth: "160px",
+                                    margin: "4px 0 0 0",
+                                    padding: "6px",
+                                    background: "var(--surface)",
+                                    border: "1px solid var(--border)",
+                                    borderRadius: "8px",
+                                    boxShadow: "var(--shadow-lg)",
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: "2px"
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    className="ops-action-item"
+                                    onClick={() => beginViewRole(role)}
                                   >
-                                    <button
-                                      type="button"
-                                      className="ops-action-item"
-                                      onClick={() => beginEditRole(role)}
-                                    >
-                                      Edit
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="ops-action-item"
-                                      onClick={() =>
-                                        void updateRoleStatus(
-                                          role,
-                                          role.status === "active" ? "inactive" : "active"
-                                        )
-                                      }
-                                    >
-                                      {role.status === "active" ? "Deactivate" : "Activate"}
-                                    </button>
-                                  </div>
-                                </>
-                              ) : null}
-                            </div>
-                          ) : (
-                            <span className="ops-meta">Maker only</span>
-                          )}
+                                    View
+                                  </button>
+                                  {isRoleMaker && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="ops-action-item"
+                                        onClick={() => beginEditRole(role)}
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="ops-action-item"
+                                        onClick={() =>
+                                          void updateRoleStatus(
+                                            role,
+                                            role.status === "active" ? "inactive" : "active"
+                                          )
+                                        }
+                                      >
+                                        {role.status === "active" ? "Deactivate" : "Activate"}
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     ))}
                     {filteredRoles.length === 0 ? (
                       <tr>
-                        <td className="ops-empty-row" colSpan={7} style={{ textAlign: "center", padding: "24px", color: "var(--text-secondary)" }}>
+                        <td className="ops-empty-row" colSpan={6} style={{ textAlign: "center", padding: "24px", color: "var(--text-secondary)" }}>
                           {roles.length > 0 ? "No roles match the current filters." : "No roles configured yet."}
                         </td>
                       </tr>
@@ -5365,6 +5546,16 @@ export function OperationsDashboard({
                     <option value="inactive">Deactive</option>
                   </select>
                 </label>
+                <label style={{ minWidth: "200px", flex: 1 }}>
+                  Filter by Packages
+                  <CompactMultiDropdown
+                    label="User Packages Filter"
+                    options={filterPackageOptions}
+                    values={userFilterPackages}
+                    onChange={setUserFilterPackages}
+                    placeholder="All packages"
+                  />
+                </label>
                 <label style={{ minWidth: "240px", flex: 1.5 }}>
                   Search users
                   <input
@@ -5385,6 +5576,7 @@ export function OperationsDashboard({
                       <th>Status</th>
                       <th>Approval</th>
                       <th>Corporate</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -5402,11 +5594,75 @@ export function OperationsDashboard({
                           </span>
                         </td>
                         <td>{user.corporateId ?? "Parent tenant access"}</td>
+                        <td>
+                          {isUserMaker ? (
+                            <div className="ops-row-action-wrap" style={{ justifyContent: "flex-end" }}>
+                              <button
+                                className="ops-kebab"
+                                onClick={() => setUserActionItem((current) => (current?.userId === user.userId ? null : user))}
+                                type="button"
+                              >
+                                ⋮
+                              </button>
+                              {userActionItem?.userId === user.userId ? (
+                                <>
+                                  <div
+                                    style={{
+                                      position: "fixed",
+                                      inset: 0,
+                                      zIndex: 90,
+                                      background: "transparent",
+                                      cursor: "default"
+                                    }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setUserActionItem(null);
+                                    }}
+                                  />
+                                  <div
+                                    className="ops-action-dropdown"
+                                    style={{
+                                      position: "absolute",
+                                      right: 0,
+                                      top: "100%",
+                                      zIndex: 100,
+                                      minWidth: "160px",
+                                      margin: "4px 0 0 0",
+                                      padding: "6px",
+                                      background: "var(--surface)",
+                                      border: "1px solid var(--border)",
+                                      borderRadius: "8px",
+                                      boxShadow: "var(--shadow-lg)",
+                                      display: "flex",
+                                      flexDirection: "column",
+                                      gap: "2px"
+                                    }}
+                                  >
+                                    <button
+                                      type="button"
+                                      className="ops-action-item"
+                                      onClick={() =>
+                                        void updateCorporateUserStatus(
+                                          user,
+                                          user.status === "active" ? "inactive" : "active"
+                                        )
+                                      }
+                                    >
+                                      {user.status === "active" ? "Deactivate" : "Activate"}
+                                    </button>
+                                  </div>
+                                </>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span className="ops-meta">Maker only</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                     {filteredUsers.length === 0 ? (
                       <tr>
-                        <td className="ops-empty-row" colSpan={6} style={{ textAlign: "center", padding: "24px", color: "var(--text-secondary)" }}>
+                        <td className="ops-empty-row" colSpan={7} style={{ textAlign: "center", padding: "24px", color: "var(--text-secondary)" }}>
                           {users.length > 0 ? "No users match the current filters." : "No users configured yet."}
                         </td>
                       </tr>

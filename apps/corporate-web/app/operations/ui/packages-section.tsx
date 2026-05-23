@@ -39,12 +39,14 @@ function MultiDropdown({
   label,
   options,
   values,
-  onChange
+  onChange,
+  disabled
 }: {
   label: string;
   options: Array<{ value: string; label: string }>;
   values: string[];
   onChange: (values: string[]) => void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -74,7 +76,12 @@ function MultiDropdown({
       <button
         type="button"
         className="ops-input"
-        onClick={() => setOpen((current) => !current)}
+        disabled={disabled}
+        onClick={() => {
+          if (!disabled) {
+            setOpen((current) => !current);
+          }
+        }}
         style={{
           width: "100%",
           minHeight: "44px",
@@ -84,7 +91,10 @@ function MultiDropdown({
           justifyContent: "space-between",
           gap: "10px",
           padding: "10px 14px",
-          whiteSpace: "normal"
+          whiteSpace: "normal",
+          background: disabled ? "rgba(0, 0, 0, 0.04)" : "var(--surface)",
+          cursor: disabled ? "not-allowed" : "pointer",
+          opacity: disabled ? 0.7 : 1
         }}
       >
         <span
@@ -125,7 +135,7 @@ function MultiDropdown({
         </span>
         <span style={{ color: "var(--text-secondary)", flex: "0 0 auto" }}>▾</span>
       </button>
-      {open ? (
+      {open && !disabled ? (
         <div
           style={{
             position: "absolute",
@@ -235,6 +245,7 @@ export function PackagesSection({
   const [msg, setMsg] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [actionMenuItem, setActionMenuItem] = useState<PackageItem | null>(null);
+  const [isViewOnly, setIsViewOnly] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [useCaseFilter, setUseCaseFilter] = useState("");
@@ -530,6 +541,7 @@ export function PackagesSection({
               }
               setEditing(null);
               resetForm();
+              setIsViewOnly(false);
               setShowForm(true);
             }}
           >
@@ -542,18 +554,18 @@ export function PackagesSection({
           <div className="ops-fields two">
             <label>
               Package Code
-              <input value={packageCode} onChange={(e) => setPackageCode(e.target.value)} required />
+              <input value={packageCode} onChange={(e) => setPackageCode(e.target.value)} required disabled={isViewOnly} />
             </label>
             <label>
               Name
-              <input value={name} onChange={(e) => setName(e.target.value)} required />
+              <input value={name} onChange={(e) => setName(e.target.value)} required disabled={isViewOnly} />
             </label>
           </div>
 
           <div className="ops-fields three">
             <label>
               Use Case
-              <select value={useCase} onChange={(e) => setUseCase(e.target.value as "vendor_payments" | "salary" | "statutory")}>
+              <select value={useCase} onChange={(e) => setUseCase(e.target.value as "vendor_payments" | "salary" | "statutory")} disabled={isViewOnly}>
                 <option value="vendor_payments">vendor_payments</option>
                 <option value="salary">salary</option>
                 <option value="statutory">statutory</option>
@@ -561,7 +573,7 @@ export function PackagesSection({
             </label>
             <label>
               Max Payments Per Batch
-              <input type="number" min={1} value={maxPaymentsPerBatch} onChange={(e) => setMaxPaymentsPerBatch(Number(e.target.value))} />
+              <input type="number" min={1} value={maxPaymentsPerBatch} onChange={(e) => setMaxPaymentsPerBatch(Number(e.target.value))} disabled={isViewOnly} />
             </label>
             <label>
               Status
@@ -581,6 +593,7 @@ export function PackagesSection({
                 ]}
                 values={allowedBeneficiaryTypes}
                 onChange={setAllowedBeneficiaryTypes}
+                disabled={isViewOnly}
               />
             </label>
             <label>
@@ -590,6 +603,7 @@ export function PackagesSection({
                 options={allowedPaymentMethodOptions}
                 values={paymentMethodCodes}
                 onChange={setPaymentMethodCodes}
+                disabled={isViewOnly}
               />
             </label>
           </div>
@@ -597,7 +611,7 @@ export function PackagesSection({
           <div className="ops-fields two">
             <label>
               Default Payment Method
-              <select value={defaultPaymentMethodCode} onChange={(e) => setDefaultPaymentMethodCode(e.target.value)} required>
+              <select value={defaultPaymentMethodCode} onChange={(e) => setDefaultPaymentMethodCode(e.target.value)} required disabled={isViewOnly}>
                 <option value="">Select</option>
                 {defaultMethodOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -613,6 +627,7 @@ export function PackagesSection({
                 options={allowedDebitAccountOptions}
                 values={debitAccountIds}
                 onChange={setDebitAccountIds}
+                disabled={isViewOnly}
               />
             </label>
           </div>
@@ -620,7 +635,7 @@ export function PackagesSection({
           <div className="ops-fields two">
             <label>
               Default Debit Account
-              <select value={defaultDebitAccountId} onChange={(e) => setDefaultDebitAccountId(e.target.value)}>
+              <select value={defaultDebitAccountId} onChange={(e) => setDefaultDebitAccountId(e.target.value)} disabled={isViewOnly}>
                 <option value="">None</option>
                 {defaultDebitOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -631,7 +646,7 @@ export function PackagesSection({
             </label>
             <label>
               Allowed Debit Mode
-              <select value={debitModeAllowed} onChange={(e) => setDebitModeAllowed(e.target.value)}>
+              <select value={debitModeAllowed} onChange={(e) => setDebitModeAllowed(e.target.value)} disabled={isViewOnly}>
                 <option value="single">Single</option>
                 <option value="multi">Multi</option>
               </select>
@@ -641,20 +656,21 @@ export function PackagesSection({
           <div className="ops-fields two">
             <label>
               Allowed File Failure Handling
-              <select value={fileRejectionMode} onChange={(e) => setFileRejectionMode(e.target.value)}>
+              <select value={fileRejectionMode} onChange={(e) => setFileRejectionMode(e.target.value)} disabled={isViewOnly}>
                 <option value="fail_full_file">Fail Full File</option>
                 <option value="reject_invalid_rows">Reject Invalid Rows</option>
               </select>
             </label>
             <label>
               Bulk Approval
-              <label className="ops-toggle">
+              <label className="ops-toggle" style={{ cursor: isViewOnly ? "not-allowed" : "pointer" }}>
                 <input
                   checked={bulkApproveEnabled}
                   onChange={(e) => setBulkApproveEnabled(e.target.checked)}
                   type="checkbox"
+                  disabled={isViewOnly}
                 />
-                <span className="ops-toggle-track">
+                <span className="ops-toggle-track" style={{ opacity: isViewOnly ? 0.7 : 1 }}>
                   <span className="ops-toggle-thumb" />
                 </span>
                 <span className="ops-toggle-label">{bulkApproveEnabled ? "Enabled" : "Disabled"}</span>
@@ -664,22 +680,30 @@ export function PackagesSection({
 
           <label>
             Description
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} />
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} disabled={isViewOnly} />
           </label>
 
           {msg ? <p className="ops-meta">{msg}</p> : null}
           <div className="ops-actions">
-            <button className="ops-button primary" type="submit">
-              {editing ? "Save package" : "Create package"}
-            </button>
-            {editing ? (
-              <button className="ops-button" type="button" onClick={cancelEditing}>
-                Cancel
+            {isViewOnly ? (
+              <button className="ops-button secondary" type="button" onClick={cancelEditing}>
+                Close
               </button>
             ) : (
-              <button className="ops-button" type="button" onClick={resetForm}>
-                Reset
-              </button>
+              <>
+                <button className="ops-button primary" type="submit">
+                  {editing ? "Save package" : "Create package"}
+                </button>
+                {editing ? (
+                  <button className="ops-button" type="button" onClick={cancelEditing}>
+                    Cancel
+                  </button>
+                ) : (
+                  <button className="ops-button" type="button" onClick={resetForm}>
+                    Reset
+                  </button>
+                )}
+              </>
             )}
           </div>
         </form>
@@ -725,83 +749,100 @@ export function PackagesSection({
             </thead>
             <tbody>
               {filteredItems.length > 0 ? (
-                filteredItems.map((item) => (
-                  <tr key={item.packageId}>
-                    <td>{item.packageCode}</td>
-                    <td>{item.name}</td>
-                    <td>{item.useCase}</td>
-                    <td>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
-                        <span className={`ops-status ${item.status ?? "active"}`}>
-                          {item.status ? (item.status === "active" ? "Active" : item.status === "inactive" ? "Inactive" : "Terminated") : "Active"}
-                        </span>
-                        <div className="ops-row-action-wrap" style={{ margin: 0 }}>
-                          <button
-                            className="ops-kebab"
-                            type="button"
-                            onClick={() => setActionMenuItem((current) => (current?.packageId === item.packageId ? null : item))}
-                          >⋮</button>
-                          {actionMenuItem?.packageId === item.packageId ? (
-                            <>
-                              <div
-                                style={{
-                                  position: "fixed",
-                                  inset: 0,
-                                  zIndex: 90,
-                                  background: "transparent",
-                                  cursor: "default"
-                                }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setActionMenuItem(null);
-                                }}
-                              />
-                              <div
-                                className="ops-action-dropdown"
-                                style={{
-                                  position: "absolute",
-                                  right: 0,
-                                  top: "100%",
-                                  zIndex: 100,
-                                  minWidth: "160px",
-                                  margin: "4px 0 0 0",
-                                  padding: "6px",
-                                  background: "var(--surface)",
-                                  border: "1px solid var(--border)",
-                                  borderRadius: "8px",
-                                  boxShadow: "var(--shadow-lg)",
-                                  display: "flex",
-                                  flexDirection: "column",
-                                  gap: "2px"
-                                }}
-                              >
-                                <button
-                                  type="button"
-                                  className="ops-action-item"
-                                  onClick={() => beginEdit(item)}
+                filteredItems.map((item, index) => {
+                  const openUpward = filteredItems.length > 2 && index >= filteredItems.length - 2;
+                  return (
+                    <tr key={item.packageId}>
+                      <td>{item.packageCode}</td>
+                      <td>{item.name}</td>
+                      <td>{item.useCase}</td>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+                          <span className={`ops-status ${item.status ?? "active"}`}>
+                            {item.status ? (item.status === "active" ? "Active" : item.status === "inactive" ? "Inactive" : "Terminated") : "Active"}
+                          </span>
+                          <div className="ops-row-action-wrap" style={{ margin: 0 }}>
+                            <button
+                              className="ops-kebab"
+                              type="button"
+                              onClick={() => setActionMenuItem((current) => (current?.packageId === item.packageId ? null : item))}
+                            >⋮</button>
+                            {actionMenuItem?.packageId === item.packageId ? (
+                              <>
+                                <div
+                                  style={{
+                                    position: "fixed",
+                                    inset: 0,
+                                    zIndex: 90,
+                                    background: "transparent",
+                                    cursor: "default"
+                                  }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActionMenuItem(null);
+                                  }}
+                                />
+                                <div
+                                  className="ops-action-dropdown"
+                                  style={{
+                                    position: "absolute",
+                                    right: 0,
+                                    top: openUpward ? "auto" : "100%",
+                                    bottom: openUpward ? "100%" : "auto",
+                                    zIndex: 100,
+                                    minWidth: "160px",
+                                    margin: openUpward ? "0 0 4px 0" : "4px 0 0 0",
+                                    padding: "6px",
+                                    background: "var(--surface)",
+                                    border: "1px solid var(--border)",
+                                    borderRadius: "8px",
+                                    boxShadow: "var(--shadow-lg)",
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: "2px"
+                                  }}
                                 >
-                                  Edit
-                                </button>
-                                <button
-                                  type="button"
-                                  className="ops-action-item"
-                                  onClick={() =>
-                                    void updatePackageStatus(
-                                      item,
-                                      item.status === "active" ? "inactive" : "active"
-                                    )
-                                  }
-                                >
-                                  {item.status === "active" ? "Deactivate" : "Activate"}
-                                </button>
-                              </div>
-                            </>
-                          ) : null}
+                                  <button
+                                    type="button"
+                                    className="ops-action-item"
+                                    onClick={() => {
+                                      setIsViewOnly(true);
+                                      beginEdit(item);
+                                    }}
+                                  >
+                                    View
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="ops-action-item"
+                                    onClick={() => {
+                                      setIsViewOnly(false);
+                                      beginEdit(item);
+                                    }}
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="ops-action-item"
+                                    onClick={() =>
+                                      void updatePackageStatus(
+                                        item,
+                                        item.status === "active" ? "inactive" : "active"
+                                      )
+                                    }
+                                  >
+                                    {item.status === "active" ? "Deactivate" : "Activate"}
+                                  </button>
+                                </div>
+                              </>
+                            ) : null}
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
                   <td className="ops-empty-row" colSpan={4}>

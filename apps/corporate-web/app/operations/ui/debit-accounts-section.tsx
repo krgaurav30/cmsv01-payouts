@@ -25,6 +25,7 @@ export function DebitAccountsSection({
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<CorporateDebitAccount | null>(null);
   const [actionMenuItem, setActionMenuItem] = useState<CorporateDebitAccount | null>(null);
+  const [isViewOnly, setIsViewOnly] = useState(false);
   
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -206,11 +207,13 @@ export function DebitAccountsSection({
   };
 
   const openCreateDrawer = () => {
+    setIsViewOnly(false);
     setEditingAccount(null);
     setIsDrawerOpen(true);
   };
 
   const openEditDrawer = (account: CorporateDebitAccount) => {
+    setIsViewOnly(false);
     setEditingAccount(account);
     setIsDrawerOpen(true);
   };
@@ -315,23 +318,24 @@ export function DebitAccountsSection({
                 <th style={{ padding: "16px 20px", fontWeight: 600, fontSize: "12px", color: "var(--text-secondary)" }}>ACCESS MAP (SUBSCRIPTIONS)</th>
                 <th style={{ padding: "16px 20px", fontWeight: 600, fontSize: "12px", color: "var(--text-secondary)", textAlign: "center" }}>DEFAULT</th>
                 <th style={{ padding: "16px 20px", fontWeight: 600, fontSize: "12px", color: "var(--text-secondary)" }}>STATUS</th>
-                {canEdit && <th style={{ padding: "16px 20px", fontWeight: 600, fontSize: "12px", color: "var(--text-secondary)", textAlign: "right" }}>ACTION</th>}
+                <th style={{ padding: "16px 20px", fontWeight: 600, fontSize: "12px", color: "var(--text-secondary)", textAlign: "right" }}>ACTION</th>
               </tr>
             </thead>
             <tbody>
               {filteredAccounts.length === 0 ? (
                 <tr>
-                  <td colSpan={canEdit ? 7 : 6} style={{ padding: "40px", textAlign: "center", color: "var(--text-secondary)" }}>
+                  <td colSpan={7} style={{ padding: "40px", textAlign: "center", color: "var(--text-secondary)" }}>
                     {debitAccounts.length > 0 ? "No debit accounts match the current filters." : "No debit accounts found. Add one to start routing payments."}
                   </td>
                 </tr>
               ) : (
-                filteredAccounts.map((account) => {
+                filteredAccounts.map((account, index) => {
                   const mappedSubs = getMappedSubscriptions(account.debitAccountId);
                   const showFull = !!unmaskedIds[account.debitAccountId];
                   const displayNum = showFull 
                     ? account.accountNumber 
                     : `••••••••••••${account.accountNumber.slice(-4)}`;
+                  const openUpward = filteredAccounts.length > 2 && index >= filteredAccounts.length - 2;
 
                   return (
                     <tr
@@ -485,11 +489,12 @@ export function DebitAccountsSection({
                       </td>
 
                       {/* Actions */}
-                      {canEdit && (
-                        <td style={{ padding: "16px 20px", textAlign: "right" }}>
+                      <td style={{ padding: "16px 20px", textAlign: "right" }}>
+                        <div className="ops-row-action-wrap" style={{ justifyContent: "flex-end", position: "relative" }}>
                           <button
                             type="button"
-                            onClick={() => setActionMenuItem(account)}
+                            className="ops-kebab"
+                            onClick={() => setActionMenuItem((current) => (current?.debitAccountId === account.debitAccountId ? null : account))}
                             style={{
                               width: "34px",
                               height: "34px",
@@ -504,8 +509,88 @@ export function DebitAccountsSection({
                           >
                             ⋮
                           </button>
-                        </td>
-                      )}
+                          {actionMenuItem?.debitAccountId === account.debitAccountId ? (
+                            <>
+                              <div
+                                style={{
+                                  position: "fixed",
+                                  inset: 0,
+                                  zIndex: 90,
+                                  background: "transparent",
+                                  cursor: "default"
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActionMenuItem(null);
+                                }}
+                              />
+                              <div
+                                className="ops-action-dropdown"
+                                style={{
+                                  position: "absolute",
+                                  right: 0,
+                                  top: openUpward ? "auto" : "100%",
+                                  bottom: openUpward ? "100%" : "auto",
+                                  zIndex: 100,
+                                  minWidth: "160px",
+                                  margin: openUpward ? "0 0 4px 0" : "4px 0 0 0",
+                                  padding: "6px",
+                                  background: "var(--surface)",
+                                  border: "1px solid var(--border)",
+                                  borderRadius: "8px",
+                                  boxShadow: "var(--shadow-lg)",
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: "2px",
+                                  textAlign: "left"
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  className="ops-action-item"
+                                  onClick={() => {
+                                    setActionMenuItem(null);
+                                    setIsViewOnly(true);
+                                    setEditingAccount(account);
+                                    setIsDrawerOpen(true);
+                                  }}
+                                >
+                                  View
+                                </button>
+                                {canEdit && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="ops-action-item"
+                                      onClick={() => {
+                                        setActionMenuItem(null);
+                                        setIsViewOnly(false);
+                                        openEditDrawer(account);
+                                      }}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="ops-action-item"
+                                      onClick={() => {
+                                        setActionMenuItem(null);
+                                        void updateAccountStatus(
+                                          account,
+                                          account.status === "active" ? "inactive" : "active"
+                                        );
+                                      }}
+                                      disabled={formBusy}
+                                    >
+                                      {account.status === "active" ? "Deactivate" : "Activate"}
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </>
+                          ) : null}
+                        </div>
+                      </td>
                     </tr>
                   );
                 })
@@ -514,80 +599,6 @@ export function DebitAccountsSection({
           </table>
         </div>
       </section>
-
-      {actionMenuItem && (
-        <div
-          onClick={() => setActionMenuItem(null)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 1090,
-            background: "rgba(15, 23, 42, 0.26)",
-            backdropFilter: "blur(2px)"
-          }}
-        >
-          <div
-            onClick={(event) => event.stopPropagation()}
-            style={{
-              position: "fixed",
-              left: "50%",
-              top: "50%",
-              transform: "translate(-50%, -50%)",
-              width: "360px",
-              background: "var(--surface)",
-              border: "1px solid var(--border)",
-              borderRadius: "18px",
-              boxShadow: "0 24px 64px rgba(15, 23, 42, 0.16)",
-              padding: "20px",
-              zIndex: 1100
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "12px", marginBottom: "12px" }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 600 }}>Debit account actions</h3>
-                <p className="ops-meta" style={{ margin: "6px 0 0", color: "var(--text-secondary)" }}>
-                  {actionMenuItem.accountName} · {actionMenuItem.accountNumber.slice(-4)}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActionMenuItem(null)}
-                style={{
-                  border: "1px solid var(--border)",
-                  background: "var(--surface)",
-                  borderRadius: "10px",
-                  padding: "8px 12px",
-                  cursor: "pointer"
-                }}
-              >
-                Close
-              </button>
-            </div>
-            <div style={{ display: "grid", gap: "10px" }}>
-              <button
-                type="button"
-                onClick={() => {
-                  openEditDrawer(actionMenuItem);
-                  setActionMenuItem(null);
-                }}
-                className="ops-button secondary"
-                style={{ width: "100%", justifyContent: "flex-start" }}
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                onClick={() => updateAccountStatus(actionMenuItem, actionMenuItem.status === "active" ? "inactive" : "active")}
-                className="ops-button secondary"
-                style={{ width: "100%", justifyContent: "flex-start" }}
-                disabled={formBusy}
-              >
-                {actionMenuItem.status === "active" ? "Deactivate" : "Activate"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Backdrop for Slide Drawer */}
       {isDrawerOpen && (
@@ -698,7 +709,7 @@ export function DebitAccountsSection({
                 onChange={(e) => setAccountName(e.target.value)}
                 placeholder="e.g. Future Pay Treasury A/C"
                 required
-                disabled={formBusy}
+                disabled={formBusy || isViewOnly}
                 style={{
                   padding: "10px 14px",
                   borderRadius: "var(--radius-md)",
@@ -715,7 +726,7 @@ export function DebitAccountsSection({
                 onChange={(e) => setAccountNumber(e.target.value)}
                 placeholder="e.g. 50200049281729"
                 required
-                disabled={formBusy}
+                disabled={formBusy || isViewOnly}
                 type="text"
                 style={{
                   padding: "10px 14px",
@@ -734,7 +745,7 @@ export function DebitAccountsSection({
                 onChange={(e) => setIfsc(e.target.value.toUpperCase())}
                 placeholder="e.g. HDFC0000245"
                 required
-                disabled={formBusy}
+                disabled={formBusy || isViewOnly}
                 maxLength={11}
                 style={{
                   padding: "10px 14px",
@@ -751,7 +762,7 @@ export function DebitAccountsSection({
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as "active" | "inactive")}
-                disabled={formBusy}
+                disabled={formBusy || isViewOnly}
                 style={{
                   padding: "10px 14px",
                   borderRadius: "var(--radius-md)",
@@ -767,11 +778,11 @@ export function DebitAccountsSection({
 
             {/* Default Account Toggle with Banner Alert */}
             <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "10px" }}>
-              <label className="ops-toggle" style={{ display: "inline-flex", alignItems: "center", gap: "12px", cursor: "pointer" }}>
+              <label className="ops-toggle" style={{ display: "inline-flex", alignItems: "center", gap: "12px", cursor: isViewOnly ? "not-allowed" : "pointer" }}>
                 <input
                   type="checkbox"
                   checked={isDefault}
-                  disabled={formBusy}
+                  disabled={formBusy || isViewOnly}
                   onChange={(e) => setIsDefault(e.target.checked)}
                   style={{ display: "none" }}
                 />
@@ -784,7 +795,8 @@ export function DebitAccountsSection({
                     borderRadius: "11px",
                     background: isDefault ? "var(--accent)" : "var(--border)",
                     position: "relative",
-                    transition: "background var(--dur-sm) var(--ease)"
+                    transition: "background var(--dur-sm) var(--ease)",
+                    opacity: isViewOnly ? 0.7 : 1
                   }}
                 >
                   <span
@@ -822,23 +834,36 @@ export function DebitAccountsSection({
 
             {/* Footer Buttons */}
             <div style={{ display: "flex", gap: "12px", marginTop: "24px" }}>
-              <button
-                type="button"
-                onClick={() => setIsDrawerOpen(false)}
-                className="ops-button secondary"
-                disabled={formBusy}
-                style={{ flex: 1, padding: "12px" }}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="ops-button primary"
-                disabled={formBusy}
-                style={{ flex: 1, padding: "12px", fontWeight: 600 }}
-              >
-                {formBusy ? "Saving node..." : editingAccount ? "Save updates" : "Register Node"}
-              </button>
+              {isViewOnly ? (
+                <button
+                  type="button"
+                  onClick={() => setIsDrawerOpen(false)}
+                  className="ops-button secondary"
+                  style={{ flex: 1, padding: "12px", fontWeight: 600 }}
+                >
+                  Close
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setIsDrawerOpen(false)}
+                    className="ops-button secondary"
+                    disabled={formBusy}
+                    style={{ flex: 1, padding: "12px" }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="ops-button primary"
+                    disabled={formBusy}
+                    style={{ flex: 1, padding: "12px", fontWeight: 600 }}
+                  >
+                    {formBusy ? "Saving node..." : editingAccount ? "Save updates" : "Register Node"}
+                  </button>
+                </>
+              )}
             </div>
           </form>
         </div>

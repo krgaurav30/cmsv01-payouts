@@ -14,7 +14,7 @@ type ApprovalMatrixRow = {
   matrix_id: string;
   name: string;
   corporate_tenant_id: string;
-  subscription_id: string | null;
+  subscription_ids: string[] | null;
   package_code: string | null;
   package_display_name: string | null;
   debit_account_ids: string[] | null;
@@ -61,39 +61,39 @@ export class ApprovalMatrixManagementService {
     const selectName = hasNameColumn ? "am.name" : "am.matrix_id as name";
     const result = corporateTenantId && subscriptionId
       ? await this.db.query<ApprovalMatrixRow>(
-          `select am.matrix_id, ${selectName}, am.corporate_tenant_id, am.subscription_id,
+          `select am.matrix_id, ${selectName}, am.corporate_tenant_id, am.subscription_ids,
                   cs.package_code, cs.display_name as package_display_name,
                   am.debit_account_ids, am.entity_type, am.amount_from, am.amount_to,
                   am.approval_levels, am.roles, am.status, am.created_by_user_id, am.created_by_role,
                   am.created_at, am.updated_at
            from approval_matrices am
-           left join corporate_subscriptions cs on cs.subscription_id = am.subscription_id
+           left join corporate_subscriptions cs on cs.subscription_id = am.subscription_ids[1]
            where am.corporate_tenant_id = $1
-             and am.subscription_id = $2
+             and $2 = any(am.subscription_ids)
            order by am.amount_from asc, am.amount_to asc, am.created_at desc nulls last`,
           [corporateTenantId, subscriptionId]
         )
       : corporateTenantId
       ? await this.db.query<ApprovalMatrixRow>(
-          `select am.matrix_id, ${selectName}, am.corporate_tenant_id, am.subscription_id,
+          `select am.matrix_id, ${selectName}, am.corporate_tenant_id, am.subscription_ids,
                   cs.package_code, cs.display_name as package_display_name,
                   am.debit_account_ids, am.entity_type, am.amount_from, am.amount_to,
                   am.approval_levels, am.roles, am.status, am.created_by_user_id, am.created_by_role,
                   am.created_at, am.updated_at
            from approval_matrices am
-           left join corporate_subscriptions cs on cs.subscription_id = am.subscription_id
+           left join corporate_subscriptions cs on cs.subscription_id = am.subscription_ids[1]
            where am.corporate_tenant_id = $1
            order by am.amount_from asc, am.amount_to asc, am.created_at desc nulls last`,
           [corporateTenantId]
         )
       : await this.db.query<ApprovalMatrixRow>(
-          `select am.matrix_id, ${selectName}, am.corporate_tenant_id, am.subscription_id,
+          `select am.matrix_id, ${selectName}, am.corporate_tenant_id, am.subscription_ids,
                   cs.package_code, cs.display_name as package_display_name,
                   am.debit_account_ids, am.entity_type, am.amount_from, am.amount_to,
                   am.approval_levels, am.roles, am.status, am.created_by_user_id, am.created_by_role,
                   am.created_at, am.updated_at
            from approval_matrices am
-           left join corporate_subscriptions cs on cs.subscription_id = am.subscription_id
+           left join corporate_subscriptions cs on cs.subscription_id = am.subscription_ids[1]
            order by am.corporate_tenant_id, am.amount_from asc, am.amount_to asc, am.created_at desc nulls last`
         );
 
@@ -176,12 +176,12 @@ export class ApprovalMatrixManagementService {
     const result = hasNameColumn
       ? await this.db.query<ApprovalMatrixRow>(
           `insert into approval_matrices (
-             matrix_id, name, corporate_tenant_id, subscription_id, debit_account_ids, entity_type,
+             matrix_id, name, corporate_tenant_id, subscription_ids, debit_account_ids, entity_type,
              amount_from, amount_to, approval_levels, roles, status, created_by_user_id, created_by_role,
              created_at, updated_at
            )
-           values ($1, $2, $3, $4, $5::text[], 'transaction', $6, $7, $8, $9, $10, $11, $12, now(), now())
-           returning matrix_id, name, corporate_tenant_id, subscription_id, null::text as package_code,
+           values ($1, $2, $3, array[$4]::text[], $5::text[], 'transaction', $6, $7, $8, $9, $10, $11, $12, now(), now())
+           returning matrix_id, name, corporate_tenant_id, subscription_ids, null::text as package_code,
                      null::text as package_display_name, debit_account_ids, entity_type, amount_from, amount_to,
                      approval_levels, roles, status, created_by_user_id, created_by_role,
                      created_at, updated_at`,
@@ -202,12 +202,12 @@ export class ApprovalMatrixManagementService {
         )
       : await this.db.query<ApprovalMatrixRow>(
           `insert into approval_matrices (
-             matrix_id, corporate_tenant_id, subscription_id, debit_account_ids, entity_type,
+             matrix_id, corporate_tenant_id, subscription_ids, debit_account_ids, entity_type,
              amount_from, amount_to, approval_levels, roles, status, created_by_user_id, created_by_role,
              created_at, updated_at
            )
-           values ($1, $2, $3, $4::text[], 'transaction', $5, $6, $7, $8, $9, $10, $11, now(), now())
-           returning matrix_id, matrix_id as name, corporate_tenant_id, subscription_id, null::text as package_code,
+           values ($1, $2, $3, array[$4]::text[], $5::text[], 'transaction', $6, $7, $8, $9, $10, $11, now(), now())
+           returning matrix_id, matrix_id as name, corporate_tenant_id, subscription_ids, null::text as package_code,
                      null::text as package_display_name, debit_account_ids, entity_type, amount_from, amount_to,
                      approval_levels, roles, status, created_by_user_id, created_by_role,
                      created_at, updated_at`,
@@ -243,7 +243,7 @@ export class ApprovalMatrixManagementService {
 
     if (subscriptionId) {
       params.push(subscriptionId);
-      subscriptionClause = `and subscription_id = $${params.length}`;
+      subscriptionClause = `and $${params.length} = any(subscription_ids)`;
     }
 
     if (debitAccountId) {
@@ -252,7 +252,7 @@ export class ApprovalMatrixManagementService {
     }
 
     const result = await this.db.query<ApprovalMatrixRow>(
-      `select matrix_id, name, corporate_tenant_id, subscription_id, null::text as package_code,
+      `select matrix_id, name, corporate_tenant_id, subscription_ids, null::text as package_code,
               null::text as package_display_name, debit_account_ids, entity_type, amount_from, amount_to,
               approval_levels, roles, status, created_by_user_id, created_by_role,
               created_at, updated_at
@@ -399,7 +399,7 @@ export class ApprovalMatrixManagementService {
           `update approval_matrices
            set corporate_tenant_id = $2,
                name = $3,
-               subscription_id = $4,
+               subscription_ids = array[$4]::text[],
                debit_account_ids = $5::text[],
                amount_from = $6,
                amount_to = $7,
@@ -410,7 +410,7 @@ export class ApprovalMatrixManagementService {
                created_by_role = $12,
                updated_at = now()
            where matrix_id = $1
-           returning matrix_id, name, corporate_tenant_id, subscription_id, null::text as package_code,
+           returning matrix_id, name, corporate_tenant_id, subscription_ids, null::text as package_code,
                      null::text as package_display_name, debit_account_ids, entity_type, amount_from, amount_to,
                      approval_levels, roles, status, created_by_user_id, created_by_role,
                      created_at, updated_at`,
@@ -432,7 +432,7 @@ export class ApprovalMatrixManagementService {
       : await this.db.query<ApprovalMatrixRow>(
           `update approval_matrices
            set corporate_tenant_id = $2,
-               subscription_id = $3,
+               subscription_ids = array[$3]::text[],
                debit_account_ids = $4::text[],
                amount_from = $5,
                amount_to = $6,
@@ -443,7 +443,7 @@ export class ApprovalMatrixManagementService {
                created_by_role = $11,
                updated_at = now()
            where matrix_id = $1
-           returning matrix_id, matrix_id as name, corporate_tenant_id, subscription_id, null::text as package_code,
+           returning matrix_id, matrix_id as name, corporate_tenant_id, subscription_ids, null::text as package_code,
                      null::text as package_display_name, debit_account_ids, entity_type, amount_from, amount_to,
                      approval_levels, roles, status, created_by_user_id, created_by_role,
                      created_at, updated_at`,
@@ -473,7 +473,7 @@ function mapApprovalMatrixRow(row: ApprovalMatrixRow) {
     matrixId: row.matrix_id,
     name: row.name,
     corporateTenantId: row.corporate_tenant_id,
-    subscriptionId: row.subscription_id,
+    subscriptionId: row.subscription_ids && row.subscription_ids.length > 0 ? row.subscription_ids[0] : null,
     packageCode: row.package_code,
     packageDisplayName: row.package_display_name,
     debitAccountIds: row.debit_account_ids ?? [],

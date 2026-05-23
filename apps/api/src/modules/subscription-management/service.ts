@@ -126,12 +126,15 @@ export class SubscriptionManagementService {
     if (filters?.userId) {
       joinUserAccess = true;
       values.push(filters.userId);
-      clauses.push(`sua.user_id = $${values.length}`);
-      clauses.push(`sua.status = 'active'`);
+      clauses.push(`cu.user_id = $${values.length}`);
+      clauses.push(`rsa.status = 'active'`);
+      clauses.push(`cu.status = 'active'`);
+      clauses.push(`coalesce(cu.approval_state, 'approved') = 'approved'`);
     }
 
     const joins = joinUserAccess
-      ? "join subscription_user_access sua on sua.subscription_id = cs.subscription_id"
+      ? `join role_subscription_access rsa on rsa.subscription_id = cs.subscription_id
+         join corporate_users cu on cu.corporate_tenant_id = rsa.corporate_tenant_id and cu.role = rsa.role_name`
       : "";
     const whereClause = clauses.length > 0 ? `where ${clauses.join(" and ")}` : "";
 
@@ -374,6 +377,24 @@ export class SubscriptionManagementService {
         );
       }
 
+      const uniqueRoles = [...new Set(usersResult.rows.map((u) => u.role))];
+      for (const roleName of uniqueRoles) {
+        const accessId = `rsa-${payload.corporateTenantId}-${normalizeCode(roleName).toLowerCase()}-${subscriptionId}`;
+        await client.query(
+          `insert into role_subscription_access (
+             access_id, corporate_tenant_id, role_name, subscription_id, status, created_at, updated_at
+           )
+           values ($1, $2, $3, $4, 'active', now(), now())
+           on conflict (access_id) do nothing`,
+          [
+            accessId,
+            payload.corporateTenantId,
+            roleName,
+            subscriptionId
+          ]
+        );
+      }
+
       await client.query("commit");
     } catch (error) {
       await client.query("rollback");
@@ -477,6 +498,31 @@ export class SubscriptionManagementService {
     try {
       await client.query("begin");
 
+      // 1. Manage role_subscription_access
+      await client.query(
+        `delete from role_subscription_access
+         where corporate_tenant_id = $1
+           and role_name = $2`,
+        [payload.corporateTenantId, payload.roleName]
+      );
+
+      for (const subscriptionId of selectedSubscriptionIds) {
+        const accessId = `rsa-${payload.corporateTenantId}-${normalizeCode(payload.roleName).toLowerCase()}-${subscriptionId}`;
+        await client.query(
+          `insert into role_subscription_access (
+             access_id, corporate_tenant_id, role_name, subscription_id, status, created_at, updated_at
+           )
+           values ($1, $2, $3, $4, 'active', now(), now())`,
+          [
+            accessId,
+            payload.corporateTenantId,
+            payload.roleName,
+            subscriptionId
+          ]
+        );
+      }
+
+      // 2. Manage subscription_user_access (fallback/cache)
       if (workspaceSubscriptionIds.length > 0) {
         await client.query(
           `delete from subscription_user_access
@@ -537,12 +583,23 @@ export class SubscriptionManagementService {
         [subscriptionIds]
       ),
       this.db.query<SubscriptionUserAccessRow>(
-        `select sua.access_id, sua.subscription_id, sua.user_id, cu.username, cu.display_name,
-                sua.role_name, sua.status
-         from subscription_user_access sua
-         join corporate_users cu on cu.user_id = sua.user_id
-         where sua.subscription_id = any($1::text[])
-         order by cu.username, sua.role_name`,
+        `select 
+           rsa.access_id, 
+           rsa.subscription_id, 
+           coalesce(cu.user_id, '') as user_id, 
+           coalesce(cu.username, '') as username, 
+           coalesce(cu.display_name, '') as display_name,
+           rsa.role_name, 
+           rsa.status
+         from role_subscription_access rsa
+         left join corporate_users cu 
+           on cu.corporate_tenant_id = rsa.corporate_tenant_id 
+          and cu.role = rsa.role_name
+          and cu.status = 'active'
+          and coalesce(cu.approval_state, 'approved') = 'approved'
+         where rsa.subscription_id = any($1::text[])
+           and rsa.status = 'active'
+         order by cu.username, rsa.role_name`,
         [subscriptionIds]
       )
     ]);

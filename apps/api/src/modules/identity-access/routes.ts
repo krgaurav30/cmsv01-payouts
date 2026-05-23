@@ -222,6 +222,43 @@ export const identityAccessRoutes: FastifyPluginAsync = async (app) => {
     return result.data;
   });
 
+  app.put("/v1/auth/users/:userId/status", async (request, reply) => {
+    const params = request.params as { userId: string };
+    const body = request.body as { status: "active" | "inactive"; actedByUserId: string };
+
+    if (!body || !body.status || !body.actedByUserId) {
+      return reply.status(400).send({
+        message: "Invalid payload, status and actedByUserId are required"
+      });
+    }
+
+    if (body.status !== "active" && body.status !== "inactive") {
+      return reply.status(400).send({
+        message: "Invalid status value"
+      });
+    }
+
+    const result = await identityAccessService.updateCorporateUserStatus(
+      params.userId,
+      body.status,
+      body.actedByUserId
+    );
+
+    if ("error" in result) {
+      if (result.error === "user_not_found") {
+        return reply.status(404).send({
+          message: "User not found"
+        });
+      }
+
+      return reply.status(403).send({
+        message: "You do not have access to manage users"
+      });
+    }
+
+    return result.data;
+  });
+
   app.post("/v1/auth/corporate-roles/:roleId/actions", async (request, reply) => {
     const params = request.params as { roleId: string };
     const parsed = approvalActionSchema.safeParse(request.body);

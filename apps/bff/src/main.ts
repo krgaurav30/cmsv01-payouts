@@ -213,8 +213,7 @@ app.get("/bff/corporate/operations/initial-data", async (request, reply) => {
   const subscriptionsPath = new URLSearchParams({
     corporateTenantId: query.corporateTenantId,
     corporateId: selectedCorporateId,
-    status: "active",
-    userId: query.userId
+    status: "active"
   });
 
   const packageCode = normalizeQueryValue(query.packageCode);

@@ -279,7 +279,7 @@ export class IdentityAccessService {
     );
     const result = await this.db.query<{ role_name: string }>(
       `select distinct role_name
-       from subscription_user_access
+       from role_subscription_access
        where subscription_id = $1
          and status = 'active'`,
       [subscriptionId]
@@ -413,11 +413,16 @@ export class IdentityAccessService {
 
   async userHasActiveSubscriptionAccess(subscriptionId: string, userId: string) {
     const result = await this.db.query<{ role_name: string }>(
-      `select role_name
-       from subscription_user_access
-       where subscription_id = $1
-         and user_id = $2
-         and status = 'active'
+      `select rsa.role_name
+       from role_subscription_access rsa
+       join corporate_users cu 
+         on cu.corporate_tenant_id = rsa.corporate_tenant_id 
+        and cu.role = rsa.role_name
+       where rsa.subscription_id = $1
+         and cu.user_id = $2
+         and rsa.status = 'active'
+         and cu.status = 'active'
+         and coalesce(cu.approval_state, 'approved') = 'approved'
        limit 1`,
       [subscriptionId, userId]
     );
@@ -667,7 +672,12 @@ export class IdentityAccessService {
        set name = $2,
            description = $3,
            permissions = $4,
-           status = $5,
+           status = 'inactive',
+           approval_state = 'pending_approval',
+           review_comment = null,
+           reviewed_at = null,
+           reviewed_by_user_id = null,
+           reviewed_by_role = null,
            updated_at = now()
        where role_id = $1
        returning role_id, corporate_tenant_id, name, description, status, permissions,
@@ -677,13 +687,23 @@ export class IdentityAccessService {
         roleId,
         payload.name,
         payload.description ?? null,
-        payload.permissions,
-        payload.status
+        payload.permissions
       ]
     );
 
+    const updated = mapCorporateRoleRow(result.rows[0]);
+    this.notificationsService.notifyPermissionRecipientsInBackground({
+      corporateTenantId: payload.corporateTenantId,
+      permission: "roles.checker",
+      title: "Role approval pending",
+      message: `${payload.name} is waiting for checker approval.`,
+      targetSection: "approvals",
+      entityType: "role",
+      entityId: updated.roleId
+    });
+
     return {
-      data: mapCorporateRoleRow(result.rows[0])
+      data: updated
     };
   }
 
@@ -809,6 +829,42 @@ export class IdentityAccessService {
 
     return {
       data: updated
+    };
+  }
+
+  async updateCorporateUserStatus(
+    userId: string,
+    status: "active" | "inactive",
+    actedByUserId: string
+  ) {
+    const actor = await this.getCorporateUserById(actedByUserId);
+    if (!actor || !(await this.userHasPermission(actedByUserId, "user.make"))) {
+      return {
+        error: "forbidden" as const
+      };
+    }
+
+    const current = await this.getCorporateUserById(userId);
+    if (!current) {
+      return {
+        error: "user_not_found" as const
+      };
+    }
+
+    const result = await this.db.query<CorporateUserRow>(
+      `update corporate_users
+       set status = $2,
+           updated_at = now()
+       where user_id = $1
+       returning user_id, username, password, display_name, role, bank_tenant_id,
+                 corporate_tenant_id, corporate_id, status, approval_state, review_comment,
+                 created_by_user_id, created_by_role, created_at, updated_at,
+                 reviewed_at, reviewed_by_user_id, reviewed_by_role`,
+      [userId, status]
+    );
+
+    return {
+      data: mapCorporateUserRow(result.rows[0])
     };
   }
 }
