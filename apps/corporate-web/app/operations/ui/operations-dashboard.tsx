@@ -558,9 +558,7 @@ export function OperationsDashboard({
     void bootstrap(currentSession);
   }, [initialSession, router]);
 
-  useEffect(() => {
-    setActiveSection(initialSection);
-  }, [initialSection]);
+
 
   useEffect(() => {
     latestSessionRef.current = session;
