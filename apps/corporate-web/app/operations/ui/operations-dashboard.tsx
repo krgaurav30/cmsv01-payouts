@@ -495,6 +495,7 @@ export function OperationsDashboard({
   const [roleActionItem, setRoleActionItem] = useState<CorporateRole | null>(null);
   const [roleActionMenuOpen, setRoleActionMenuOpen] = useState(false);
   const [showUserCreate, setShowUserCreate] = useState(false);
+  const [showApprovalMatrixCreate, setShowApprovalMatrixCreate] = useState(false);
   const [approvalMatrixSubscriptionId, setApprovalMatrixSubscriptionId] = useState("");
   const [approvalMatrixDebitAccountIds, setApprovalMatrixDebitAccountIds] = useState<string[]>([]);
   const [approvalMatrixRoleNames, setApprovalMatrixRoleNames] = useState<string[]>([]);
@@ -2044,6 +2045,7 @@ export function OperationsDashboard({
     setApprovalMatrixSubscriptionId("");
     setApprovalMatrixDebitAccountIds([]);
     setApprovalMatrixRoleNames([]);
+    setShowApprovalMatrixCreate(false);
     setNotice({
       tone: "success",
       text: "Approval matrix created successfully."
@@ -3914,11 +3916,19 @@ export function OperationsDashboard({
               <div className="ops-panel-head">
                 <div>
                   <h3>Approval Matrix</h3>
-
                 </div>
+                {isRoleMaker ? (
+                  <button
+                    className="ops-button primary"
+                    onClick={() => setShowApprovalMatrixCreate((current) => !current)}
+                    type="button"
+                  >
+                    {showApprovalMatrixCreate ? "Close form" : "Create matrix"}
+                  </button>
+                ) : null}
               </div>
 
-              {isRoleMaker ? (
+              {showApprovalMatrixCreate && isRoleMaker ? (
                 <div className="ops-drawer">
                   <form className="ops-form" onSubmit={handleApprovalMatrixSubmit}>
                     <div className="ops-fields two">
@@ -5060,6 +5070,7 @@ export function OperationsDashboard({
                 corporateId={selectedCorporateId ?? session?.corporateId ?? ""}
                 corporateTenantId={session?.corporateTenantId ?? ""}
                 debitAccounts={debitAccounts}
+                isNested={true}
               />
             ) : null}
 
@@ -5075,6 +5086,7 @@ export function OperationsDashboard({
                     await refreshWorkspace(session, selectedCorporateId, { silent: true });
                   }
                 }}
+                isNested={true}
               />
             ) : null}
           </section>

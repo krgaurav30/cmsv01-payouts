@@ -31,6 +31,7 @@ interface PackagesSectionProps {
   corporateId: string;
   bankTenantId: string;
   debitAccounts: CorporateDebitAccount[];
+  isNested?: boolean;
 }
 
 function MultiDropdown({
@@ -223,7 +224,8 @@ export function PackagesSection({
   corporateTenantId,
   corporateId,
   bankTenantId,
-  debitAccounts
+  debitAccounts,
+  isNested = false
 }: PackagesSectionProps) {
   const [items, setItems] = useState<PackageItem[]>([]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
@@ -468,7 +470,7 @@ export function PackagesSection({
   }
 
   return (
-    <section className="ops-page active" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+    <section className={isNested ? "" : "ops-page active"} style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       {toast ? (
         <div
           style={{

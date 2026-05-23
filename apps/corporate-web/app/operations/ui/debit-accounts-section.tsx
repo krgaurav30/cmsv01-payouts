@@ -10,6 +10,7 @@ interface DebitAccountsSectionProps {
   session: CorporateSession | null;
   selectedCorporateId: string;
   onUpdate: () => Promise<void>;
+  isNested?: boolean;
 }
 
 export function DebitAccountsSection({
@@ -18,7 +19,8 @@ export function DebitAccountsSection({
   canEdit,
   session,
   selectedCorporateId,
-  onUpdate
+  onUpdate,
+  isNested = false
 }: DebitAccountsSectionProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<CorporateDebitAccount | null>(null);
@@ -255,7 +257,7 @@ export function DebitAccountsSection({
   };
 
   return (
-    <section className="ops-page active" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+    <section className={isNested ? "" : "ops-page active"} style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       {/* Control Desk Heading & Primary Action */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
