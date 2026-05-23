@@ -174,7 +174,8 @@ function CompactMultiDropdown({
           justifyContent: "space-between",
           gap: "10px",
           padding: "10px 14px",
-          whiteSpace: "normal"
+          whiteSpace: "normal",
+          background: "#ffffff"
         }}
       >
         <span
