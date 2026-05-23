@@ -731,16 +731,16 @@
 }
 
 .ops-button.primary {
-  background: #0f172a; /* Sleek, dark enterprise charcoal (slate-900) */
-  border: 1px solid #0f172a;
+  background: #2563eb; /* Sleek B2B enterprise blue (blue-600) */
+  border: 1px solid #2563eb;
   color: #ffffff;
   font-weight: 600;
   box-shadow: var(--shadow-sm);
 }
 
 .ops-button.primary:hover {
-  background: #1e293b; /* Premium slate-800 hover state */
-  border-color: #1e293b;
+  background: #1d4ed8; /* Premium deep blue hover state */
+  border-color: #1d4ed8;
   box-shadow: var(--shadow-md);
 }
 
