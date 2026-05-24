@@ -379,7 +379,8 @@ async function proxyToCore(request: FastifyRequest, reply: FastifyReply, path: s
       cleanPath === "/bff/auth/login" ||
       cleanPath.startsWith("/v1/cbs/") ||
       cleanPath.startsWith("/v1/payment-hub/") ||
-      cleanPath.startsWith("/v1/partner/");
+      cleanPath.startsWith("/v1/partner/") ||
+      cleanPath.startsWith("/bank/dev-portal/");
 
     let secureHeaders: Record<string, string> | null = null;
     if (!isPublic) {

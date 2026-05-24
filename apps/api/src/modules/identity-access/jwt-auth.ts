@@ -29,7 +29,9 @@ const jwtAuthPluginImpl: FastifyPluginAsync = async (app) => {
       (url === "/context" && method === "GET") ||
       (url === "/v1/auth/login" && method === "POST") ||
       (config.nodeEnv !== "production" && url.startsWith("/ui") && method === "GET") ||
-      url.startsWith("/v1/cbs/")
+      url.startsWith("/v1/cbs/") ||
+      url.startsWith("/v1/partner/") ||
+      url.startsWith("/bank/dev-portal/")
     ) {
       return;
     }
