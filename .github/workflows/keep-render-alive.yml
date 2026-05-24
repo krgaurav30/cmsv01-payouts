@@ -1,0 +1,29 @@
+name: Keep Render Services Active
+
+on:
+  schedule:
+    # Run every 10 minutes
+    - cron: "*/10 * * * *"
+  workflow_dispatch: # Allow manual triggers
+
+jobs:
+  ping-services:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping BFF Service
+        run: |
+          BFF_URL="${{ secrets.RENDER_BFF_URL }}"
+          if [ -z "$BFF_URL" ]; then
+            BFF_URL="https://cmsv01-bff.onrender.com"
+          fi
+          echo "Pinging BFF at $BFF_URL/health ..."
+          curl -I -s -L --max-time 15 "$BFF_URL/health" || echo "BFF Ping failed"
+
+      - name: Ping Core API Service
+        run: |
+          API_URL="${{ secrets.RENDER_API_URL }}"
+          if [ -z "$API_URL" ]; then
+            API_URL="https://cmsv01-api.onrender.com"
+          fi
+          echo "Pinging API at $API_URL/health ..."
+          curl -I -s -L --max-time 15 "$API_URL/health" || echo "API Ping failed"

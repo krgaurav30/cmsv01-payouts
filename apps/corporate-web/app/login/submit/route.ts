@@ -9,17 +9,52 @@ export async function POST(request: NextRequest) {
 
   try {
     const bffUrl = resolveBffBase(request.nextUrl.origin);
-    const response = await fetch(`${bffUrl}/bff/auth/login`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        username,
-        password
-      }),
-      cache: "no-store"
-    });
+    const loginUrl = `${bffUrl}/bff/auth/login`;
+
+    let response: Response | null = null;
+    let attempts = 0;
+    const maxAttempts = 3;
+    const delayMs = 5000;
+
+    while (attempts < maxAttempts) {
+      attempts++;
+      try {
+        response = await fetch(loginUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            username,
+            password
+          }),
+          cache: "no-store"
+        });
+
+        if (response.ok || response.status === 400 || response.status === 401) {
+          break;
+        }
+
+        if ([502, 503, 504].includes(response.status) && attempts < maxAttempts) {
+          console.warn(`[Login submit] Received ${response.status} (attempt ${attempts}/${maxAttempts}). Server may be sleeping, retrying in ${delayMs / 1000}s...`);
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        break;
+      } catch (err) {
+        if (attempts < maxAttempts) {
+          console.warn(`[Login submit] Fetch error: ${err instanceof Error ? err.message : String(err)} (attempt ${attempts}/${maxAttempts}). Retrying in ${delayMs / 1000}s...`);
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    if (!response) {
+      throw new Error("No response received from login service");
+    }
 
     const data = (await response.json().catch(() => ({}))) as {
       session?: unknown;
