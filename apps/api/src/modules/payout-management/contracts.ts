@@ -44,6 +44,8 @@ export const payoutBatchCreateSchema = z.object({
   title: z.string().min(2),
   tag: z.string().min(1).optional(),
   remark: z.string().min(1).optional(),
+  utr: z.string().optional(),
+  narration: z.string().optional(),
   items: z.array(payoutItemSchema).min(1)
 });
 
@@ -202,6 +204,8 @@ export type PayoutBatch = {
   totalAmount: Money;
   approvalComment: string | null;
   bankReference: string | null;
+  utr: string | null;
+  narration: string | null;
   dispatchedAt: string | null;
   completedAt: string | null;
   failureReason: string | null;

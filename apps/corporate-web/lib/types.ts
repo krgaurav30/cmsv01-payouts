@@ -164,6 +164,8 @@ export type PayoutBatch = {
   totalAmount: Money;
   approvalComment: string | null;
   bankReference: string | null;
+  utr?: string | null;
+  narration?: string | null;
   createdAt: string | null;
   submittedAt: string | null;
   approvedAt: string | null;

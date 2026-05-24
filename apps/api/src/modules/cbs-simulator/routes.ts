@@ -56,9 +56,8 @@ export const cbsSimulatorRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    // 1. Check idempotency
     const existingTx = await db.query(
-      `select cbs_reference_id, status, error_code, error_message from cbs_transactions where idempotency_key = $1`,
+      `select cbs_reference_id, status, error_code, error_message, narration from cbs_transactions where idempotency_key = $1`,
       [idempotencyKey]
     );
 
@@ -69,6 +68,7 @@ export const cbsSimulatorRoutes: FastifyPluginAsync = async (app) => {
           status: "SUCCESS",
           cbsReferenceId: tx.cbs_reference_id,
           cachedResponse: true,
+          narration: tx.narration || body.narration || "CMS Payout",
           processedAt: new Date().toISOString()
         });
       } else {
@@ -157,6 +157,7 @@ export const cbsSimulatorRoutes: FastifyPluginAsync = async (app) => {
         status: "SUCCESS",
         cbsReferenceId: cbsRef,
         availableBalance: String(newBalance),
+        narration: body.narration || "CMS Payout",
         processedAt: new Date().toISOString()
       });
     } catch (err) {

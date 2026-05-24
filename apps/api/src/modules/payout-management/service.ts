@@ -72,6 +72,8 @@ type PayoutBatchRow = {
   dispatched_at: Date | null;
   completed_at: Date | null;
   failure_reason: string | null;
+  utr: string | null;
+  narration: string | null;
   approval_levels_required?: number | null;
   current_approval_level?: number | null;
   roles_by_level?: Array<{ level: number; roles: string[] }> | null;
@@ -124,6 +126,7 @@ type PayoutFileUploadRow = {
   created_count: number;
   rejected_count: number;
   uploaded_at: Date | null;
+  utr: string | null;
   payload_json?: Array<{
     paymentMethodCode: string;
     transactionReference: string;
@@ -259,7 +262,7 @@ export class PayoutManagementService {
                               pb.created_at, pb.submitted_at, pb.submitted_by_user_id, pb.submitted_by_role,
                               pb.approved_at, pb.approved_by_user_id, pb.approved_by_role, pb.rejected_at,
                               pb.rejected_by_user_id, pb.rejected_by_role, pb.dispatched_at, pb.completed_at,
-                              pb.failure_reason, pac.approval_levels_required, pac.current_approval_level,
+                              pb.failure_reason, pb.utr, pb.narration, pac.approval_levels_required, pac.current_approval_level,
                               pac.roles_by_level, pac.matched_matrix_ids
                        from payout_batches pb
                        left join payout_batch_approval_contexts pac on pac.batch_id = pb.batch_id
@@ -308,7 +311,7 @@ export class PayoutManagementService {
               submitted_by_user_id, submitted_by_role, approved_at, approved_by_user_id,
               approved_by_role, rejected_at,
               rejected_by_user_id, rejected_by_role, dispatched_at, completed_at,
-              failure_reason
+              failure_reason, utr, narration
        from payout_batches
        where batch_id = $1`,
       [batchId]
@@ -529,6 +532,14 @@ export class PayoutManagementService {
       };
     }
 
+    const batchUtr = payload.utr || generate16DigitUtr();
+    let batchNarration = payload.narration;
+    if (!batchNarration) {
+      const packageCode = resolvedSubscription.packageCode || payload.packageCode || "PAYOUT";
+      const remarkSuffix = payload.remark ? `-${payload.remark}` : "";
+      batchNarration = `CMS-${batchUtr}-${packageCode}${remarkSuffix}`.slice(0, 64);
+    }
+
     await withDatabaseTransaction(this.config, async (client) => {
       await client.query(
         `insert into payout_batches (
@@ -538,10 +549,10 @@ export class PayoutManagementService {
            bank_reference, created_at, submitted_at, submitted_by_user_id, submitted_by_role,
            approved_at, approved_by_user_id, approved_by_role, rejected_at,
            rejected_by_user_id, rejected_by_role, dispatched_at, completed_at,
-           failure_reason
+           failure_reason, utr, narration
          )
          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'draft', $15, null, null, now(),
-                 null, null, null, null, null, null, null, null, null, null, null, null)
+                 null, null, null, null, null, null, null, null, null, null, null, null, $16, $17)
          on conflict (batch_id) do update
          set bank_tenant_id = excluded.bank_tenant_id,
              corporate_tenant_id = excluded.corporate_tenant_id,
@@ -556,7 +567,9 @@ export class PayoutManagementService {
              title = excluded.title,
              tag = excluded.tag,
              remark = excluded.remark,
-             total_amount = excluded.total_amount`,
+             total_amount = excluded.total_amount,
+             utr = coalesce(payout_batches.utr, excluded.utr),
+             narration = coalesce(payout_batches.narration, excluded.narration)`,
         [
           payload.batchId,
           payload.bankTenantId,
@@ -572,7 +585,9 @@ export class PayoutManagementService {
           payload.title,
           payload.tag ?? null,
           payload.remark ?? null,
-          totalAmount
+          totalAmount,
+          batchUtr,
+          batchNarration
         ]
       );
 
@@ -613,6 +628,8 @@ export class PayoutManagementService {
         createdByUserId: payload.createdByUserId,
         createdByRole: actor.role,
         state: "draft",
+        utr: batchUtr,
+        narration: batchNarration,
         occurredAt: new Date().toISOString()
       });
     });
@@ -1991,13 +2008,15 @@ export class PayoutManagementService {
       };
     }
 
+    const fileUtr = generate16DigitUtr();
+
     const result = await executor.query<PayoutFileUploadRow>(
       `insert into payout_file_uploads (
          upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, subscription_id,
          package_code, debit_account_id, file_name, uploaded_by_user_id, uploaded_by_role, status, remark,
-         total_rows, created_count, rejected_count, uploaded_at, payload_json
+         total_rows, created_count, rejected_count, uploaded_at, payload_json, utr
        )
-       values ($1, $2, $3, $4, $5, $6, null, $7, $8, $9, $10, $11, $12, $13, $14, now(), $15::jsonb)
+       values ($1, $2, $3, $4, $5, $6, null, $7, $8, $9, $10, $11, $12, $13, $14, now(), $15::jsonb, $16)
        on conflict (upload_id) do update
        set bank_tenant_id = excluded.bank_tenant_id,
            corporate_tenant_id = excluded.corporate_tenant_id,
@@ -2013,11 +2032,12 @@ export class PayoutManagementService {
            total_rows = excluded.total_rows,
            created_count = excluded.created_count,
            rejected_count = excluded.rejected_count,
-           payload_json = excluded.payload_json
+           payload_json = excluded.payload_json,
+           utr = coalesce(payout_file_uploads.utr, excluded.utr)
        returning upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, subscription_id,
                  package_code, debit_account_id, file_name, uploaded_by_user_id, uploaded_by_role, status, remark,
                  total_rows, created_count, rejected_count, uploaded_at, payload_json,
-                 processing_started_at, processed_at`,
+                 processing_started_at, processed_at, utr`,
       [
         payload.uploadId,
         payload.bankTenantId,
@@ -2033,7 +2053,8 @@ export class PayoutManagementService {
         payload.totalRows,
         payload.createdCount,
         payload.rejectedCount,
-        JSON.stringify(payload.payloadRows ?? null)
+        JSON.stringify(payload.payloadRows ?? null),
+        fileUtr
       ]
     );
 
@@ -2089,7 +2110,7 @@ export class PayoutManagementService {
       `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id, subscription_id,
               package_code, debit_account_id, file_name, uploaded_by_user_id, uploaded_by_role, status, remark,
               total_rows, created_count, rejected_count, uploaded_at, payload_json,
-              processing_started_at, processed_at
+              processing_started_at, processed_at, utr
        from payout_file_uploads
        where upload_id = $1
        for update`,
@@ -2200,6 +2221,16 @@ export class PayoutManagementService {
         continue;
       }
 
+      const isSingleDebit = uploadEffectiveSettings?.effectiveDebitMode === "single";
+      const batchUtr = isSingleDebit ? (upload.utr || generate16DigitUtr()) : generate16DigitUtr();
+      let batchNarration: string;
+      if (isSingleDebit) {
+        batchNarration = `CMS-${batchUtr}- ${upload.file_name}`;
+      } else {
+        const remarkSuffix = row.remark ? `-${row.remark}` : "";
+        batchNarration = `CMS-${batchUtr}-${upload.package_code || "PAYOUT"}${remarkSuffix}`.slice(0, 64);
+      }
+
       const createResult = await this.createAndSubmitBatch({
         batchId: crypto.randomUUID(),
         bankTenantId: upload.bank_tenant_id,
@@ -2217,6 +2248,8 @@ export class PayoutManagementService {
         title: transactionReference,
         tag: row.tag ?? undefined,
         remark: row.remark ?? undefined,
+        utr: batchUtr,
+        narration: batchNarration,
         items: [
           {
             itemId: `${createSimpleId("ITEM")}-${index + 1}`,
@@ -2562,6 +2595,8 @@ export class PayoutManagementService {
       },
       approvalComment: row.approval_comment,
       bankReference: row.bank_reference,
+      utr: row.utr,
+      narration: row.narration,
       dispatchedAt: row.dispatched_at?.toISOString() ?? null,
       completedAt: row.completed_at?.toISOString() ?? null,
       failureReason: row.failure_reason,
@@ -2627,6 +2662,8 @@ export class PayoutManagementService {
       },
       approvalComment: row.approval_comment,
       bankReference: row.bank_reference,
+      utr: row.utr,
+      narration: row.narration,
       createdAt: row.created_at?.toISOString() ?? null,
       submittedAt: row.submitted_at?.toISOString() ?? null,
       approvedAt: row.approved_at?.toISOString() ?? null,
@@ -2815,7 +2852,7 @@ export class PayoutManagementService {
               submitted_by_user_id, submitted_by_role, approved_at, approved_by_user_id,
               approved_by_role, rejected_at,
               rejected_by_user_id, rejected_by_role, dispatched_at, completed_at,
-              failure_reason
+              failure_reason, utr, narration
        from payout_batches
        where corporate_tenant_id = $1
          and corporate_id = $2
@@ -3365,3 +3402,12 @@ function mapRefundRow(row: PayoutRefundRow) {
     processedAt: row.processed_at?.toISOString() ?? null
   } satisfies PayoutRefund;
 }
+
+function generate16DigitUtr(): string {
+  let utr = (Math.floor(Math.random() * 9) + 1).toString();
+  for (let i = 1; i < 16; i++) {
+    utr += Math.floor(Math.random() * 10).toString();
+  }
+  return utr;
+}
+

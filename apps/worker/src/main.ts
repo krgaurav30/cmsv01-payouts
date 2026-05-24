@@ -464,8 +464,10 @@ async function executeCbsDebitJourney(batchId: string) {
       total_amount: string;
       account_number: string;
       state: string;
+      narration: string | null;
+      utr: string | null;
     }>(
-      `select pb.batch_id, pb.total_amount, cda.account_number, pb.state
+      `select pb.batch_id, pb.total_amount, cda.account_number, pb.state, pb.narration, pb.utr
        from payout_batches pb
        left join corporate_debit_accounts cda on cda.debit_account_id = pb.debit_account_id
        where pb.batch_id = $1`,
@@ -531,7 +533,7 @@ async function executeCbsDebitJourney(batchId: string) {
         {
           accountNumber: batch.account_number,
           amount: batch.total_amount,
-          narration: `CMS Payout ${batchId}`
+          narration: batch.narration || `CMS Payout ${batchId}`
         },
         {
           "X-Idempotency-Key": idempotencyKey
