@@ -3904,8 +3904,6 @@ export function OperationsDashboard({
                         >
                           <td>
                             <strong>{transaction.title}</strong>
-                            <br />
-                            <span className="ops-meta">{transaction.remark ?? "No remark"}</span>
                           </td>
                           <td>{beneficiaryName}</td>
                           <td>INR {formatAmount(transaction.totalAmount.value)}</td>
@@ -4846,8 +4844,6 @@ export function OperationsDashboard({
                               >
                                 <td>
                                   <strong>{transaction?.title ?? entry.title}</strong>
-                                  <br />
-                                  <span className="ops-meta">{transaction?.remark ?? "No remark"}</span>
                                 </td>
                                 <td>{beneficiaryName}</td>
                                 <td>INR {formatAmount(transaction?.totalAmount.value ?? 0)}</td>
