@@ -252,6 +252,23 @@ export function DeveloperPortalPageClient({ isEmbedded = false }: { isEmbedded?:
     createdBy: "bank-ops-001"
   });
   const [apiKeyOutput, setApiKeyOutput] = useState("Ready.");
+
+  // Interactive Playground states
+  const [activeRequestTab, setActiveRequestTab] = useState<"example" | "playground">("example");
+  const [activeResponseTab, setActiveResponseTab] = useState<"sample" | "live">("sample");
+  const [playgroundKeys, setPlaygroundKeys] = useState<Array<{ label: string; key: string }>>([
+    { label: "Demo Key (bank-alpha-dev-key)", key: "bank-alpha-dev-key" }
+  ]);
+  const [playgroundApiKey, setPlaygroundApiKey] = useState("bank-alpha-dev-key");
+  const [customApiKeyVal, setCustomApiKeyVal] = useState("");
+  const [playgroundPathParams, setPlaygroundPathParams] = useState<Record<string, string>>({});
+  const [playgroundPayloadJson, setPlaygroundPayloadJson] = useState("");
+  const [playgroundResponse, setPlaygroundResponse] = useState<{
+    status: number;
+    statusText: string;
+    data: any;
+  } | null>(null);
+  const [playgroundIsLoading, setPlaygroundIsLoading] = useState(false);
   const [webhooks, setWebhooks] = useState<WebhookItem[]>([]);
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([]);
   const [supportedWebhookEvents, setSupportedWebhookEvents] = useState<string[]>([]);
@@ -269,6 +286,82 @@ export function DeveloperPortalPageClient({ isEmbedded = false }: { isEmbedded?:
   }, []);
 
   const definition = apiDefinitions[selectedSection];
+
+  useEffect(() => {
+    if (!definition) return;
+    setActiveRequestTab("example");
+    setActiveResponseTab("sample");
+    setPlaygroundResponse(null);
+
+    const jsonBody = extractJsonFromExample(definition.example);
+    setPlaygroundPayloadJson(jsonBody);
+
+    const paramRegex = /:([a-zA-Z0-9_]+)/g;
+    const params: Record<string, string> = {};
+    let match;
+    while ((match = paramRegex.exec(definition.path)) !== null) {
+      params[match[1]] = "";
+    }
+    setPlaygroundPathParams(params);
+  }, [selectedSection, definition]);
+
+  async function handleSendPlaygroundRequest() {
+    setPlaygroundIsLoading(true);
+    setPlaygroundResponse(null);
+    setActiveResponseTab("live");
+
+    try {
+      let key = playgroundApiKey;
+      if (key === "custom") {
+        key = customApiKeyVal;
+      }
+
+      let targetPath = definition.path;
+      Object.entries(playgroundPathParams).forEach(([paramName, paramVal]) => {
+        targetPath = targetPath.replace(`:${paramName}`, encodeURIComponent(paramVal));
+      });
+
+      let bodyVal: any = undefined;
+      if (definition.method !== "GET" && playgroundPayloadJson) {
+        try {
+          bodyVal = JSON.parse(playgroundPayloadJson);
+        } catch (jsonErr) {
+          throw new Error("Invalid request JSON: " + (jsonErr instanceof Error ? jsonErr.message : String(jsonErr)));
+        }
+      }
+
+      const response = await fetch(targetPath, {
+        method: definition.method,
+        headers: {
+          "x-api-key": key,
+          "Content-Type": "application/json"
+        },
+        body: bodyVal ? JSON.stringify(bodyVal) : undefined
+      });
+
+      const text = await response.text();
+      let jsonData: any = null;
+      try {
+        jsonData = JSON.parse(text);
+      } catch {
+        jsonData = { rawResponse: text };
+      }
+
+      setPlaygroundResponse({
+        status: response.status,
+        statusText: response.statusText,
+        data: jsonData
+      });
+    } catch (err) {
+      setPlaygroundResponse({
+        status: 0,
+        statusText: "Error",
+        data: { error: err instanceof Error ? err.message : String(err) }
+      });
+    } finally {
+      setPlaygroundIsLoading(false);
+    }
+  }
 
   async function loadApiKeys() {
     try {
@@ -316,6 +409,11 @@ export function DeveloperPortalPageClient({ isEmbedded = false }: { isEmbedded?:
           productScope: "all",
           createdBy: "bank-ops-001"
         });
+        if (data.apiKey) {
+          const newKey = { label: data.label || "Generated Key", key: data.apiKey };
+          setPlaygroundKeys((current) => [...current.filter((k) => k.key !== data.apiKey), newKey]);
+          setPlaygroundApiKey(data.apiKey);
+        }
         await loadApiKeys();
       }
     } catch (error) {
@@ -475,51 +573,321 @@ export function DeveloperPortalPageClient({ isEmbedded = false }: { isEmbedded?:
 
             {/* Bottom Section: API Playground (Full Width, split into two halves) */}
             <div className="playground-bottom-grid">
-              {/* Left Column: Request Example */}
+              {/* Left Column: Request tabs & content */}
               <div className="playground-column-left">
                 <div className="code-container" style={{ height: "100%" }}>
-                  <div className="code-header">
-                    <span>Request Example</span>
-                    <button
-                      type="button"
-                      className="copy-btn"
-                      onClick={() => handleCopy(definition.example, 'req')}
-                    >
-                      {copiedKey === 'req' ? "✓ Copied" : "Copy"}
-                    </button>
+                  <div className="code-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: "16px" }}>
+                      <button
+                        type="button"
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: activeRequestTab === "example" ? "#F1F5F9" : "#64748B",
+                          fontWeight: 600,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                          cursor: "pointer",
+                          padding: "4px 0",
+                          borderBottom: activeRequestTab === "example" ? "2px solid #10B981" : "2px solid transparent"
+                        }}
+                        onClick={() => setActiveRequestTab("example")}
+                      >
+                        Request Example
+                      </button>
+                      <button
+                        type="button"
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: activeRequestTab === "playground" ? "#F1F5F9" : "#64748B",
+                          fontWeight: 600,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                          cursor: "pointer",
+                          padding: "4px 0",
+                          borderBottom: activeRequestTab === "playground" ? "2px solid #10B981" : "2px solid transparent"
+                        }}
+                        onClick={() => setActiveRequestTab("playground")}
+                      >
+                        API Playground
+                      </button>
+                    </div>
+                    {activeRequestTab === "example" && (
+                      <button
+                        type="button"
+                        className="copy-btn"
+                        onClick={() => handleCopy(definition.example, 'req')}
+                      >
+                        {copiedKey === 'req' ? "✓ Copied" : "Copy"}
+                      </button>
+                    )}
                   </div>
-                  <pre style={{ height: "calc(100% - 32px)", maxHeight: "none" }}>{definition.example}</pre>
+
+                  {activeRequestTab === "example" ? (
+                    <pre style={{ height: "calc(100% - 32px)", maxHeight: "none" }}>{definition.example}</pre>
+                  ) : (
+                    <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px", background: "#0B0F19", color: "#E2E8F0" }}>
+                      {/* API Key Selection */}
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        <span style={{ fontSize: "11px", fontWeight: 600, color: "#64748B", textTransform: "uppercase" }}>x-api-key Header</span>
+                        <select
+                          value={playgroundApiKey}
+                          onChange={(e) => setPlaygroundApiKey(e.target.value)}
+                          style={{
+                            background: "#1E293B",
+                            color: "#E2E8F0",
+                            border: "1px solid #334155",
+                            height: "36px",
+                            borderRadius: "6px",
+                            padding: "0 10px",
+                            width: "100%"
+                          }}
+                        >
+                          {playgroundKeys.map((k) => (
+                            <option key={k.key} value={k.key}>
+                              {k.label} ({k.key.slice(0, 8)}...)
+                            </option>
+                          ))}
+                          <option value="custom">Custom key...</option>
+                        </select>
+                        {playgroundApiKey === "custom" && (
+                          <input
+                            value={customApiKeyVal}
+                            onChange={(e) => setCustomApiKeyVal(e.target.value)}
+                            placeholder="Enter raw api key (e.g. cms_live_...)"
+                            style={{
+                              background: "#1E293B",
+                              color: "#E2E8F0",
+                              border: "1px solid #334155",
+                              height: "36px",
+                              borderRadius: "6px",
+                              padding: "0 10px",
+                              marginTop: "6px",
+                              width: "100%"
+                            }}
+                          />
+                        )}
+                      </div>
+
+                      {/* Path Parameters Section */}
+                      {Object.keys(playgroundPathParams).length > 0 && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "10px", borderTop: "1px solid #1E293B", paddingTop: "14px" }}>
+                          <span style={{ fontSize: "11px", fontWeight: 600, color: "#64748B", textTransform: "uppercase" }}>Path Parameters</span>
+                          {Object.entries(playgroundPathParams).map(([paramName, paramVal]) => (
+                            <div key={paramName} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                              <label style={{ fontSize: "12px", color: "#94A3B8" }}>
+                                {paramName}
+                              </label>
+                              <input
+                                value={paramVal}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setPlaygroundPathParams((prev) => ({ ...prev, [paramName]: val }));
+                                }}
+                                placeholder={`Value for :${paramName}`}
+                                style={{
+                                  background: "#1E293B",
+                                  color: "#E2E8F0",
+                                  border: "1px solid #334155",
+                                  height: "36px",
+                                  borderRadius: "6px",
+                                  padding: "0 10px",
+                                  width: "100%"
+                                }}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Request JSON Payload Editor */}
+                      {definition.method !== "GET" && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "6px", borderTop: "1px solid #1E293B", paddingTop: "14px" }}>
+                          <span style={{ fontSize: "11px", fontWeight: 600, color: "#64748B", textTransform: "uppercase" }}>Request Body (JSON)</span>
+                          <textarea
+                            value={playgroundPayloadJson}
+                            onChange={(e) => setPlaygroundPayloadJson(e.target.value)}
+                            rows={10}
+                            style={{
+                              fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace",
+                              fontSize: "12px",
+                              background: "#1E293B",
+                              color: "#F8FAFC",
+                              border: "1px solid #334155",
+                              borderRadius: "6px",
+                              padding: "12px",
+                              resize: "vertical",
+                              width: "100%",
+                              lineHeight: "1.5"
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {/* Send Request Button */}
+                      <div style={{ borderTop: "1px solid #1E293B", paddingTop: "14px", display: "flex", justifyContent: "flex-end" }}>
+                        <button
+                          type="button"
+                          onClick={handleSendPlaygroundRequest}
+                          disabled={playgroundIsLoading}
+                          style={{
+                            background: "#10B981",
+                            color: "#FFFFFF",
+                            border: "none",
+                            borderRadius: "6px",
+                            height: "36px",
+                            padding: "0 20px",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            opacity: playgroundIsLoading ? 0.7 : 1
+                          }}
+                        >
+                          {playgroundIsLoading ? (
+                            <>
+                              <span className="spinner" style={{ border: "2px solid #fff", borderTopColor: "transparent", width: "12px", height: "12px", borderRadius: "50%", display: "inline-block" }}></span>
+                              Sending...
+                            </>
+                          ) : (
+                            "Send Request"
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Right Column: Success & Error Responses */}
+              {/* Right Column: Response tabs & content */}
               <div className="playground-column-right">
-                <div className="code-container">
-                  <div className="code-header">
-                    <span>Sample Success Response</span>
-                    <button
-                      type="button"
-                      className="copy-btn"
-                      onClick={() => handleCopy(definition.successResponse, 'success')}
-                    >
-                      {copiedKey === 'success' ? "✓ Copied" : "Copy"}
-                    </button>
+                <div className="code-container" style={{ height: "100%", minHeight: "350px" }}>
+                  <div className="code-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: "16px" }}>
+                      <button
+                        type="button"
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: activeResponseTab === "sample" ? "#F1F5F9" : "#64748B",
+                          fontWeight: 600,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                          cursor: "pointer",
+                          padding: "4px 0",
+                          borderBottom: activeResponseTab === "sample" ? "2px solid #10B981" : "2px solid transparent"
+                        }}
+                        onClick={() => setActiveResponseTab("sample")}
+                      >
+                        Sample Responses
+                      </button>
+                      <button
+                        type="button"
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: activeResponseTab === "live" ? "#F1F5F9" : "#64748B",
+                          fontWeight: 600,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                          cursor: "pointer",
+                          padding: "4px 0",
+                          borderBottom: activeResponseTab === "live" ? "2px solid #10B981" : "2px solid transparent"
+                        }}
+                        onClick={() => setActiveResponseTab("live")}
+                      >
+                        Live Response
+                      </button>
+                    </div>
+                    {activeResponseTab === "live" && playgroundResponse && (
+                      <button
+                        type="button"
+                        className="copy-btn"
+                        onClick={() => handleCopy(JSON.stringify(playgroundResponse.data, null, 2), 'liveResp')}
+                      >
+                        {copiedKey === 'liveResp' ? "✓ Copied" : "Copy"}
+                      </button>
+                    )}
                   </div>
-                  <pre>{definition.successResponse}</pre>
-                </div>
 
-                <div className="code-container">
-                  <div className="code-header">
-                    <span>Sample Error Response</span>
-                    <button
-                      type="button"
-                      className="copy-btn"
-                      onClick={() => handleCopy(definition.errorResponse, 'error')}
-                    >
-                      {copiedKey === 'error' ? "✓ Copied" : "Copy"}
-                    </button>
-                  </div>
-                  <pre>{definition.errorResponse}</pre>
+                  {activeResponseTab === "sample" ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "16px", background: "#0B0F19" }}>
+                      <div className="code-container" style={{ border: "1px solid #1E293B" }}>
+                        <div className="code-header" style={{ borderBottom: "1px solid #1E293B" }}>
+                          <span>Sample Success Response</span>
+                        </div>
+                        <pre style={{ margin: 0, maxHeight: "150px" }}>{definition.successResponse}</pre>
+                      </div>
+
+                      <div className="code-container" style={{ border: "1px solid #1E293B" }}>
+                        <div className="code-header" style={{ borderBottom: "1px solid #1E293B" }}>
+                          <span>Sample Error Response</span>
+                        </div>
+                        <pre style={{ margin: 0, maxHeight: "150px" }}>{definition.errorResponse}</pre>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ background: "#0B0F19", height: "100%", minHeight: "250px", display: "flex", flexDirection: "column" }}>
+                      {playgroundIsLoading && (
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", minHeight: "250px", gap: "12px" }}>
+                          <div className="spinner" style={{ width: "24px", height: "24px", border: "3px solid #10B981", borderTopColor: "transparent", borderRadius: "50%" }}></div>
+                          <span style={{ color: "#64748B", fontSize: "13px" }}>Waiting for response...</span>
+                        </div>
+                      )}
+
+                      {!playgroundIsLoading && !playgroundResponse && (
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", minHeight: "250px", padding: "24px", textAlign: "center" }}>
+                          <span style={{ color: "#64748B", fontSize: "28px", marginBottom: "8px" }}>⚡</span>
+                          <span style={{ color: "#64748B", fontSize: "13px", fontWeight: 500 }}>Live Response Console</span>
+                          <span style={{ color: "#475569", fontSize: "12px", marginTop: "4px", maxWidth: "250px" }}>
+                            Select a raw API Key, edit the parameters, and click "Send Request" to see real-time output.
+                          </span>
+                        </div>
+                      )}
+
+                      {!playgroundIsLoading && playgroundResponse && (
+                        <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+                          <div style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: "10px 16px",
+                            background: "#111827",
+                            borderBottom: "1px solid #1E293B",
+                            fontSize: "12px"
+                          }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                              <span style={{ color: "#64748B" }}>Status:</span>
+                              <span style={{
+                                color: playgroundResponse.status >= 200 && playgroundResponse.status < 300 ? "#34D399" : "#F87171",
+                                fontWeight: 700
+                              }}>
+                                {playgroundResponse.status} {playgroundResponse.statusText}
+                              </span>
+                            </div>
+                          </div>
+
+                          <pre style={{
+                            margin: 0,
+                            padding: "16px",
+                            maxHeight: "350px",
+                            overflow: "auto",
+                            fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace",
+                            fontSize: "12px",
+                            color: "#F1F5F9",
+                            lineHeight: "1.6",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-all",
+                            background: "#0B0F19"
+                          }}>
+                            {JSON.stringify(playgroundResponse.data, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -807,4 +1175,12 @@ function summarizeWebhookSubscriptions(eventTypes: string[]) {
     .map((preset) => preset.label);
 
   return activeLabels.join(", ") || "None selected";
+}
+
+function extractJsonFromExample(example: string): string {
+  if (!example) return "";
+  const lines = example.split("\n");
+  const firstBraceIndex = lines.findIndex(l => l.trim().startsWith("{") || l.trim().startsWith("["));
+  if (firstBraceIndex === -1) return "";
+  return lines.slice(firstBraceIndex).join("\n");
 }
