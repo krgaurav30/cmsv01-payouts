@@ -421,9 +421,7 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, CorporatePermission[]> = {
     "roles.checker",
     "user.checker",
     "devportal.view",
-    "devportal.edit",
-    "settings.view",
-    "settings.edit"
+    "devportal.edit"
   ]
 };
 
@@ -539,6 +537,21 @@ export function OperationsDashboard({
       localStorage.setItem("cmsLastSeenApprovalsTime", String(now));
     }
   }, [activeSection]);
+
+  const hasAnyCheckerPermission = useMemo(() => {
+    return (
+      hasPermission(session, "transaction.checker") ||
+      hasPermission(session, "beneficiary.checker") ||
+      hasPermission(session, "roles.checker") ||
+      hasPermission(session, "user.checker")
+    );
+  }, [session]);
+
+  useEffect(() => {
+    if (activeSection === "approvals" && session && !hasAnyCheckerPermission) {
+      navigateToSection("home");
+    }
+  }, [activeSection, session, hasAnyCheckerPermission]);
 
   const [activeTimelineId, setActiveTimelineId] = useState<string | null>(null);
   const [approvalSectionFilter, setApprovalSectionFilter] =
@@ -1158,6 +1171,15 @@ export function OperationsDashboard({
   const canViewDevPortal = hasPermission(session, "devportal.view");
   const canViewSettings = hasPermission(session, "settings.view");
   const canEditSettings = hasPermission(session, "settings.edit");
+
+  useEffect(() => {
+    if (session && !canViewSettings) {
+      if (activeSection === "settings" || activeSection === "packages" || activeSection === "debit-accounts") {
+        navigateToSection("home");
+      }
+    }
+  }, [activeSection, session, canViewSettings]);
+
   const approvedTransactionCheckerRoles = useMemo(
     () =>
       roles.filter(
@@ -2797,6 +2819,7 @@ export function OperationsDashboard({
 
     const payload = {
       createdByUserId: session.userId,
+      actedByUserId: session.userId,
       corporateTenantId: session.corporateTenantId,
       name: String(formData.get("name")),
       description: optionalText(formData.get("description")),
@@ -2806,7 +2829,7 @@ export function OperationsDashboard({
 
     setBusy(true);
     const result = editingRoleId
-      ? await postJson<CorporateRole>(`/v1/auth/corporate-roles/${encodeURIComponent(editingRoleId)}`, payload)
+      ? await postJson<CorporateRole>(`/v1/auth/corporate-roles/${encodeURIComponent(editingRoleId)}`, payload, "PUT")
       : await postJson<CorporateRole>("/v1/auth/corporate-roles", payload);
 
     if (!result.ok) {
@@ -2818,6 +2841,7 @@ export function OperationsDashboard({
     const roleName = String(formData.get("name"));
     const accessResult = await postJson<{ items?: any[] }>("/v1/subscriptions/role-access", {
       corporateTenantId: session.corporateTenantId,
+      corporateId: selectedCorporateId,
       roleName: roleName,
       subscriptionIds: roleSubscriptionIds,
       actedByUserId: session.userId
@@ -2864,12 +2888,13 @@ export function OperationsDashboard({
 
     const result = await postJson<CorporateRole>(`/v1/auth/corporate-roles/${encodeURIComponent(role.roleId)}`, {
       createdByUserId: session?.userId ?? "",
+      actedByUserId: session?.userId ?? "",
       corporateTenantId: session?.corporateTenantId ?? role.corporateTenantId,
       name: role.name,
       description: role.description,
       permissions: role.permissions,
       status: nextStatus
-    });
+    }, "PUT");
 
     setNotice({
       tone: result.ok ? "success" : "error",
@@ -3025,7 +3050,11 @@ export function OperationsDashboard({
           </div>
 
           <nav className="ops-topnav">
-            {SECTIONS.filter((section) => PRIMARY_SECTION_IDS.includes(section.id)).map((section) => (
+            {SECTIONS.filter(
+              (section) =>
+                PRIMARY_SECTION_IDS.includes(section.id) &&
+                (section.id !== "approvals" || hasAnyCheckerPermission)
+            ).map((section) => (
               <button
                 key={section.id}
                 className={activeSection === section.id ? "active" : undefined}
@@ -3277,15 +3306,17 @@ export function OperationsDashboard({
                 </div>
               </div>
 
-              <div
-                className="ops-stripe-metric-card clickable"
-                onClick={() => navigateToSection("approvals")}
-              >
-                <div className="ops-stripe-metric-label">Pending Approvals</div>
-                <div className="ops-stripe-metric-value">
-                  {approvalEntries.length}
+              {hasAnyCheckerPermission && (
+                <div
+                  className="ops-stripe-metric-card clickable"
+                  onClick={() => navigateToSection("approvals")}
+                >
+                  <div className="ops-stripe-metric-label">Pending Approvals</div>
+                  <div className="ops-stripe-metric-value">
+                    {approvalEntries.length}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div
                 className="ops-stripe-metric-card clickable"
@@ -3438,43 +3469,45 @@ export function OperationsDashboard({
                 </div>
 
                 {/* Approvals Queue Card */}
-                <div className="ops-widget-card" style={{ marginTop: "20px" }}>
-                  <div className="ops-widget-header">
-                    <h3 className="ops-widget-title">Approvals Queue</h3>
-                    {approvalEntries.length > 0 ? (
-                      <span className="ops-badge-count">{approvalEntries.length} pending</span>
-                    ) : null}
-                  </div>
-                  <div className="ops-approvals-widget-list">
-                    {approvalEntries.slice(0, 4).map((entry) => (
-                      <div
-                        key={`${entry.entity}-${entry.id}`}
-                        className="ops-approval-widget-item"
-                        onClick={() => navigateToSection("approvals")}
-                      >
-                        <div className="ops-approval-item-main">
-                          <span className="ops-approval-item-title">{entry.title}</span>
-                          <span className="ops-approval-item-meta">{entry.meta}</span>
+                {hasAnyCheckerPermission && (
+                  <div className="ops-widget-card" style={{ marginTop: "20px" }}>
+                    <div className="ops-widget-header">
+                      <h3 className="ops-widget-title">Approvals Queue</h3>
+                      {approvalEntries.length > 0 ? (
+                        <span className="ops-badge-count">{approvalEntries.length} pending</span>
+                      ) : null}
+                    </div>
+                    <div className="ops-approvals-widget-list">
+                      {approvalEntries.slice(0, 4).map((entry) => (
+                        <div
+                          key={`${entry.entity}-${entry.id}`}
+                          className="ops-approval-widget-item"
+                          onClick={() => navigateToSection("approvals")}
+                        >
+                          <div className="ops-approval-item-main">
+                            <span className="ops-approval-item-title">{entry.title}</span>
+                            <span className="ops-approval-item-meta">{entry.meta}</span>
+                          </div>
+                          <span className="ops-approval-item-arrow">→</span>
                         </div>
-                        <span className="ops-approval-item-arrow">→</span>
-                      </div>
-                    ))}
-                    {approvalEntries.length === 0 ? (
-                      <div className="ops-empty-widget">
-                        <span className="ops-empty-icon">✓</span>
-                        <p style={{ margin: 0, fontSize: "12px" }}>All clear! No pending approvals.</p>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => navigateToSection("approvals")}
-                        className="ops-widget-link-btn"
-                        type="button"
-                      >
-                        Go to Checker Workbench →
-                      </button>
-                    )}
+                      ))}
+                      {approvalEntries.length === 0 ? (
+                        <div className="ops-empty-widget">
+                          <span className="ops-empty-icon">✓</span>
+                          <p style={{ margin: 0, fontSize: "12px" }}>All clear! No pending approvals.</p>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => navigateToSection("approvals")}
+                          className="ops-widget-link-btn"
+                          type="button"
+                        >
+                          Go to Checker Workbench →
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </section>
@@ -4506,7 +4539,7 @@ export function OperationsDashboard({
           </section>
         ) : null}
 
-        {activeSection === "approvals" ? (
+        {activeSection === "approvals" && hasAnyCheckerPermission ? (
           <section className="ops-page active">
             <section className="ops-panel">
               <div className="ops-panel-head">
@@ -6330,16 +6363,17 @@ export function OperationsDashboard({
           </section>
         ) : null}
 
-        {activeSection === "packages" ? (
+        {activeSection === "packages" && canViewSettings ? (
           <PackagesSection
             corporateTenantId={session.corporateTenantId}
             corporateId={selectedCorporateId}
             bankTenantId={session.bankTenantId}
             debitAccounts={debitAccounts}
+            canEdit={canEditSettings}
           />
         ) : null}
 
-        {activeSection === "debit-accounts" ? (
+        {activeSection === "debit-accounts" && canViewSettings ? (
           <DebitAccountsSection
             debitAccounts={debitAccounts}
             subscriptions={subscriptions}
@@ -6539,6 +6573,7 @@ export function OperationsDashboard({
                 corporateTenantId={session?.corporateTenantId ?? ""}
                 debitAccounts={debitAccounts}
                 isNested={true}
+                canEdit={canEditSettings}
               />
             ) : null}
 

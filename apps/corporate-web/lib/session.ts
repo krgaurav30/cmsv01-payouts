@@ -14,13 +14,9 @@ const SELECTED_SUBSCRIPTION_KEY = "cmsSelectedSubscriptionId";
 
 export function readSession() {
   try {
-    const stored = localStorage.getItem(SESSION_KEY);
-    if (stored) {
-      return JSON.parse(stored) as CorporateSession | null;
-    }
-
     const cookieValue = readCookie(SESSION_COOKIE);
     if (!cookieValue) {
+      localStorage.removeItem(SESSION_KEY);
       return null;
     }
 

@@ -33,6 +33,7 @@ interface PackagesSectionProps {
   bankTenantId: string;
   debitAccounts: CorporateDebitAccount[];
   isNested?: boolean;
+  canEdit?: boolean;
 }
 
 function MultiDropdown({
@@ -236,7 +237,8 @@ export function PackagesSection({
   corporateId,
   bankTenantId,
   debitAccounts,
-  isNested = false
+  isNested = false,
+  canEdit = true
 }: PackagesSectionProps) {
   const [items, setItems] = useState<PackageItem[]>([]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
@@ -390,6 +392,11 @@ export function PackagesSection({
     event.preventDefault();
     setMsg("");
 
+    if (!canEdit) {
+      setMsg("You do not have permission to modify settings.");
+      return;
+    }
+
     if (!paymentMethodCodes.includes(defaultPaymentMethodCode)) {
       setMsg("Default payment method must be one of the allowed payment methods.");
       return;
@@ -465,6 +472,11 @@ export function PackagesSection({
 
   async function updatePackageStatus(item: PackageItem, nextStatus: "active" | "inactive") {
     setActionMenuItem(null);
+
+    if (!canEdit) {
+      setToast("You do not have permission to modify settings.");
+      return;
+    }
     const response = await fetch("/v1/package-catalog/packages/by-id/" + encodeURIComponent(item.packageId), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -543,22 +555,24 @@ export function PackagesSection({
           <div>
             <h3 style={{ margin: 0 }}>Packages</h3>
           </div>
-          <button
-            className="ops-button primary"
-            type="button"
-            onClick={() => {
-              if (showForm) {
-                cancelEditing();
-                return;
-              }
-              setEditing(null);
-              resetForm();
-              setIsViewOnly(false);
-              setShowForm(true);
-            }}
-          >
-            {showForm ? (editing ? "Close edit" : "Close form") : "Create package"}
-          </button>
+          {(!showForm && !canEdit) ? null : (
+            <button
+              className="ops-button primary"
+              type="button"
+              onClick={() => {
+                if (showForm) {
+                  cancelEditing();
+                  return;
+                }
+                setEditing(null);
+                resetForm();
+                setIsViewOnly(false);
+                setShowForm(true);
+              }}
+            >
+              {showForm ? (editing ? (isViewOnly ? "Close view" : "Close edit") : "Close form") : "Create package"}
+            </button>
+          )}
         </div>
 
         {showForm ? (
@@ -824,28 +838,32 @@ export function PackagesSection({
                                   >
                                     View
                                   </button>
-                                  <button
-                                    type="button"
-                                    className="ops-action-item"
-                                    onClick={() => {
-                                      setIsViewOnly(false);
-                                      beginEdit(item);
-                                    }}
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="ops-action-item"
-                                    onClick={() =>
-                                      void updatePackageStatus(
-                                        item,
-                                        item.status === "active" ? "inactive" : "active"
-                                      )
-                                    }
-                                  >
-                                    {item.status === "active" ? "Deactivate" : "Activate"}
-                                  </button>
+                                  {canEdit && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="ops-action-item"
+                                        onClick={() => {
+                                          setIsViewOnly(false);
+                                          beginEdit(item);
+                                        }}
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="ops-action-item"
+                                        onClick={() =>
+                                          void updatePackageStatus(
+                                            item,
+                                            item.status === "active" ? "inactive" : "active"
+                                          )
+                                        }
+                                      >
+                                        {item.status === "active" ? "Deactivate" : "Activate"}
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
                               </>
                             ) : null}

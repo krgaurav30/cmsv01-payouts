@@ -27,7 +27,7 @@
     "fastify": "^5.3.3",
     "fastify-plugin": "^5.0.1",
     "kafkajs": "^2.2.4",
-    "pg": "^8.20.0",
+    "pg": "^8.21.0",
     "zod": "^3.24.3"
   },
   "devDependencies": {

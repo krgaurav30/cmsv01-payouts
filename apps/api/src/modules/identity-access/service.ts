@@ -45,9 +45,7 @@ const corporatePermissionTemplates: Record<string, CorporatePermission[]> = {
     "beneficiary.checker",
     "roles.checker",
     "user.checker",
-    "devportal.view",
-    "settings.view",
-    "settings.edit"
+    "devportal.view"
   ]
 };
 

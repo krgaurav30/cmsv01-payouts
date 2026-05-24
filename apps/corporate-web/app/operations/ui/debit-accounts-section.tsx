@@ -108,6 +108,11 @@ export function DebitAccountsSection({
     setValidationError(null);
     setBannerNotice(null);
 
+    if (!canEdit) {
+      setValidationError("You do not have permission to modify settings.");
+      return;
+    }
+
     if (!session || !selectedCorporateId) {
       setValidationError("Session or corporate workspace is not ready.");
       return;
@@ -219,6 +224,11 @@ export function DebitAccountsSection({
   };
 
   const updateAccountStatus = async (account: CorporateDebitAccount, nextStatus: "active" | "inactive") => {
+    if (!canEdit) {
+      setBannerNotice({ tone: "error", text: "You do not have permission to modify settings." });
+      return;
+    }
+
     setFormBusy(true);
     setValidationError(null);
     setBannerNotice(null);
