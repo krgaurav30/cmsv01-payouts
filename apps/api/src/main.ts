@@ -1,4 +1,11 @@
 import Fastify from "fastify";
+import { randomUUID } from "node:crypto";
+
+declare module "fastify" {
+  interface FastifyRequest {
+    correlationId: string;
+  }
+}
 
 import { loadConfig } from "@cmsv01/shared/config";
 import { testDatabaseConnection } from "@cmsv01/shared/db";
@@ -24,8 +31,25 @@ const config = loadConfig();
 
 const app = Fastify({
   logger: {
-    level: "info"
+    level: "info",
+    serializers: {
+      req(request) {
+        return {
+          method: request.method,
+          url: request.url,
+          correlationId: request.correlationId
+        };
+      }
+    }
   }
+});
+
+app.decorateRequest("correlationId", "");
+
+app.addHook("onRequest", async (request, reply) => {
+  const correlationId = (request.headers["x-correlation-id"] as string) || `corr-${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+  request.correlationId = correlationId;
+  reply.header("X-Correlation-ID", correlationId);
 });
 
 await testDatabaseConnection(config);

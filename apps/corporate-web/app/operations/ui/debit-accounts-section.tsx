@@ -177,9 +177,11 @@ export function DebitAccountsSection({
       const resData = await response.json().catch(() => ({}));
 
       if (!response.ok) {
+        const traceId = response.headers.get("x-correlation-id") || response.headers.get("x-trace-id");
+        const prefix = traceId ? `[Trace: ${traceId}] ` : "";
         setBannerNotice({
           tone: "error",
-          text: resData.message ?? `Request failed with status ${response.status}`
+          text: prefix + (resData.message ?? `Request failed with status ${response.status}`)
         });
         setFormBusy(false);
         return;
@@ -250,9 +252,11 @@ export function DebitAccountsSection({
 
       const resData = await response.json().catch(() => ({}));
       if (!response.ok) {
+        const traceId = response.headers.get("x-correlation-id") || response.headers.get("x-trace-id");
+        const prefix = traceId ? `[Trace: ${traceId}] ` : "";
         setBannerNotice({
           tone: "error",
-          text: resData.message ?? `Request failed with status ${response.status}`
+          text: prefix + (resData.message ?? `Request failed with status ${response.status}`)
         });
         return;
       }

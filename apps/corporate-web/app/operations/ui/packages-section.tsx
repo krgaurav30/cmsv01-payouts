@@ -251,7 +251,7 @@ export function PackagesSection({
 
   useEffect(() => {
     if (toast) {
-      const isIssue = toast.toLowerCase().includes("error") || toast.toLowerCase().includes("failed");
+      const isIssue = toast.toLowerCase().includes("error") || toast.toLowerCase().includes("failed") || toast.toLowerCase().includes("trace");
       if (!isIssue) {
         const timer = setTimeout(() => {
           setToast(null);
@@ -503,7 +503,9 @@ export function PackagesSection({
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setToast(data.message ?? "Unable to update package status.");
+      const traceId = response.headers.get("x-correlation-id") || response.headers.get("x-trace-id");
+      const prefix = traceId ? `[Trace: ${traceId}] ` : "";
+      setToast(prefix + (data.message ?? "Unable to update package status."));
       return;
     }
     setToast("Package " + (nextStatus === "active" ? "activated" : "deactivated") + " successfully.");
@@ -518,9 +520,15 @@ export function PackagesSection({
             position: "sticky",
             top: "12px",
             zIndex: 30,
-            background: "var(--success-soft)",
-            color: "var(--success)",
-            border: "1px solid var(--success-border)",
+            background: toast.toLowerCase().includes("error") || toast.toLowerCase().includes("failed") || toast.toLowerCase().includes("trace")
+              ? "var(--danger-soft)"
+              : "var(--success-soft)",
+            color: toast.toLowerCase().includes("error") || toast.toLowerCase().includes("failed") || toast.toLowerCase().includes("trace")
+              ? "var(--danger)"
+              : "var(--success)",
+            border: toast.toLowerCase().includes("error") || toast.toLowerCase().includes("failed") || toast.toLowerCase().includes("trace")
+              ? "1px solid var(--danger-border)"
+              : "1px solid var(--success-border)",
             borderRadius: "12px",
             padding: "12px 16px",
             display: "flex",
@@ -531,7 +539,7 @@ export function PackagesSection({
         >
           <span>{toast}</span>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            {toast.toLowerCase().includes("error") || toast.toLowerCase().includes("failed") ? (
+            {toast.toLowerCase().includes("error") || toast.toLowerCase().includes("failed") || toast.toLowerCase().includes("trace") ? (
               <button
                 type="button"
                 className="ops-mini"

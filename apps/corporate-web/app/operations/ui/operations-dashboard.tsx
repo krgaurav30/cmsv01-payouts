@@ -68,7 +68,7 @@ export type SectionId =
 
 type ApiResult<T> =
   | { ok: true; data: T }
-  | { ok: false; status: number; message: string; raw?: unknown };
+  | { ok: false; status: number; message: string; raw?: unknown; traceId?: string };
 
 type Notice = {
   tone: "success" | "error" | "info";
@@ -666,6 +666,7 @@ export function OperationsDashboard({
   const [isMatrixViewOnly, setIsMatrixViewOnly] = useState(false);
   const [matrixActionItem, setMatrixActionItem] = useState<ApprovalMatrix | null>(null);
   const [userFilterPackages, setUserFilterPackages] = useState<string[]>([]);
+  const [rolePackageFilter, setRolePackageFilter] = useState<string[]>([]);
   const [userActionItem, setUserActionItem] = useState<CorporateUser | null>(null);
 
   const editingBeneficiary = useMemo(
@@ -1526,9 +1527,21 @@ export function OperationsDashboard({
 
       const matchesStatus = !roleStatusFilter || role.status === roleStatusFilter;
 
-      return matchesSearch && matchesStatus;
+      const matchesPackage =
+        rolePackageFilter.length === 0 ||
+        subscriptions.some(
+          (sub) =>
+            rolePackageFilter.includes(sub.subscriptionId) &&
+            sub.userAccess.some(
+              (access) =>
+                access.roleName.toLowerCase() === role.name.toLowerCase() &&
+                access.status === "active"
+            )
+        );
+
+      return matchesSearch && matchesStatus && matchesPackage;
     });
-  }, [roles, roleSearch, roleStatusFilter]);
+  }, [roles, roleSearch, roleStatusFilter, rolePackageFilter, subscriptions]);
 
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
@@ -5618,6 +5631,21 @@ export function OperationsDashboard({
                     <option value="inactive">Deactive</option>
                   </select>
                 </label>
+                <label style={{ minWidth: "220px", flex: 1.2 }}>
+                  Filter by Package
+                  <CompactMultiDropdown
+                    label="packages"
+                    options={subscriptions
+                      .filter((sub) => sub.status === "active")
+                      .map((sub) => ({
+                        value: sub.subscriptionId,
+                        label: `${sub.displayName} (${sub.packageCode})`
+                      }))}
+                    values={rolePackageFilter}
+                    onChange={setRolePackageFilter}
+                    placeholder="All packages"
+                  />
+                </label>
                 <label style={{ minWidth: "240px", flex: 1.5 }}>
                   Search roles
                   <input
@@ -6987,13 +7015,17 @@ async function fetchJson<T>(url: string): Promise<ApiResult<T>> {
       cache: "no-store"
     });
     const data = (await response.json().catch(() => ({}))) as T & { message?: string };
+    const traceId = response.headers.get("x-correlation-id") || response.headers.get("x-trace-id") || undefined;
 
     if (!response.ok) {
+      const originalMessage = data.message ?? `Request failed with status ${response.status}`;
+      const prefixedMessage = traceId ? `[Trace: ${traceId}] ${originalMessage}` : originalMessage;
       return {
         ok: false,
         status: response.status,
-        message: data.message ?? `Request failed with status ${response.status}`,
-        raw: data
+        message: prefixedMessage,
+        raw: data,
+        traceId
       };
     }
 
@@ -7020,13 +7052,17 @@ async function postJson<T>(url: string, body: unknown, method: string = "POST"):
       body: JSON.stringify(body)
     });
     const data = (await response.json().catch(() => ({}))) as T & { message?: string };
+    const traceId = response.headers.get("x-correlation-id") || response.headers.get("x-trace-id") || undefined;
 
     if (!response.ok) {
+      const originalMessage = data.message ?? `Request failed with status ${response.status}`;
+      const prefixedMessage = traceId ? `[Trace: ${traceId}] ${originalMessage}` : originalMessage;
       return {
         ok: false,
         status: response.status,
-        message: data.message ?? `Request failed with status ${response.status}`,
-        raw: data
+        message: prefixedMessage,
+        raw: data,
+        traceId
       };
     }
 

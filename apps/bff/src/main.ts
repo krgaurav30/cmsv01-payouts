@@ -1,8 +1,15 @@
 import Fastify from "fastify";
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { randomUUID } from "node:crypto";
 
 import { loadConfig } from "@cmsv01/shared/config";
 import { verifyJwt, signJwt } from "@cmsv01/shared/crypto";
+
+declare module "fastify" {
+  interface FastifyRequest {
+    correlationId: string;
+  }
+}
 
 function parseCookies(cookieHeader?: string): Record<string, string> {
   const cookies: Record<string, string> = {};
@@ -93,6 +100,15 @@ const app = Fastify({
     level: "info"
   }
 });
+
+app.decorateRequest("correlationId", "");
+
+app.addHook("onRequest", async (request, reply) => {
+  const correlationId = (request.headers["x-correlation-id"] as string) || `corr-${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+  request.correlationId = correlationId;
+  reply.header("X-Correlation-ID", correlationId);
+});
+
 const coreApiBase = resolveCoreApiBase();
 
 app.get('/bff-debug', () => ({ coreApiBase, env: process.env.NODE_ENV }));
@@ -144,6 +160,7 @@ app.get("/bff/corporate/operations/initial-data", async (request, reply) => {
   if (!secureHeaders) {
     return reply.status(401).send({ message: "Unauthorized" });
   }
+  secureHeaders["X-Correlation-ID"] = request.correlationId;
 
   const query = request.query as OperationsInitialDataQuery;
 
@@ -370,6 +387,7 @@ async function proxyToCore(request: FastifyRequest, reply: FastifyReply, path: s
     }
 
     headers = buildProxyHeaders(request);
+    headers["X-Correlation-ID"] = request.correlationId;
 
     if (secureHeaders) {
       // Strip client-submitted tenant and auth headers to prevent spoofing

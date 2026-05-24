@@ -506,14 +506,64 @@ async function startConsumer() {
         return;
       }
 
+      let eventId: string | undefined;
+      let acquiredLock = false;
+
       try {
         const event = JSON.parse(message.value.toString()) as DomainEventEnvelope;
+        eventId = event.eventId;
+
+        if (!eventId) {
+          console.warn(
+            JSON.stringify({
+              service: "worker",
+              status: "consume_skipped",
+              message: "Event without eventId ignored"
+            })
+          );
+          return;
+        }
+
+        const lockResult = await db.query(
+          "insert into processed_events (event_id) values ($1) on conflict (event_id) do nothing",
+          [eventId]
+        );
+
+        if (lockResult.rowCount === 0) {
+          console.log(
+            JSON.stringify({
+              service: "worker",
+              status: "duplicate_skipped",
+              eventId,
+              message: "Duplicate event detected and skipped"
+            })
+          );
+          return;
+        }
+
+        acquiredLock = true;
         await handleDomainEvent(event);
       } catch (error) {
+        if (acquiredLock && eventId) {
+          try {
+            await db.query("delete from processed_events where event_id = $1", [eventId]);
+          } catch (deleteError) {
+            console.error(
+              JSON.stringify({
+                service: "worker",
+                status: "lock_cleanup_failed",
+                eventId,
+                message: deleteError instanceof Error ? deleteError.message : "Lock cleanup failed"
+              })
+            );
+          }
+        }
+
         console.error(
           JSON.stringify({
             service: "worker",
             status: "consume_failed",
+            eventId,
             message: error instanceof Error ? error.message : "Unknown consumer failure"
           })
         );
