@@ -158,6 +158,9 @@ Content-Type: application/json
       ["txnTitle", "Yes", "Human-readable transaction title."],
       ["beneficiaryId", "Yes", "Approved and active beneficiary to pay out."],
       ["amount", "Yes", "Transaction amount object with value and INR currency."],
+      ["packageCode", "No", "Optional package code. If omitted, resolved via default subscription context."],
+      ["debitAccountId", "No", "Optional debit account identifier. If omitted, resolved via default debit account of the package/subscription."],
+      ["paymentMethodCode", "No", "Optional payment method code (e.g., IMPS, NEFT, RTGS)."],
       ["tag", "No", "Optional operational tag."],
       ["remark", "No", "Optional transaction note."]
     ],
@@ -175,7 +178,10 @@ Content-Type: application/json
   "amount": {
     "value": 12500,
     "currency": "INR"
-  }
+  },
+  "packageCode": "ZELPAY",
+  "debitAccountId": "debit-maya-main-001",
+  "paymentMethodCode": "IMPS"
 }`,
     successResponse: `{
   "message": "Transaction created and submitted for checker approval"

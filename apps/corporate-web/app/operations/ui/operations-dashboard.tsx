@@ -1263,15 +1263,28 @@ export function OperationsDashboard({
 
   const selectedTransactionSubscription = useMemo(
     () =>
-      accessibleSubscriptions.find(
-        (subscription) => subscription.packageCode === selectedTransactionPackageCode
-      ) ?? accessibleSubscriptions[0] ?? null,
+      selectedTransactionPackageCode
+        ? (accessibleSubscriptions.find(
+            (subscription) => subscription.packageCode === selectedTransactionPackageCode
+          ) ?? null)
+        : null,
     [accessibleSubscriptions, selectedTransactionPackageCode]
   );
 
   const selectedTransactionDebitAccounts = useMemo(
-    () => selectedTransactionSubscription?.debitAccounts ?? [],
-    [selectedTransactionSubscription]
+    () => {
+      if (selectedTransactionPackageCode) {
+        return selectedTransactionSubscription?.debitAccounts ?? [];
+      }
+      const allAccountsMap = new Map<string, any>();
+      for (const sub of accessibleSubscriptions) {
+        for (const account of sub.debitAccounts) {
+          allAccountsMap.set(account.debitAccountId, account);
+        }
+      }
+      return Array.from(allAccountsMap.values());
+    },
+    [accessibleSubscriptions, selectedTransactionPackageCode, selectedTransactionSubscription]
   );
 
   const selectedTransactionDebitAccount = useMemo(
@@ -1293,27 +1306,25 @@ export function OperationsDashboard({
   }, [selectedTransactionDebitAccounts]);
 
   useEffect(() => {
-    if (!selectedTransactionPackageCode && transactionPackageOptions.length > 0) {
-      setSelectedTransactionPackageCode(transactionPackageOptions[0]?.value ?? "");
+    let defaultDebitAccountId = "";
+    if (selectedTransactionSubscription) {
+      defaultDebitAccountId =
+        selectedTransactionSubscription.debitAccounts.find((account) => account.isDefault)?.debitAccountId ??
+        selectedTransactionSubscription.debitAccounts[0]?.debitAccountId ??
+        "";
+    } else if (selectedTransactionDebitAccounts.length > 0) {
+      defaultDebitAccountId =
+        selectedTransactionDebitAccounts.find((account) => account.isDefault)?.debitAccountId ??
+        selectedTransactionDebitAccounts[0]?.debitAccountId ??
+        "";
     }
-  }, [selectedTransactionPackageCode, transactionPackageOptions]);
-
-  useEffect(() => {
-    if (!selectedTransactionSubscription) {
-      return;
-    }
-
-    const defaultDebitAccountId =
-      selectedTransactionSubscription.debitAccounts.find((account) => account.isDefault)?.debitAccountId ??
-      selectedTransactionSubscription.debitAccounts[0]?.debitAccountId ??
-      "";
     setSelectedTransactionDebitAccountId((current) => current || defaultDebitAccountId);
 
     const defaultPaymentMethodCode =
       selectedTransactionPaymentMethods[0] ??
       "";
     setSelectedTransactionPaymentMethodCode((current) => current || defaultPaymentMethodCode);
-  }, [selectedTransactionPaymentMethods, selectedTransactionSubscription]);
+  }, [selectedTransactionPaymentMethods, selectedTransactionSubscription, selectedTransactionDebitAccounts]);
 
   const approvedRoles = useMemo(
     () =>
@@ -3573,7 +3584,7 @@ export function OperationsDashboard({
                       </label>
                     </div>
                     <p className="ops-meta">
-                      Required columns: Package Code, Transaction Reference, Beneficiary ID, Amount, Tag, Remark
+                      Required columns: Transaction Reference, Beneficiary ID, Amount. Optional columns: Package Code, Payment Method Code, Debit Account Number, Tag, Remark
                     </p>
                     <div className="ops-actions">
                       <a
@@ -3612,7 +3623,6 @@ export function OperationsDashboard({
                         Package
                         <select
                           name="packageCode"
-                          required
                           value={selectedTransactionPackageCode}
                           onChange={(event) => {
                             setSelectedTransactionPackageCode(event.target.value);
@@ -3620,6 +3630,7 @@ export function OperationsDashboard({
                             setSelectedTransactionPaymentMethodCode("");
                           }}
                         >
+                          <option value="">Select package (optional)</option>
                           {transactionPackageOptions.map((option) => (
                             <option key={option.value} value={option.value}>
                               {option.label}
@@ -3631,13 +3642,12 @@ export function OperationsDashboard({
                         Debit Account
                         <select
                           name="debitAccountId"
-                          required
                           value={selectedTransactionDebitAccountId}
                           onChange={(event) =>
                             setSelectedTransactionDebitAccountId(event.target.value)
                           }
                         >
-                          <option value="">Select debit account</option>
+                          <option value="">Select debit account (optional)</option>
                           {selectedTransactionDebitAccounts.map((account) => (
                             <option key={account.debitAccountId} value={account.debitAccountId}>
                               {account.accountName} ({account.accountNumber})
@@ -3649,13 +3659,12 @@ export function OperationsDashboard({
                         Payment Method
                         <select
                           name="paymentMethodCode"
-                          required
                           value={selectedTransactionPaymentMethodCode}
                           onChange={(event) =>
                             setSelectedTransactionPaymentMethodCode(event.target.value)
                           }
                         >
-                          <option value="">Select payment method</option>
+                          <option value="">Select payment method (optional)</option>
                           {selectedTransactionPaymentMethods.map((methodCode) => (
                             <option key={methodCode} value={methodCode}>
                               {methodCode}

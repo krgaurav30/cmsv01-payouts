@@ -174,7 +174,7 @@ function parseWorkbookFromBuffer(buffer: Buffer): ParsedUpload {
     }
   }
 
-  const requiredLabels = ["packageCode", "transactionReference", "beneficiaryId", "amount"];
+  const requiredLabels = ["transactionReference", "beneficiaryId", "amount"];
   
   const missing = requiredLabels.filter((label) => headerMap[label] === undefined);
 
