@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type {
   CorporateDebitAccount,
   CorporateSubscription,
@@ -69,16 +70,90 @@ export function TransactionDetailsBody({
   subscription: CorporateSubscription | null;
   debitAccount: CorporateDebitAccount | SubscriptionDebitAccountAccess | null;
 }) {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopy = (id: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
   return (
     <>
+      {transaction.state === "failed" && transaction.failureReason && (
+        <div style={{
+          background: "var(--danger-soft)",
+          border: "1px solid var(--danger-border)",
+          borderRadius: "var(--radius-md)",
+          padding: "12px 16px",
+          color: "var(--danger)",
+          fontSize: "13px",
+          fontWeight: 500,
+          marginBottom: "20px",
+          display: "flex",
+          alignItems: "center",
+          gap: "10px"
+        }}>
+          <span style={{ fontSize: "16px" }}>⚠️</span>
+          <div>
+            <span style={{ fontWeight: 600 }}>Transaction Failed:</span>{" "}
+            {transaction.failureReason}
+          </div>
+        </div>
+      )}
+
       <div className="ops-fields two">
         <div className="ops-static-field">
           <span className="ops-context-label">Transaction Reference</span>
-          <strong>{transaction.title}</strong>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <strong>{transaction.title}</strong>
+            <button
+              type="button"
+              onClick={() => handleCopy("title", transaction.title)}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: "2px",
+                color: copiedId === "title" ? "var(--success)" : "var(--text-tertiary)",
+                display: "inline-flex",
+                alignItems: "center"
+              }}
+              title="Copy Reference"
+            >
+              {copiedId === "title" ? (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              ) : (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              )}
+            </button>
+          </div>
         </div>
         <div className="ops-static-field">
           <span className="ops-context-label">Txn UUID</span>
-          <strong>{transaction.batchId}</strong>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <strong style={{ fontFamily: "monospace", fontSize: "13px" }}>{transaction.batchId}</strong>
+            <button
+              type="button"
+              onClick={() => handleCopy("batchId", transaction.batchId)}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: "2px",
+                color: copiedId === "batchId" ? "var(--success)" : "var(--text-tertiary)",
+                display: "inline-flex",
+                alignItems: "center"
+              }}
+              title="Copy UUID"
+            >
+              {copiedId === "batchId" ? (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              ) : (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              )}
+            </button>
+          </div>
         </div>
         <div className="ops-static-field">
           <span className="ops-context-label">Package</span>
@@ -163,7 +238,9 @@ export function TransactionDetailsBody({
                     <td>INR {formatAmount(item.amount.value)}</td>
                     <td>{item.purpose}</td>
                     <td>
-                      <span className={`ops-status ${item.state}`}>{humanize(item.state)}</span>
+                      <span className={`ops-status ${transaction.state === "failed" ? "failed" : item.state}`}>
+                        {transaction.state === "failed" ? "Failed" : humanize(item.state)}
+                      </span>
                     </td>
                   </tr>
                 ))}

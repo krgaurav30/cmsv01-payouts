@@ -26,6 +26,7 @@ import { settingsManagementRoutes } from "./modules/settings-management/routes.j
 import { subscriptionManagementRoutes } from "./modules/subscription-management/routes.js";
 import { tenantManagementRoutes } from "./modules/tenant-management/routes.js";
 import { testConsoleRoutes } from "./modules/test-console/routes.js";
+import { cbsSimulatorRoutes } from "./modules/cbs-simulator/routes.js";
 
 const config = loadConfig();
 
@@ -68,6 +69,7 @@ await app.register(payoutManagementRoutes);
 await app.register(settingsManagementRoutes);
 await app.register(subscriptionManagementRoutes);
 await app.register(tenantManagementRoutes);
+await app.register(cbsSimulatorRoutes);
 if (config.nodeEnv !== "production") {
   await app.register(testConsoleRoutes);
 }

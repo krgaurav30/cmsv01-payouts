@@ -376,7 +376,8 @@ async function proxyToCore(request: FastifyRequest, reply: FastifyReply, path: s
       cleanPath === "/health" ||
       cleanPath === "/context" ||
       cleanPath === "/v1/auth/login" ||
-      cleanPath === "/bff/auth/login";
+      cleanPath === "/bff/auth/login" ||
+      cleanPath.startsWith("/v1/cbs/");
 
     let secureHeaders: Record<string, string> | null = null;
     if (!isPublic) {

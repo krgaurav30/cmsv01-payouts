@@ -14,6 +14,11 @@ const DebitAccountsSection = dynamic(() => import("./debit-accounts-section").th
   loading: () => <div className="ops-loading" style={{ padding: "24px", color: "var(--text-secondary)" }}>Loading accounts...</div>
 });
 
+const CbsSimulatorSection = dynamic(() => import("./cbs-simulator-section").then((mod) => mod.CbsSimulatorSection), {
+  ssr: false,
+  loading: () => <div className="ops-loading" style={{ padding: "24px", color: "var(--text-secondary)" }}>Loading CBS simulator...</div>
+});
+
 const DevPortalSection = dynamic(() => import("./devportal-section").then((mod) => mod.DevPortalSection), {
   ssr: false,
   loading: () => <div className="ops-loading" style={{ padding: "24px", color: "var(--text-secondary)" }}>Loading developer portal...</div>
@@ -58,6 +63,7 @@ export type SectionId =
   | "approvals"
   | "packages"
   | "debit-accounts"
+  | "cbs-simulator"
   | "approval-matrices"
   | "roles"
   | "users"
@@ -329,6 +335,7 @@ export const SECTIONS: Array<{ id: SectionId; label: string; accent: string }> =
   { id: "approvals", label: "Approvals", accent: "Maker-checker queue" },
   { id: "packages", label: "Packages", accent: "Active subscriptions" },
   { id: "debit-accounts", label: "Debit Accounts", accent: "Corporate funding" },
+  { id: "cbs-simulator", label: "CBS Simulator", accent: "Ledger controls" },
   { id: "approval-matrices", label: "Approval Matrix", accent: "Rules engine" },
   { id: "roles", label: "Roles", accent: "Permission model" },
   { id: "users", label: "Users", accent: "Access roster" },
@@ -347,6 +354,7 @@ const PRIMARY_SECTION_IDS: SectionId[] = [
 ];
 
 const OTHER_SECTION_IDS: SectionId[] = [
+  "cbs-simulator",
   "approval-matrices",
   "roles",
   "users",
@@ -6411,6 +6419,19 @@ export function OperationsDashboard({
             onUpdate={async () => {
               if (session) {
                 await refreshWorkspace(session, selectedCorporateId, { scopes: ["debit-accounts", "subscriptions"], silent: true });
+              }
+            }}
+          />
+        ) : null}
+
+        {activeSection === "cbs-simulator" && canViewSettings ? (
+          <CbsSimulatorSection
+            debitAccounts={debitAccounts}
+            session={session}
+            selectedCorporateId={selectedCorporateId}
+            onUpdate={async () => {
+              if (session) {
+                await refreshWorkspace(session, selectedCorporateId, { scopes: ["debit-accounts"], silent: true });
               }
             }}
           />

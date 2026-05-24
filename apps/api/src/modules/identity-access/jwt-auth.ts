@@ -23,11 +23,13 @@ const jwtAuthPluginImpl: FastifyPluginAsync = async (app) => {
     // - GET /context
     // - POST /v1/auth/login
     // - GET /ui* (non-production only)
+    // - All /v1/cbs/ core banking simulator endpoints
     if (
       (url === "/health" && method === "GET") ||
       (url === "/context" && method === "GET") ||
       (url === "/v1/auth/login" && method === "POST") ||
-      (config.nodeEnv !== "production" && url.startsWith("/ui") && method === "GET")
+      (config.nodeEnv !== "production" && url.startsWith("/ui") && method === "GET") ||
+      url.startsWith("/v1/cbs/")
     ) {
       return;
     }

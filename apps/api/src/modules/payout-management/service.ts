@@ -2554,7 +2554,8 @@ export class PayoutManagementService {
       title: row.title,
       tag: row.tag,
       remark: row.remark,
-      state: row.state,
+      state: this.mapInternalToUserState(row.state),
+      internalState: row.state,
       totalAmount: {
         value: Number(row.total_amount),
         currency: this.baseCurrency
@@ -2618,7 +2619,8 @@ export class PayoutManagementService {
       title: row.title,
       tag: row.tag,
       remark: row.remark,
-      state: row.state,
+      state: this.mapInternalToUserState(row.state),
+      internalState: row.state,
       totalAmount: {
         value: Number(row.total_amount),
         currency: this.baseCurrency
@@ -2713,6 +2715,16 @@ export class PayoutManagementService {
           at: row.rejected_at
         });
       }
+    }
+
+    const userState = this.mapInternalToUserState(row.state);
+    if (userState === "failed") {
+      timelineEntries.push({
+        event: row.failure_reason ? `failed: ${row.failure_reason}` : "failed",
+        role: "system",
+        userId: null,
+        at: row.completed_at || row.approved_at || row.submitted_at || row.created_at
+      });
     }
 
     const filteredTimelineEntries = timelineEntries.filter((entry) =>
@@ -3145,6 +3157,49 @@ export class PayoutManagementService {
         payload
       })
     );
+  }
+
+  private mapInternalToUserState(internalState: string): PayoutBatch["state"] {
+    switch (internalState) {
+      case "draft":
+        return "draft";
+      case "submitted":
+        return "pending_approval";
+      case "pending_approval":
+        return "pending_approval";
+      case "partially_approved":
+        return "partially_approved";
+      case "approved":
+      case "cbs_debit_queued":
+      case "cbs_debit_in_flight":
+      case "cbs_debit_succeeded":
+        return "approved";
+      case "dispatched_to_hub":
+      case "in_flight":
+      case "sent_to_bank":
+      case "rail_settled":
+        return "sent_to_bank";
+      case "paid":
+      case "settled":
+        return "paid";
+      case "rejected":
+        return "rejected";
+      case "recalled":
+      case "cancelled":
+      case "returned":
+      case "failed":
+      case "cbs_debit_failed":
+      case "rail_failed":
+      case "reversal_queued":
+      case "reversal_in_flight":
+      case "reversed":
+      case "reversal_failed":
+      case "cbs_debit_ambiguous":
+      case "reversal_ambiguous":
+        return "failed";
+      default:
+        return "failed";
+    }
   }
 }
 

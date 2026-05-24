@@ -198,6 +198,7 @@ export type PayoutBatch = {
   tag: string | null;
   remark: string | null;
   state: PayoutBatchState;
+  internalState?: string;
   totalAmount: Money;
   approvalComment: string | null;
   bankReference: string | null;

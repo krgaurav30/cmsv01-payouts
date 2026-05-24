@@ -251,6 +251,7 @@ export type CorporateDebitAccount = {
   ifsc: string;
   isDefault: boolean;
   status: "active" | "inactive";
+  balance: string;
   createdAt: string | null;
   updatedAt: string | null;
 };

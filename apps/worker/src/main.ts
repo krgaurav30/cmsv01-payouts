@@ -449,22 +449,332 @@ async function handleDomainEvent(event: DomainEventEnvelope) {
   }
 
   if (event.eventType === "transaction.approved") {
-    const dispatchResponse = await postToApi(`/v1/payouts/batches/${batchId}/dispatch`, {
-      actedByUserId: "system-worker",
-      comment: "Automatically sent to bank by background dispatch worker"
-    });
+    await executeCbsDebitJourney(batchId);
+  }
 
-    if (dispatchResponse.ok) {
-      await postToApi(`/v1/payouts/batches/${batchId}/simulate-bank-response`, {
-        actedByUserId: "system-worker",
-        comment: "Mock bank response processed by background worker"
-      });
+  if (event.eventType === "transaction.failed") {
+    await executeCbsReversalJourney(batchId);
+  }
+}
+
+async function executeCbsDebitJourney(batchId: string) {
+  try {
+    const batchRes = await db.query<{
+      batch_id: string;
+      total_amount: string;
+      account_number: string;
+      state: string;
+    }>(
+      `select pb.batch_id, pb.total_amount, cda.account_number, pb.state
+       from payout_batches pb
+       left join corporate_debit_accounts cda on cda.debit_account_id = pb.debit_account_id
+       where pb.batch_id = $1`,
+      [batchId]
+    );
+
+    const batch = batchRes.rows[0];
+    if (!batch) return;
+
+    const idempotencyKey = `cbs-debit-${batchId}`;
+
+    // Only run pre-flight status check if this is a retry (i.e. state is not 'approved')
+    if (batch.state !== "approved") {
+      try {
+        const statusRes = await fetch(`${apiBaseUrl}/v1/cbs/transactions/status/${idempotencyKey}`, {
+          headers: {
+            "Authorization": `Bearer ${signJwt({ userId: "system-worker", role: "system", tenantScope: "system" })}`
+          }
+        });
+        if (statusRes.status === 200) {
+          const data = (await statusRes.json()) as {
+            status: "SUCCESS" | "FAILED";
+            cbsReferenceId?: string;
+            errorCode?: string;
+            errorMessage?: string;
+          };
+          if (data.status === "SUCCESS") {
+            console.log(`[Worker] Pre-flight status check found SUCCESS for batch ${batchId}. Short-circuiting.`);
+            await db.query(
+              `update payout_batches set state = 'cbs_debit_succeeded', bank_reference = $2 where batch_id = $1`,
+              [batchId, data.cbsReferenceId]
+            );
+            await syncTransactionProjection(batchId);
+            await dispatchToPaymentHub(batchId);
+            return;
+          } else if (data.status === "FAILED") {
+            console.log(`[Worker] Pre-flight status check found FAILED for batch ${batchId}. Short-circuiting.`);
+            await db.query(
+              `update payout_batches set state = 'failed', failure_reason = $2 where batch_id = $1`,
+              [batchId, data.errorMessage || "CBS debit rejected (e.g. insufficient funds)."]
+            );
+            await syncTransactionProjection(batchId);
+            return;
+          }
+        }
+      } catch (statusCheckError) {
+        console.warn(`[Worker] Pre-flight status check failed for batch ${batchId}, proceeding with normal debit:`, statusCheckError);
+      }
+    }
+
+    // Transition to cbs_debit_queued
+    await db.query(`update payout_batches set state = 'cbs_debit_queued' where batch_id = $1`, [batchId]);
+    await syncTransactionProjection(batchId);
+
+    // Transition to cbs_debit_in_flight
+    await db.query(`update payout_batches set state = 'cbs_debit_in_flight' where batch_id = $1`, [batchId]);
+    await syncTransactionProjection(batchId);
+    
+    let cbsResponse;
+    try {
+      cbsResponse = await postToApi(
+        `/v1/cbs/debit`,
+        {
+          accountNumber: batch.account_number,
+          amount: batch.total_amount,
+          narration: `CMS Payout ${batchId}`
+        },
+        {
+          "X-Idempotency-Key": idempotencyKey
+        }
+      );
+    } catch (fetchError) {
+      console.warn(`CBS Debit timeout/network error for batch ${batchId}:`, fetchError);
+      await db.query(
+        `update payout_batches set state = 'cbs_debit_ambiguous', failure_reason = 'CBS debit timed out. Pending reconciliation.' where batch_id = $1`,
+        [batchId]
+      );
       await syncTransactionProjection(batchId);
+      return;
+    }
+
+    if (cbsResponse.ok) {
+      const data = await cbsResponse.json() as { status: "SUCCESS", cbsReferenceId: string };
+      // Transition to cbs_debit_succeeded
+      await db.query(
+        `update payout_batches set state = 'cbs_debit_succeeded', bank_reference = $2 where batch_id = $1`,
+        [batchId, data.cbsReferenceId]
+      );
+      await syncTransactionProjection(batchId);
+
+      // Now dispatch to mock clearing bank (Payment Hub)
+      await dispatchToPaymentHub(batchId);
+    } else if (cbsResponse.status === 422) {
+      const data = await cbsResponse.json() as { errorCode?: string, errorMessage?: string };
+      // Transition to failed
+      await db.query(
+        `update payout_batches set state = 'failed', failure_reason = $2 where batch_id = $1`,
+        [batchId, data.errorMessage || "CBS debit rejected (e.g. insufficient funds)."]
+      );
+      await syncTransactionProjection(batchId);
+    } else {
+      // 5xx or other status: ambiguous
+      await db.query(
+        `update payout_batches set state = 'cbs_debit_ambiguous', failure_reason = 'CBS debit returned ambiguous error. Pending reconciliation.' where batch_id = $1`,
+        [batchId]
+      );
+      await syncTransactionProjection(batchId);
+    }
+  } catch (error) {
+    console.error(`Error in executeCbsDebitJourney for batch ${batchId}:`, error);
+  }
+}
+
+async function dispatchToPaymentHub(batchId: string) {
+  // Call the core API dispatch route
+  const dispatchResponse = await postToApi(`/v1/payouts/batches/${batchId}/dispatch`, {
+    actedByUserId: "system-worker",
+    comment: "Automatically sent to bank by background dispatch worker"
+  });
+
+  if (dispatchResponse.ok) {
+    // In our decoupled flow, we simulate the clearing rail asynchronously
+    // Let's introduce a mock clearing delay, and then invoke the simulate-bank-response route
+    setTimeout(async () => {
+      try {
+        console.log(`[Payment Hub] Simulating clearing rail response for batch ${batchId}...`);
+        await postToApi(`/v1/payouts/batches/${batchId}/simulate-bank-response`, {
+          actedByUserId: "system-worker",
+          comment: "Mock bank response processed by background worker"
+        });
+      } catch (err) {
+        console.error(`[Payment Hub] Clearing simulation failed for batch ${batchId}:`, err);
+      }
+    }, 5000); // 5 seconds clearing rail delay
+  }
+}
+
+async function executeCbsReversalJourney(batchId: string) {
+  try {
+    const batchRes = await db.query<{
+      batch_id: string;
+      bank_reference: string;
+      total_amount: string;
+      state: string;
+    }>(
+      `select pb.batch_id, pb.bank_reference, pb.total_amount, pb.state
+       from payout_batches pb
+       where pb.batch_id = $1`,
+      [batchId]
+    );
+
+    const batch = batchRes.rows[0];
+    if (!batch || !batch.bank_reference) {
+      // No CBS reference to reverse (e.g. failed debit or already reversed)
+      return;
+    }
+
+    const reversalIdempotencyKey = `cbs-rev-${batchId}`;
+
+    // Only run pre-flight status check if this is a retry (i.e. state is already a reversal state)
+    const isReversalRetry = ["reversal_queued", "reversal_in_flight", "reversal_ambiguous", "reversal_failed"].includes(batch.state);
+    if (isReversalRetry) {
+      try {
+        const statusRes = await fetch(`${apiBaseUrl}/v1/cbs/transactions/status/${reversalIdempotencyKey}`, {
+          headers: {
+            "Authorization": `Bearer ${signJwt({ userId: "system-worker", role: "system", tenantScope: "system" })}`
+          }
+        });
+        if (statusRes.status === 200) {
+          console.log(`[Worker] Pre-flight status check found SUCCESS/processed for reversal ${batchId}. Short-circuiting.`);
+          await db.query(
+            `update payout_batches set state = 'failed', failure_reason = 'Transaction failed. Reversal posted in CBS.' where batch_id = $1`,
+            [batchId]
+          );
+          await syncTransactionProjection(batchId);
+          return;
+        }
+      } catch (statusCheckError) {
+        console.warn(`[Worker] Pre-flight status check failed for reversal ${batchId}, proceeding with normal reversal:`, statusCheckError);
+      }
+    }
+
+    // Transition to reversal_queued
+    await db.query(`update payout_batches set state = 'reversal_queued' where batch_id = $1`, [batchId]);
+    await syncTransactionProjection(batchId);
+
+    // Transition to reversal_in_flight
+    await db.query(`update payout_batches set state = 'reversal_in_flight' where batch_id = $1`, [batchId]);
+    await syncTransactionProjection(batchId);
+
+    let cbsResponse;
+    try {
+      cbsResponse = await postToApi(
+        `/v1/cbs/reverse-debit`,
+        {
+          originalCbsReferenceId: batch.bank_reference,
+          reversalIdempotencyKey: reversalIdempotencyKey,
+          amount: batch.total_amount,
+          reason: "Payment Hub clearing failure"
+        }
+      );
+    } catch (fetchError) {
+      console.warn(`CBS Reversal timeout/network error for batch ${batchId}:`, fetchError);
+      await db.query(
+        `update payout_batches set state = 'reversal_ambiguous', failure_reason = 'CBS reversal timed out. Pending reconciliation.' where batch_id = $1`,
+        [batchId]
+      );
+      await syncTransactionProjection(batchId);
+      return;
+    }
+
+    if (cbsResponse.ok) {
+      // Reversal succeeded! Mark state to failed (with reversed message)
+      await db.query(
+        `update payout_batches set state = 'failed', failure_reason = 'Transaction failed. Reversal posted in CBS.' where batch_id = $1`,
+        [batchId]
+      );
+      await syncTransactionProjection(batchId);
+    } else {
+      // Reversal failed permanently or returned ambiguous error
+      await db.query(
+        `update payout_batches set state = 'reversal_failed', failure_reason = 'CBS reversal failed. Requires manual intervention.' where batch_id = $1`,
+        [batchId]
+      );
+      await syncTransactionProjection(batchId);
+    }
+  } catch (error) {
+    console.error(`Error in executeCbsReversalJourney for batch ${batchId}:`, error);
+  }
+}
+
+async function runReconciliationLoop() {
+  while (true) {
+    try {
+      await reconcileAmbiguousTransactions();
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          service: "worker",
+          status: "reconciliation_loop_failed",
+          message: error instanceof Error ? error.message : "Unknown reconciliation loop error"
+        })
+      );
+    }
+    await sleep(15000); // Poll every 15s
+  }
+}
+
+async function reconcileAmbiguousTransactions() {
+  const ambiguousTx = await db.query<{ batch_id: string, state: string }>(
+    `select batch_id, state from payout_batches where state in ('cbs_debit_ambiguous', 'reversal_ambiguous')`
+  );
+
+  for (const row of ambiguousTx.rows) {
+    const batchId = row.batch_id;
+    if (row.state === "cbs_debit_ambiguous") {
+      const idempotencyKey = `cbs-debit-${batchId}`;
+      try {
+        const response = await fetch(`${apiBaseUrl}/v1/cbs/transactions/status/${idempotencyKey}`, {
+          headers: {
+            "Authorization": `Bearer ${signJwt({ userId: "system-worker", role: "system", tenantScope: "system" })}`
+          }
+        });
+
+        if (response.status === 200) {
+          const data = await response.json() as { status: "SUCCESS" | "FAILED", cbsReferenceId?: string, errorCode?: string, errorMessage?: string };
+          if (data.status === "SUCCESS") {
+            await db.query(
+              `update payout_batches set state = 'cbs_debit_succeeded', bank_reference = $2 where batch_id = $1`,
+              [batchId, data.cbsReferenceId]
+            );
+            await syncTransactionProjection(batchId);
+            await dispatchToPaymentHub(batchId);
+          } else {
+            await db.query(
+              `update payout_batches set state = 'failed', failure_reason = $2 where batch_id = $1`,
+              [batchId, data.errorMessage || "CBS debit failed during reconciliation."]
+            );
+            await syncTransactionProjection(batchId);
+          }
+        } else if (response.status === 404) {
+          await executeCbsDebitJourney(batchId);
+        }
+      } catch (err) {
+        console.error(`Reconciliation failed for batch ${batchId}:`, err);
+      }
+    } else if (row.state === "reversal_ambiguous") {
+      const reversalIdempotencyKey = `cbs-rev-${batchId}`;
+      try {
+        const response = await fetch(`${apiBaseUrl}/v1/cbs/transactions/status/${reversalIdempotencyKey}`, {
+          headers: {
+            "Authorization": `Bearer ${signJwt({ userId: "system-worker", role: "system", tenantScope: "system" })}`
+          }
+        });
+
+        if (response.status === 200) {
+          await db.query(`update payout_batches set state = 'failed', failure_reason = 'Transaction failed. Reversal posted in CBS.' where batch_id = $1`, [batchId]);
+          await syncTransactionProjection(batchId);
+        } else if (response.status === 404) {
+          await executeCbsReversalJourney(batchId);
+        }
+      } catch (err) {
+        console.error(`Reconciliation of reversal failed for batch ${batchId}:`, err);
+      }
     }
   }
 }
 
-async function postToApi(path: string, body?: Record<string, unknown>) {
+async function postToApi(path: string, body?: Record<string, unknown>, extraHeaders?: Record<string, string>) {
   const token = signJwt({
     userId: "system-worker",
     role: "system",
@@ -474,7 +784,8 @@ async function postToApi(path: string, body?: Record<string, unknown>) {
   const requestInit: RequestInit = {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${token}`
+      "Authorization": `Bearer ${token}`,
+      ...extraHeaders
     }
   };
 
@@ -618,7 +929,7 @@ async function run() {
     console.log(`Dummy health server listening on port ${config.port}`);
   });
 
-  await Promise.all([startConsumer(), runPublisherLoop()]);
+  await Promise.all([startConsumer(), runPublisherLoop(), runReconciliationLoop()]);
 }
 
 run().catch((error) => {

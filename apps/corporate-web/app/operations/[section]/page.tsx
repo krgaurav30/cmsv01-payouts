@@ -10,6 +10,7 @@ const VALID_SECTIONS: SectionId[] = [
   "approvals",
   "packages",
   "debit-accounts",
+  "cbs-simulator",
   "approval-matrices",
   "roles",
   "users",

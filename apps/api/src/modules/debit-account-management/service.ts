@@ -22,6 +22,7 @@ type CorporateDebitAccountRow = {
   ifsc: string;
   is_default: boolean;
   status: "active" | "inactive";
+  balance: string;
   created_at: Date | null;
   updated_at: Date | null;
 };
@@ -77,7 +78,7 @@ export class DebitAccountManagementService {
     const whereClause = clauses.length > 0 ? `where ${clauses.join(" and ")}` : "";
     const result = await this.db.query<CorporateDebitAccountRow>(
       `select debit_account_id, bank_tenant_id, corporate_tenant_id, corporate_id,
-              account_name, account_number, ifsc, is_default, status, created_at, updated_at
+              account_name, account_number, ifsc, is_default, status, balance, created_at, updated_at
        from corporate_debit_accounts
        ${whereClause}
        order by is_default desc, account_name asc, debit_account_id asc`,
@@ -139,12 +140,14 @@ export class DebitAccountManagementService {
         );
       }
 
+      const initialBalance = payload.initialBalance !== undefined ? payload.initialBalance : 10000000.00;
+
       await client.query(
         `insert into corporate_debit_accounts (
            debit_account_id, bank_tenant_id, corporate_tenant_id, corporate_id, account_name,
-           account_number, ifsc, status, is_default, created_at, updated_at
+           account_number, ifsc, status, is_default, balance, created_at, updated_at
          )
-         values ($1, $2, $3, $4, $5, $6, $7, 'active', $8, now(), now())`,
+         values ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $9, now(), now())`,
         [
           debitAccountId,
           payload.bankTenantId,
@@ -153,7 +156,8 @@ export class DebitAccountManagementService {
           payload.accountName.trim(),
           normalizedAccountNumber,
           payload.ifsc.trim().toUpperCase(),
-          shouldBeDefault
+          shouldBeDefault,
+          initialBalance
         ]
       );
 
@@ -361,7 +365,7 @@ export class DebitAccountManagementService {
   private async getDebitAccount(debitAccountId: string) {
     const result = await this.db.query<CorporateDebitAccountRow>(
       `select debit_account_id, bank_tenant_id, corporate_tenant_id, corporate_id,
-              account_name, account_number, ifsc, is_default, status, created_at, updated_at
+              account_name, account_number, ifsc, is_default, status, balance, created_at, updated_at
        from corporate_debit_accounts
        where debit_account_id = $1
        limit 1`,
@@ -416,6 +420,7 @@ function mapCorporateDebitAccountRow(row: CorporateDebitAccountRow) {
     ifsc: row.ifsc,
     isDefault: row.is_default,
     status: row.status,
+    balance: String(row.balance),
     createdAt: row.created_at?.toISOString() ?? null,
     updatedAt: row.updated_at?.toISOString() ?? null
   } satisfies CorporateDebitAccount;

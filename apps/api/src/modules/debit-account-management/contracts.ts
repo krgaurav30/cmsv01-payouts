@@ -10,7 +10,8 @@ export const debitAccountCreateSchema = z.object({
   accountName: z.string().trim().min(2),
   accountNumber: z.string().trim().min(6).max(30),
   ifsc: z.string().trim().min(5).max(20),
-  isDefault: z.boolean().default(false)
+  isDefault: z.boolean().default(false),
+  initialBalance: z.number().or(z.string()).optional().transform(v => v !== undefined ? Number(v) : undefined)
 });
 
 export const debitAccountUpdateSchema = z.object({
@@ -38,6 +39,7 @@ export type CorporateDebitAccount = {
   ifsc: string;
   isDefault: boolean;
   status: z.infer<typeof debitAccountStatusSchema>;
+  balance: string;
   createdAt: string | null;
   updatedAt: string | null;
 };
