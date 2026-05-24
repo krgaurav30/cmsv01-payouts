@@ -466,4 +466,48 @@ export const cbsSimulatorRoutes: FastifyPluginAsync = async (app) => {
       narration: row.narration
     }));
   });
+
+  app.post("/v1/payment-hub/transfer", async (request, reply) => {
+    const body = (request.body ?? {}) as {
+      batchId: string;
+      utr: string;
+      narration: string;
+      amount: string | number;
+      beneficiaryAccount: string;
+      beneficiaryName: string;
+      paymentMethod: string;
+    };
+
+    const { batchId, utr, narration, amount, beneficiaryAccount, beneficiaryName, paymentMethod } = body;
+    const amountVal = Number(amount);
+
+    if (!batchId || !utr || isNaN(amountVal) || amountVal <= 0) {
+      return reply.status(400).send({
+        status: "FAILED",
+        errorCode: "ERR_INVALID_PARAMETERS",
+        errorMessage: "Invalid batchId, utr, or amount"
+      });
+    }
+
+    const isFailureAmount = String(amountVal).endsWith(".99");
+
+    if (isFailureAmount) {
+      return reply.status(422).send({
+        status: "FAILED",
+        clearingReferenceId: null,
+        errorCode: "ERR_CLEARING_REJECTED",
+        errorMessage: "Clearing rail rejected the transfer request.",
+        processedAt: new Date().toISOString()
+      });
+    }
+
+    const clearingRef = `PH${randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`;
+
+    return reply.status(200).send({
+      status: "SUCCESS",
+      clearingReferenceId: clearingRef,
+      narration: narration || `CMS Payout ${batchId}`,
+      processedAt: new Date().toISOString()
+    });
+  });
 };

@@ -2459,10 +2459,26 @@ export class PayoutManagementService {
     }
 
     const processedAt = new Date();
-    const itemOutcomes = batch.items.map((item, index) => ({
-      itemId: item.itemId,
-      succeeded: batch.items.length === 1 ? true : index % 3 !== 2
-    }));
+    
+    // Determine item-level outcomes
+    let itemOutcomes;
+    if (payload.status === "paid") {
+      itemOutcomes = batch.items.map((item) => ({
+        itemId: item.itemId,
+        succeeded: true
+      }));
+    } else if (payload.status === "failed") {
+      itemOutcomes = batch.items.map((item) => ({
+        itemId: item.itemId,
+        succeeded: false
+      }));
+    } else {
+      // Fallback to legacy default logic
+      itemOutcomes = batch.items.map((item, index) => ({
+        itemId: item.itemId,
+        succeeded: batch.items.length === 1 ? true : index % 3 !== 2
+      }));
+    }
 
     const successfulCount = itemOutcomes.filter((item) => item.succeeded).length;
     const failedCount = itemOutcomes.length - successfulCount;

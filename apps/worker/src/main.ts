@@ -589,15 +589,95 @@ async function dispatchToPaymentHub(batchId: string) {
   });
 
   if (dispatchResponse.ok) {
-    // In our decoupled flow, we simulate the clearing rail asynchronously
-    // Let's introduce a mock clearing delay, and then invoke the simulate-bank-response route
+    // 1. Retrieve the batch details from the database
+    let batchDetails;
+    try {
+      const queryResult = await db.query<{
+        batch_id: string;
+        utr: string | null;
+        narration: string | null;
+        total_amount: string;
+        payment_method_code: string | null;
+        beneficiary_account: string | null;
+        beneficiary_name: string | null;
+      }>(
+        `select 
+           pb.batch_id,
+           pb.utr,
+           pb.narration,
+           pb.total_amount,
+           pb.payment_method_code,
+           b.account_number as beneficiary_account,
+           b.name as beneficiary_name
+         from payout_batches pb
+         left join payout_items pi on pi.batch_id = pb.batch_id
+         left join beneficiaries b on b.beneficiary_id = pi.beneficiary_id
+         where pb.batch_id = $1
+         order by pi.item_id asc
+         limit 1`,
+        [batchId]
+      );
+      batchDetails = queryResult.rows[0];
+    } catch (dbErr) {
+      console.error(`[Payment Hub] Database query for batch ${batchId} failed:`, dbErr);
+    }
+
+    if (!batchDetails) {
+      console.error(`[Payment Hub] Batch details for batchId ${batchId} could not be retrieved.`);
+      return;
+    }
+
+    const utr = batchDetails.utr || `MOCKUTR${batchId.replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+    const narration = batchDetails.narration || `CMS-${utr}-PAYOUT`;
+    const amount = batchDetails.total_amount;
+    const beneficiaryAccount = batchDetails.beneficiary_account || "UNKNOWN";
+    const beneficiaryName = batchDetails.beneficiary_name || "UNKNOWN";
+    const paymentMethod = batchDetails.payment_method_code || "NEFT";
+
+    // 2. Introduce a mock clearing delay, and then call the simulated Payment Hub transfer API
     setTimeout(async () => {
       try {
         console.log(`[Payment Hub] Simulating clearing rail response for batch ${batchId}...`);
-        await postToApi(`/v1/payouts/batches/${batchId}/simulate-bank-response`, {
-          actedByUserId: "system-worker",
-          comment: "Mock bank response processed by background worker"
+        
+        const token = signJwt({
+          userId: "system-worker",
+          role: "system",
+          tenantScope: "system"
         });
+
+        const phResponse = await fetch(`${apiBaseUrl}/v1/payment-hub/transfer`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            batchId,
+            utr,
+            narration,
+            amount,
+            beneficiaryAccount,
+            beneficiaryName,
+            paymentMethod
+          })
+        });
+
+        // 3. Based on status:
+        if (phResponse.status === 200) {
+          console.log(`[Payment Hub] Transfer succeeded for batch ${batchId}. Simulating bank response: paid.`);
+          await postToApi(`/v1/payouts/batches/${batchId}/simulate-bank-response`, {
+            actedByUserId: "system-worker",
+            status: "paid",
+            comment: "Mock bank clearing succeeded"
+          });
+        } else {
+          console.warn(`[Payment Hub] Transfer failed with status ${phResponse.status} for batch ${batchId}. Simulating bank response: failed.`);
+          await postToApi(`/v1/payouts/batches/${batchId}/simulate-bank-response`, {
+            actedByUserId: "system-worker",
+            status: "failed",
+            comment: "Mock bank clearing failed"
+          });
+        }
       } catch (err) {
         console.error(`[Payment Hub] Clearing simulation failed for batch ${batchId}:`, err);
       }
@@ -620,8 +700,19 @@ async function executeCbsReversalJourney(batchId: string) {
     );
 
     const batch = batchRes.rows[0];
-    if (!batch || !batch.bank_reference) {
-      // No CBS reference to reverse (e.g. failed debit or already reversed)
+    if (!batch) {
+      return;
+    }
+
+    // Find the original CBS debit reference via idempotency key
+    const cbsTxRes = await db.query<{ cbs_reference_id: string }>(
+      `select cbs_reference_id from cbs_transactions 
+       where idempotency_key = $1 and status = 'SUCCESS' and transaction_type = 'debit'`,
+      [`cbs-debit-${batchId}`]
+    );
+    const origCbsRef = cbsTxRes.rows[0]?.cbs_reference_id;
+    if (!origCbsRef) {
+      console.warn(`[Worker] No original CBS debit transaction found to reverse for batch ${batchId}.`);
       return;
     }
 
@@ -663,7 +754,7 @@ async function executeCbsReversalJourney(batchId: string) {
       cbsResponse = await postToApi(
         `/v1/cbs/reverse-debit`,
         {
-          originalCbsReferenceId: batch.bank_reference,
+          originalCbsReferenceId: origCbsRef,
           reversalIdempotencyKey: reversalIdempotencyKey,
           amount: batch.total_amount,
           reason: "Payment Hub clearing failure"

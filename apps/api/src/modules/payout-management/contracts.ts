@@ -129,7 +129,8 @@ export const payoutDispatchSchema = z.object({
 
 export const payoutSimulationSchema = z.object({
   actedByUserId: z.string().min(3),
-  comment: z.string().min(2).max(500).optional()
+  comment: z.string().min(2).max(500).optional(),
+  status: z.enum(["paid", "failed"]).optional()
 });
 
 export const payoutRefundStateSchema = z.enum([
