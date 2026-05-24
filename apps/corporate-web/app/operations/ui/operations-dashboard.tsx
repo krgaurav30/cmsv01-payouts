@@ -511,6 +511,16 @@ export function OperationsDashboard({
   }, []);
 
   const [notice, setNotice] = useState<Notice | null>(null);
+
+  useEffect(() => {
+    if (notice && notice.tone !== "error") {
+      const timer = setTimeout(() => {
+        setNotice(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [notice]);
+
   const [activeTimelineId, setActiveTimelineId] = useState<string | null>(null);
   const [approvalSectionFilter, setApprovalSectionFilter] =
     useState<ApprovalSectionFilter>("all");
@@ -551,6 +561,7 @@ export function OperationsDashboard({
   const [selectedCorporateId, setSelectedCorporateId] = useState(initialData.selectedCorporateId);
 
   const [showBeneficiaryCreate, setShowBeneficiaryCreate] = useState(false);
+  const [isBeneficiaryViewOnly, setIsBeneficiaryViewOnly] = useState(false);
   const [editingBeneficiaryId, setEditingBeneficiaryId] = useState<string | null>(null);
   const [beneIdError, setBeneIdError] = useState("");
   const [beneficiaryActionItem, setBeneficiaryActionItem] = useState<Beneficiary | null>(null);
@@ -2097,6 +2108,7 @@ export function OperationsDashboard({
     setBeneIdError("");
     setShowBeneficiaryCreate(false);
     setEditingBeneficiaryId(null);
+    setIsBeneficiaryViewOnly(false);
     setNotice({
       tone: "success",
       text: isEdit
@@ -2125,6 +2137,17 @@ export function OperationsDashboard({
     setBeneficiaryActionMenuOpen(false);
     setEditingBeneficiaryId(beneficiary.beneficiaryId);
     setBeneIdError("");
+    setIsBeneficiaryViewOnly(false);
+    setShowBeneficiaryCreate(true);
+    setBeneficiaryPackageCodes(beneficiary.assignedPackages.map((item) => item.packageCode));
+  }
+
+  function beginViewBeneficiary(beneficiary: Beneficiary) {
+    setBeneficiaryActionItem(null);
+    setBeneficiaryActionMenuOpen(false);
+    setEditingBeneficiaryId(beneficiary.beneficiaryId);
+    setBeneIdError("");
+    setIsBeneficiaryViewOnly(true);
     setShowBeneficiaryCreate(true);
     setBeneficiaryPackageCodes(beneficiary.assignedPackages.map((item) => item.packageCode));
   }
@@ -4065,9 +4088,11 @@ export function OperationsDashboard({
                           setShowBeneficiaryCreate(false);
                           setEditingBeneficiaryId(null);
                           setBeneficiaryPackageCodes([]);
+                          setIsBeneficiaryViewOnly(false);
                         } else {
                           setEditingBeneficiaryId(null);
                           setBeneficiaryPackageCodes([]);
+                          setIsBeneficiaryViewOnly(false);
                           setShowBeneficiaryCreate(true);
                         }
                       }}
@@ -4079,7 +4104,7 @@ export function OperationsDashboard({
                 </div>
               </div>
 
-              {showBeneficiaryCreate && isBeneficiaryMaker ? (
+              {showBeneficiaryCreate && (isBeneficiaryMaker || isBeneficiaryViewOnly) ? (
                 <div className="ops-drawer">
                   <form
                     className="ops-form"
@@ -4094,7 +4119,7 @@ export function OperationsDashboard({
                           name="beneficiaryId"
                           placeholder="KUMAR123"
                           required
-                          disabled={Boolean(editingBeneficiary)}
+                          disabled={Boolean(editingBeneficiary) || isBeneficiaryViewOnly}
                           onChange={(e) => handleBeneIdChange(e.target.value)}
                           style={beneIdError ? { borderColor: "#DC2626" } : undefined}
                         />
@@ -4111,6 +4136,7 @@ export function OperationsDashboard({
                           name="name"
                           placeholder="Orbit Vendor Services"
                           required
+                          disabled={isBeneficiaryViewOnly}
                         />
                       </label>
                     </div>
@@ -4123,6 +4149,7 @@ export function OperationsDashboard({
                           name="accountNumber"
                           placeholder="409876543210"
                           required
+                          disabled={isBeneficiaryViewOnly}
                         />
                       </label>
                       <label>
@@ -4132,6 +4159,7 @@ export function OperationsDashboard({
                           name="ifsc"
                           placeholder="HDFC0001234"
                           required
+                          disabled={isBeneficiaryViewOnly}
                         />
                       </label>
                       <label>
@@ -4141,6 +4169,7 @@ export function OperationsDashboard({
                           name="phoneNumber"
                           placeholder="+91 9876543210"
                           required
+                          disabled={isBeneficiaryViewOnly}
                         />
                       </label>
                     </div>
@@ -4162,6 +4191,7 @@ export function OperationsDashboard({
                           values={beneficiaryPackageCodes}
                           onChange={setBeneficiaryPackageCodes}
                           placeholder="Attach packages"
+                          disabled={isBeneficiaryViewOnly}
                         />
                       </label>
                     </div>
@@ -4169,45 +4199,63 @@ export function OperationsDashboard({
                     <div className="ops-fields one">
                       <label>
                         Tags
-                        <input name="tags" placeholder="Optional, comma separated" />
+                        <input name="tags" placeholder="Optional, comma separated" disabled={isBeneficiaryViewOnly} />
                       </label>
                     </div>
 
                     <div className="ops-actions">
-                      <button className="ops-button primary" disabled={busy} type="submit">
-                        {busy
-                          ? "Saving..."
-                          : editingBeneficiary
-                            ? "Save beneficiary"
-                            : "Create beneficiary"}
-                      </button>
-                      {editingBeneficiary ? (
+                      {isBeneficiaryViewOnly ? (
                         <button
-                          className="ops-button"
-                          disabled={busy}
+                          className="ops-button secondary"
                           type="button"
                           onClick={() => {
                             setShowBeneficiaryCreate(false);
                             setEditingBeneficiaryId(null);
+                            setIsBeneficiaryViewOnly(false);
                             setBeneficiaryPackageCodes([]);
                             setBeneIdError("");
                           }}
                         >
-                          Cancel
+                          Close
                         </button>
                       ) : (
-                        <button
-                          className="ops-button"
-                          disabled={busy}
-                          type="button"
-                          onClick={() => {
-                            setBeneficiaryPackageCodes([]);
-                            setShowBeneficiaryCreate(false);
-                            setBeneIdError("");
-                          }}
-                          >
-                          Reset
-                        </button>
+                        <>
+                          <button className="ops-button primary" disabled={busy} type="submit">
+                            {busy
+                              ? "Saving..."
+                              : editingBeneficiary
+                                ? "Save beneficiary"
+                                : "Create beneficiary"}
+                          </button>
+                          {editingBeneficiary ? (
+                            <button
+                              className="ops-button"
+                              disabled={busy}
+                              type="button"
+                              onClick={() => {
+                                setShowBeneficiaryCreate(false);
+                                setEditingBeneficiaryId(null);
+                                setBeneficiaryPackageCodes([]);
+                                setBeneIdError("");
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          ) : (
+                            <button
+                              className="ops-button"
+                              disabled={busy}
+                              type="button"
+                              onClick={() => {
+                                setBeneficiaryPackageCodes([]);
+                                setShowBeneficiaryCreate(false);
+                                setBeneIdError("");
+                              }}
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </form>
@@ -4262,8 +4310,10 @@ export function OperationsDashboard({
                     </tr>
                   </thead>
                   <tbody>
-                    {beneficiaryRows.map((beneficiary) => (
-                      <tr key={beneficiary.beneficiaryId}>
+                    {beneficiaryRows.map((beneficiary, index) => {
+                      const openUpward = beneficiaryRows.length > 2 && index >= beneficiaryRows.length - 2;
+                      return (
+                        <tr key={beneficiary.beneficiaryId}>
                         <td>{beneficiary.beneficiaryId}</td>
                         <td>
                           <strong>{beneficiary.name}</strong>
@@ -4307,91 +4357,94 @@ export function OperationsDashboard({
                           </span>
                         </td>
                         <td>
-                          {isBeneficiaryMaker ? (
-                            <div className="ops-row-action-wrap" style={{ justifyContent: "flex-end" }}>
-                              <button
-                                className="ops-kebab"
-                                onClick={() => {
-                                  if (beneficiaryActionItem?.beneficiaryId === beneficiary.beneficiaryId && beneficiaryActionMenuOpen) {
+                          <div className="ops-row-action-wrap" style={{ justifyContent: "flex-end" }}>
+                            <button
+                              className="ops-kebab"
+                              onClick={() => {
+                                if (beneficiaryActionItem?.beneficiaryId === beneficiary.beneficiaryId && beneficiaryActionMenuOpen) {
+                                  setBeneficiaryActionMenuOpen(false);
+                                  setBeneficiaryActionItem(null);
+                                } else {
+                                  openBeneficiaryActions(beneficiary);
+                                }
+                              }}
+                              type="button"
+                            >
+                              ⋮
+                            </button>
+                            {beneficiaryActionItem?.beneficiaryId === beneficiary.beneficiaryId && beneficiaryActionMenuOpen ? (
+                              <>
+                                <div
+                                  style={{
+                                    position: "fixed",
+                                    inset: 0,
+                                    zIndex: 90,
+                                    background: "transparent",
+                                    cursor: "default"
+                                  }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     setBeneficiaryActionMenuOpen(false);
                                     setBeneficiaryActionItem(null);
-                                  } else {
-                                    openBeneficiaryActions(beneficiary);
-                                  }
-                                }}
-                                type="button"
-                              >
-                                ⋮
-                              </button>
-                              {beneficiaryActionItem?.beneficiaryId === beneficiary.beneficiaryId && beneficiaryActionMenuOpen ? (
-                                <>
-                                  <div
-                                    style={{
-                                      position: "fixed",
-                                      inset: 0,
-                                      zIndex: 90,
-                                      background: "transparent",
-                                      cursor: "default"
-                                    }}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setBeneficiaryActionMenuOpen(false);
-                                      setBeneficiaryActionItem(null);
-                                    }}
-                                  />
-                                  <div
-                                    className="ops-action-dropdown"
-                                    style={{
-                                      position: "absolute",
-                                      right: 0,
-                                      top: "100%",
-                                      zIndex: 100,
-                                      minWidth: "160px",
-                                      margin: "4px 0 0 0",
-                                      padding: "6px",
-                                      background: "var(--surface)",
-                                      border: "1px solid var(--border)",
-                                      borderRadius: "8px",
-                                      boxShadow: "var(--shadow-lg)",
-                                      display: "flex",
-                                      flexDirection: "column",
-                                      gap: "2px"
-                                    }}
+                                  }}
+                                />
+                                <div
+                                  className="ops-action-dropdown"
+                                  style={{
+                                    position: "absolute",
+                                    right: 0,
+                                    top: openUpward ? "auto" : "100%",
+                                    bottom: openUpward ? "100%" : "auto",
+                                    zIndex: 100,
+                                    minWidth: "160px",
+                                    margin: openUpward ? "0 0 4px 0" : "4px 0 0 0",
+                                    padding: "6px",
+                                    background: "var(--surface)",
+                                    border: "1px solid var(--border)",
+                                    borderRadius: "8px",
+                                    boxShadow: "var(--shadow-lg)",
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: "2px"
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    className="ops-action-item"
+                                    onClick={() => beginViewBeneficiary(beneficiary)}
                                   >
-                                    <button
-                                      type="button"
-                                      className="ops-action-item"
-                                      onClick={() => beginEditBeneficiary(beneficiary)}
-                                    >
-                                      Edit
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="ops-action-item"
-                                      onClick={() =>
-                                        void updateBeneficiaryStatusFromMenu(
-                                          beneficiary.status === "active" ? "deactivate" : "activate"
-                                        )
-                                      }
-                                    >
-                                      {beneficiary.status === "active" ? "Deactivate" : "Activate"}
-                                    </button>
-                                  </div>
-                                </>
-                              ) : null}
-                            </div>
-                          ) : (
-                            <span className="ops-meta">
-                              {beneficiary.approvalState === "pending_approval"
-                                ? "Waiting for checker"
-                                : beneficiary.approvalState === "rejected"
-                                  ? "Rejected"
-                                  : "Maker only"}
-                            </span>
-                          )}
+                                    View
+                                  </button>
+                                  {isBeneficiaryMaker ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="ops-action-item"
+                                        onClick={() => beginEditBeneficiary(beneficiary)}
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="ops-action-item"
+                                        onClick={() =>
+                                          void updateBeneficiaryStatusFromMenu(
+                                            beneficiary.status === "active" ? "deactivate" : "activate"
+                                          )
+                                        }
+                                      >
+                                        {beneficiary.status === "active" ? "Deactivate" : "Activate"}
+                                      </button>
+                                    </>
+                                  ) : null}
+                                </div>
+                              </>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                     {beneficiaryRows.length === 0 ? (
                       <tr>
                         <td className="ops-empty" colSpan={9}>
@@ -5235,8 +5288,10 @@ export function OperationsDashboard({
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredApprovalMatrices.map((matrix) => (
-                      <tr key={matrix.matrixId}>
+                    {filteredApprovalMatrices.map((matrix, index) => {
+                      const openUpward = filteredApprovalMatrices.length > 2 && index >= filteredApprovalMatrices.length - 2;
+                      return (
+                        <tr key={matrix.matrixId}>
                         <td>{matrix.name}</td>
                         <td>INR {formatAmount(matrix.amountFrom)}</td>
                         <td>INR {formatAmount(matrix.amountTo)}</td>
@@ -5276,10 +5331,11 @@ export function OperationsDashboard({
                                   style={{
                                     position: "absolute",
                                     right: 0,
-                                    top: "100%",
+                                    top: openUpward ? "auto" : "100%",
+                                    bottom: openUpward ? "100%" : "auto",
                                     zIndex: 100,
                                     minWidth: "160px",
-                                    margin: "4px 0 0 0",
+                                    margin: openUpward ? "0 0 4px 0" : "4px 0 0 0",
                                     padding: "6px",
                                     background: "var(--surface)",
                                     border: "1px solid var(--border)",
@@ -5321,7 +5377,8 @@ export function OperationsDashboard({
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                     {filteredApprovalMatrices.length === 0 ? (
                       <tr>
                         <td className="ops-empty" colSpan={7}>
@@ -5522,8 +5579,10 @@ export function OperationsDashboard({
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredRoles.map((role) => (
-                      <tr key={role.roleId}>
+                    {filteredRoles.map((role, index) => {
+                      const openUpward = filteredRoles.length > 2 && index >= filteredRoles.length - 2;
+                      return (
+                        <tr key={role.roleId}>
                         <td>{role.name}</td>
                         <td>{role.roleId}</td>
                         <td>{role.description ?? "No description"}</td>
@@ -5564,10 +5623,11 @@ export function OperationsDashboard({
                                   style={{
                                     position: "absolute",
                                     right: 0,
-                                    top: "100%",
+                                    top: openUpward ? "auto" : "100%",
+                                    bottom: openUpward ? "100%" : "auto",
                                     zIndex: 100,
                                     minWidth: "160px",
-                                    margin: "4px 0 0 0",
+                                    margin: openUpward ? "0 0 4px 0" : "4px 0 0 0",
                                     padding: "6px",
                                     background: "var(--surface)",
                                     border: "1px solid var(--border)",
@@ -5614,7 +5674,8 @@ export function OperationsDashboard({
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                     {filteredRoles.length === 0 ? (
                       <tr>
                         <td className="ops-empty-row" colSpan={6} style={{ textAlign: "center", padding: "24px", color: "var(--text-secondary)" }}>
@@ -5746,8 +5807,10 @@ export function OperationsDashboard({
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredUsers.map((user) => (
-                      <tr key={user.userId}>
+                    {filteredUsers.map((user, index) => {
+                      const openUpward = filteredUsers.length > 2 && index >= filteredUsers.length - 2;
+                      return (
+                        <tr key={user.userId}>
                         <td>{user.displayName}</td>
                         <td>{user.username}</td>
                         <td>{user.role}</td>
@@ -5790,10 +5853,11 @@ export function OperationsDashboard({
                                     style={{
                                       position: "absolute",
                                       right: 0,
-                                      top: "100%",
+                                      top: openUpward ? "auto" : "100%",
+                                      bottom: openUpward ? "100%" : "auto",
                                       zIndex: 100,
                                       minWidth: "160px",
-                                      margin: "4px 0 0 0",
+                                      margin: openUpward ? "0 0 4px 0" : "4px 0 0 0",
                                       padding: "6px",
                                       background: "var(--surface)",
                                       border: "1px solid var(--border)",
@@ -5825,7 +5889,8 @@ export function OperationsDashboard({
                           )}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                     {filteredUsers.length === 0 ? (
                       <tr>
                         <td className="ops-empty-row" colSpan={7} style={{ textAlign: "center", padding: "24px", color: "var(--text-secondary)" }}>

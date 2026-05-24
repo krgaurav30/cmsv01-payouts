@@ -247,6 +247,18 @@ export function PackagesSection({
   const [actionMenuItem, setActionMenuItem] = useState<PackageItem | null>(null);
   const [isViewOnly, setIsViewOnly] = useState(false);
 
+  useEffect(() => {
+    if (toast) {
+      const isIssue = toast.toLowerCase().includes("error") || toast.toLowerCase().includes("failed");
+      if (!isIssue) {
+        const timer = setTimeout(() => {
+          setToast(null);
+        }, 3000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [toast]);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [useCaseFilter, setUseCaseFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
