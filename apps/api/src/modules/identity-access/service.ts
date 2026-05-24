@@ -377,6 +377,19 @@ export class IdentityAccessService {
       [corporateTenantId, roleName]
     );
 
+    if (result.rows.length === 0) {
+      // Fallback: If no explicit restriction exists for this role, default to all active debit accounts
+      const allActive = await this.db.query<{ debit_account_id: string }>(
+        `select debit_account_id
+         from corporate_debit_accounts
+         where corporate_tenant_id = $1
+           and status = 'active'
+         order by debit_account_id`,
+        [corporateTenantId]
+      );
+      return allActive.rows.map((row) => row.debit_account_id);
+    }
+
     return result.rows.map((row) => row.debit_account_id);
   }
 

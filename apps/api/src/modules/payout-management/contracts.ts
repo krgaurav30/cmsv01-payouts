@@ -173,7 +173,7 @@ export type PayoutItemInput = z.infer<typeof payoutItemSchema>;
 export type Money = z.infer<typeof moneySchema>;
 
 export type PayoutTimelineEvent = {
-  event: "created" | "submitted" | "approved" | "rejected";
+  event: string;
   role: string | null;
   userId: string | null;
   userName: string | null;

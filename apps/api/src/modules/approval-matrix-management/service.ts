@@ -70,7 +70,7 @@ export class ApprovalMatrixManagementService {
            left join corporate_subscriptions cs on cs.subscription_id = am.subscription_ids[1]
            where am.corporate_tenant_id = $1
              and $2 = any(am.subscription_ids)
-           order by am.amount_from asc, am.amount_to asc, am.created_at desc nulls last`,
+           order by am.updated_at desc, am.created_at desc nulls last`,
           [corporateTenantId, subscriptionId]
         )
       : corporateTenantId
@@ -83,7 +83,7 @@ export class ApprovalMatrixManagementService {
            from approval_matrices am
            left join corporate_subscriptions cs on cs.subscription_id = am.subscription_ids[1]
            where am.corporate_tenant_id = $1
-           order by am.amount_from asc, am.amount_to asc, am.created_at desc nulls last`,
+           order by am.updated_at desc, am.created_at desc nulls last`,
           [corporateTenantId]
         )
       : await this.db.query<ApprovalMatrixRow>(
@@ -94,7 +94,7 @@ export class ApprovalMatrixManagementService {
                   am.created_at, am.updated_at
            from approval_matrices am
            left join corporate_subscriptions cs on cs.subscription_id = am.subscription_ids[1]
-           order by am.corporate_tenant_id, am.amount_from asc, am.amount_to asc, am.created_at desc nulls last`
+           order by am.corporate_tenant_id, am.updated_at desc, am.created_at desc nulls last`
         );
 
     return result.rows.map(mapApprovalMatrixRow);

@@ -521,6 +521,25 @@ export function OperationsDashboard({
     }
   }, [notice]);
 
+  const [lastSeenApprovalsTime, setLastSeenApprovalsTime] = useState<number>(0);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("cmsLastSeenApprovalsTime");
+      if (stored) {
+        setLastSeenApprovalsTime(Number(stored));
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeSection === "approvals") {
+      const now = Date.now();
+      setLastSeenApprovalsTime(now);
+      localStorage.setItem("cmsLastSeenApprovalsTime", String(now));
+    }
+  }, [activeSection]);
+
   const [activeTimelineId, setActiveTimelineId] = useState<string | null>(null);
   const [approvalSectionFilter, setApprovalSectionFilter] =
     useState<ApprovalSectionFilter>("all");
@@ -875,7 +894,7 @@ export function OperationsDashboard({
         : Promise.resolve({ ok: true as const, data: { items: beneficiaries } }),
       shouldFetch("approval-matrices")
         ? fetchJson<{ items: ApprovalMatrix[] }>(
-            `/v1/approval-matrices?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}`
+            `/v1/approval-matrices?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&_t=${Date.now()}`
           )
         : Promise.resolve({ ok: true as const, data: { items: approvalMatrices } }),
       shouldFetch("roles")
@@ -902,40 +921,40 @@ export function OperationsDashboard({
       packagesRequest
     ]);
 
-    if (transactionsResult.ok) {
+    if (shouldFetch("transactions") && transactionsResult.ok) {
       setTransactions(transactionsResult.data.items ?? []);
     }
 
-    if (fileUploadsResult.ok) {
+    if (shouldFetch("file-uploads") && fileUploadsResult.ok) {
       setFileUploads(fileUploadsResult.data.items ?? []);
     }
 
-    if (beneficiariesResult.ok) {
+    if (shouldFetch("beneficiaries") && beneficiariesResult.ok) {
       setBeneficiaries(beneficiariesResult.data.items ?? []);
     }
 
-    if (approvalMatricesResult.ok) {
+    if (shouldFetch("approval-matrices") && approvalMatricesResult.ok) {
       setApprovalMatrices(approvalMatricesResult.data.items ?? []);
     }
 
-    if (rolesResult.ok) {
+    if (shouldFetch("roles") && rolesResult.ok) {
       setRoles(rolesResult.data.items ?? []);
     }
 
-    if (usersResult.ok) {
+    if (shouldFetch("users") && usersResult.ok) {
       setUsers(usersResult.data.items ?? []);
     }
-    if (subscriptionsResult.ok) {
+    if (shouldFetch("subscriptions") && subscriptionsResult.ok) {
       setSubscriptions(subscriptionsResult.data.items ?? []);
     }
-    if (debitAccountsResult.ok) {
+    if (shouldFetch("debit-accounts") && debitAccountsResult.ok) {
       setDebitAccounts(debitAccountsResult.data.items ?? []);
     }
 
-    if (settingsResult.ok && settingsResult.data) {
+    if (shouldFetch("settings") && settingsResult.ok && settingsResult.data) {
       setSettings(settingsResult.data);
     }
-    if (packagesResult.ok) {
+    if (shouldFetch("packages") && packagesResult.ok) {
       setPackages(packagesResult.data?.items ?? []);
     }
 
@@ -1070,6 +1089,8 @@ export function OperationsDashboard({
         scopes = ["settings"];
       } else if (activeSection === "packages") {
         scopes = ["packages"];
+      } else if (activeSection === "approval-matrices") {
+        scopes = ["approval-matrices"];
       } else {
         scopes = ["debit-accounts"];
       }
@@ -1662,6 +1683,17 @@ export function OperationsDashboard({
         }))
     ];
   }, [approvalDateRange.end, approvalDateRange.start, beneficiaries, roles, transactions, users]);
+
+  const hasNewApprovals = useMemo(() => {
+    if (activeSection === "approvals") {
+      return false;
+    }
+    return approvalEntries.some((entry) => {
+      if (!entry.createdAt) return false;
+      const entryTime = new Date(entry.createdAt).getTime();
+      return entryTime > lastSeenApprovalsTime;
+    });
+  }, [approvalEntries, lastSeenApprovalsTime, activeSection]);
 
   const paymentApprovalEntries = useMemo(
     () => approvalEntries.filter((entry) => entry.entity === "transaction"),
@@ -2415,6 +2447,7 @@ export function OperationsDashboard({
       tone: "success",
       text: isEdit ? "Approval matrix updated successfully." : "Approval matrix created successfully."
     });
+    void refreshWorkspace(session, selectedCorporateId, { scopes: ["approval-matrices"] });
   }
 
   async function handleToggleMatrixStatus(matrix: ApprovalMatrix) {
@@ -2452,6 +2485,7 @@ export function OperationsDashboard({
       tone: "success",
       text: `Approval matrix status updated to ${newStatus}.`
     });
+    void refreshWorkspace(session, selectedCorporateId, { scopes: ["approval-matrices"] });
   }
 
   function beginEditMatrix(matrix: ApprovalMatrix) {
@@ -2999,6 +3033,19 @@ export function OperationsDashboard({
                 type="button"
               >
                 {section.label}
+                {section.id === "approvals" && hasNewApprovals && (
+                  <span
+                    style={{
+                      width: "6px",
+                      height: "6px",
+                      backgroundColor: "#EF4444",
+                      borderRadius: "50%",
+                      display: "inline-block",
+                      marginLeft: "6px",
+                      verticalAlign: "middle"
+                    }}
+                  />
+                )}
               </button>
             ))}
             <details className="ops-other-menu" ref={otherMenuRef}>
@@ -4706,37 +4753,33 @@ export function OperationsDashboard({
                     <table className="ops-table">
                       <thead>
                         <tr>
-                          <th style={{ width: "40px", textAlign: "center" }}>
-                            {paymentApprovalEntries.some(isBulkApproveEligible) && (
-                              <input
-                                type="checkbox"
-                                checked={
-                                  paymentApprovalEntries.filter(isBulkApproveEligible).length > 0 &&
-                                  paymentApprovalEntries
-                                    .filter(isBulkApproveEligible)
-                                    .every((entry) => checkedBatchIds.includes(entry.id))
-                                }
-                                onChange={(e) => {
-                                  const eligibleEntries = paymentApprovalEntries.filter(isBulkApproveEligible);
-                                  if (e.target.checked) {
-                                    setCheckedBatchIds(eligibleEntries.map((entry) => entry.id));
-                                  } else {
-                                    setCheckedBatchIds([]);
-                                  }
-                                }}
-                              />
-                            )}
-                          </th>
                           <th>Transaction Reference</th>
-                          <th>Txn UUID</th>
+                          <th>Beneficiary</th>
                           <th>Amount</th>
+                          <th>Package</th>
+                          <th>Payment Method</th>
+                          <th>Tag</th>
                           <th>Status</th>
+                          <th>Created</th>
                         </tr>
                       </thead>
                       <tbody>
                         {paymentApprovalEntries.length > 0 ? (
                           paymentApprovalEntries.map((entry) => {
-                            const bulkEnabled = isBulkApproveEligible(entry);
+                            const transaction = transactions.find((t) => t.batchId === entry.id);
+
+                            const beneficiaryName =
+                              transaction?.primaryBeneficiaryName ??
+                              beneficiaries.find(
+                                (beneficiary) =>
+                                  beneficiary.beneficiaryId === transaction?.primaryBeneficiaryId
+                              )?.name ??
+                              transaction?.primaryBeneficiaryId ??
+                              "Unknown beneficiary";
+
+                            const packageLabel = transaction?.packageCode ?? "No package";
+                            const paymentMethodLabel = transaction?.paymentMethodCode ?? "Not captured";
+
                             return (
                               <tr
                                 className="ops-clickable-row"
@@ -4747,42 +4790,28 @@ export function OperationsDashboard({
                                   void loadTransactionDetail(entry.id);
                                 }}
                               >
-                                <td onClick={(e) => e.stopPropagation()} style={{ textAlign: "center" }}>
-                                  {bulkEnabled ? (
-                                    <input
-                                      type="checkbox"
-                                      checked={checkedBatchIds.includes(entry.id)}
-                                      onChange={(e) => {
-                                        if (e.target.checked) {
-                                          setCheckedBatchIds((prev) => [...prev, entry.id]);
-                                        } else {
-                                          setCheckedBatchIds((prev) => prev.filter((id) => id !== entry.id));
-                                        }
-                                      }}
-                                    />
-                                  ) : (
-                                    <span
-                                      title="Bulk approval not enabled in package settings"
-                                      style={{ cursor: "not-allowed", opacity: 0.35, fontSize: "12px" }}
-                                    >
-                                      🚫
-                                    </span>
-                                  )}
+                                <td>
+                                  <strong>{transaction?.title ?? entry.title}</strong>
+                                  <br />
+                                  <span className="ops-meta">{transaction?.remark ?? "No remark"}</span>
                                 </td>
-                                <td>{entry.title}</td>
-                                <td>{entry.id}</td>
-                                <td>{entry.meta.split("|")[1]?.trim() ?? entry.meta}</td>
+                                <td>{beneficiaryName}</td>
+                                <td>INR {formatAmount(transaction?.totalAmount.value ?? 0)}</td>
+                                <td>{packageLabel}</td>
+                                <td>{paymentMethodLabel}</td>
+                                <td>{transaction?.tag ?? "Not tagged"}</td>
                                 <td>
                                   <span className={`ops-status ${entry.status}`}>
                                     {humanize(entry.status)}
                                   </span>
                                 </td>
+                                <td>{transaction?.createdAt ? formatDateTime(transaction.createdAt) : "Not available"}</td>
                               </tr>
                             );
                           })
                         ) : (
                           <tr>
-                            <td className="ops-empty-row" colSpan={5}>
+                            <td className="ops-empty-row" colSpan={8}>
                               No payment approvals pending.
                             </td>
                           </tr>
@@ -6683,12 +6712,8 @@ export function OperationsDashboard({
               (b) => b.state === "pending_approval" || b.state === "partially_approved"
             );
 
-            const isBatchBulkEligible = (b: PayoutBatch) => {
-              return true;
-            };
-
-            const eligiblePendingFileBatches = pendingFileBatches.filter(isBatchBulkEligible);
-            const eligiblePendingFilteredBatches = pendingFilteredBatches.filter(isBatchBulkEligible);
+            const eligiblePendingFileBatches = pendingFileBatches;
+            const eligiblePendingFilteredBatches = pendingFilteredBatches;
 
             return (
               <div
@@ -6794,14 +6819,12 @@ export function OperationsDashboard({
                             <th>Beneficiary</th>
                             <th>Amount</th>
                             <th>Status</th>
-                            {hasPermission(session, "transaction.checker") && <th>Action</th>}
                           </tr>
                         </thead>
                         <tbody>
                           {filteredBatches.length > 0 ? (
                             filteredBatches.map((batch) => {
                               const isPending = batch.state === "pending_approval" || batch.state === "partially_approved";
-                              const bulkEnabled = isBatchBulkEligible(batch);
                               return (
                                 <tr
                                   className="ops-clickable-row"
@@ -6814,26 +6837,17 @@ export function OperationsDashboard({
                                 >
                                   <td onClick={(e) => e.stopPropagation()} style={{ textAlign: "center" }}>
                                     {isPending ? (
-                                      bulkEnabled ? (
-                                        <input
-                                          type="checkbox"
-                                          checked={checkedFileBatchIds.includes(batch.batchId)}
-                                          onChange={(e) => {
-                                            if (e.target.checked) {
-                                              setCheckedFileBatchIds(prev => [...prev, batch.batchId]);
-                                            } else {
-                                              setCheckedFileBatchIds(prev => prev.filter(id => id !== batch.batchId));
-                                            }
-                                          }}
-                                        />
-                                      ) : (
-                                        <span
-                                          title="Bulk approval not enabled in package settings"
-                                          style={{ cursor: "not-allowed", opacity: 0.35, fontSize: "12px" }}
-                                        >
-                                          🚫
-                                        </span>
-                                      )
+                                      <input
+                                        type="checkbox"
+                                        checked={checkedFileBatchIds.includes(batch.batchId)}
+                                        onChange={(e) => {
+                                          if (e.target.checked) {
+                                            setCheckedFileBatchIds(prev => [...prev, batch.batchId]);
+                                          } else {
+                                            setCheckedFileBatchIds(prev => prev.filter(id => id !== batch.batchId));
+                                          }
+                                        }}
+                                      />
                                     ) : (
                                       <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>✓</span>
                                     )}
@@ -6849,42 +6863,12 @@ export function OperationsDashboard({
                                       {humanize(batch.state)}
                                     </span>
                                   </td>
-                                  {hasPermission(session, "transaction.checker") && (
-                                    <td onClick={(e) => e.stopPropagation()}>
-                                      {isPending ? (
-                                        <div style={{ display: "flex", gap: "12px", whiteSpace: "nowrap" }}>
-                                          <button
-                                            type="button"
-                                            style={{ background: "none", border: "none", color: "var(--success)", fontWeight: 600, padding: 0, fontSize: "12px", cursor: "pointer" }}
-                                            onClick={() => {
-                                              void handleApproval("transaction", batch.batchId, "approve");
-                                            }}
-                                            disabled={busy}
-                                          >
-                                            Approve
-                                          </button>
-                                          <button
-                                            type="button"
-                                            style={{ background: "none", border: "none", color: "#DC2626", fontWeight: 600, padding: 0, fontSize: "12px", cursor: "pointer" }}
-                                            onClick={() => {
-                                              void handleApproval("transaction", batch.batchId, "reject");
-                                            }}
-                                            disabled={busy}
-                                          >
-                                            Reject
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <span style={{ fontSize: "11px", opacity: 0.5 }}>-</span>
-                                      )}
-                                    </td>
-                                  )}
                                 </tr>
                               );
                             })
                           ) : (
                             <tr>
-                              <td className="ops-empty-row" colSpan={hasPermission(session, "transaction.checker") ? 6 : 5}>
+                              <td className="ops-empty-row" colSpan={5}>
                                 No payments found in this file.
                               </td>
                             </tr>

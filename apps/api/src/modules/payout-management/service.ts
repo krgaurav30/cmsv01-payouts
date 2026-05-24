@@ -2648,7 +2648,12 @@ export class PayoutManagementService {
   }
 
   private async buildTimeline(row: PayoutBatchRow) {
-    const timelineEntries = [
+    const timelineEntries: Array<{
+      event: string;
+      role: string | null;
+      userId: string | null;
+      at: Date | null;
+    }> = [
       {
         event: "created",
         role: row.created_by_role,
@@ -2660,25 +2665,55 @@ export class PayoutManagementService {
         role: row.submitted_by_role,
         userId: row.submitted_by_user_id,
         at: row.submitted_at
-      },
-      {
-        event: "approved",
-        role: row.approved_by_role,
-        userId: row.approved_by_user_id,
-        at: row.approved_at
-      },
-      {
-        event: "rejected",
-        role: row.rejected_by_role,
-        userId: row.rejected_by_user_id,
-        at: row.rejected_at
       }
-    ] satisfies Array<{
-      event: PayoutTimelineEvent["event"];
-      role: string | null;
-      userId: string | null;
-      at: Date | null;
-    }>;
+    ];
+
+    const approvalActionsResult = await this.db.query<{
+      approval_level: number;
+      action: string;
+      actor_user_id: string;
+      actor_role: string;
+      comment: string | null;
+      created_at: Date;
+    }>(
+      `select approval_level, action, actor_user_id, actor_role, comment, created_at
+       from payout_batch_approval_actions
+       where batch_id = $1
+       order by approval_level asc, created_at asc`,
+      [row.batch_id]
+    );
+
+    for (const action of approvalActionsResult.rows) {
+      const displayEvent = action.action === "approve"
+        ? `Approved (Level ${action.approval_level})`
+        : `Rejected (Level ${action.approval_level})`;
+
+      timelineEntries.push({
+        event: displayEvent,
+        role: action.actor_role,
+        userId: action.actor_user_id,
+        at: action.created_at
+      });
+    }
+
+    if (approvalActionsResult.rows.length === 0) {
+      if (row.approved_by_user_id || row.approved_at) {
+        timelineEntries.push({
+          event: "approved",
+          role: row.approved_by_role,
+          userId: row.approved_by_user_id,
+          at: row.approved_at
+        });
+      }
+      if (row.rejected_by_user_id || row.rejected_at) {
+        timelineEntries.push({
+          event: "rejected",
+          role: row.rejected_by_role,
+          userId: row.rejected_by_user_id,
+          at: row.rejected_at
+        });
+      }
+    }
 
     const filteredTimelineEntries = timelineEntries.filter((entry) =>
       Boolean(entry.userId || entry.at)
