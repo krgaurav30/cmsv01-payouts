@@ -28,6 +28,8 @@ import { tenantManagementRoutes } from "./modules/tenant-management/routes.js";
 import { testConsoleRoutes } from "./modules/test-console/routes.js";
 import { cbsSimulatorRoutes } from "./modules/cbs-simulator/routes.js";
 
+import { registerCheckoutSessionRoutes } from "./modules/checkout-sessions/routes.js";
+
 const config = loadConfig();
 
 const app = Fastify({
@@ -70,6 +72,7 @@ await app.register(settingsManagementRoutes);
 await app.register(subscriptionManagementRoutes);
 await app.register(tenantManagementRoutes);
 await app.register(cbsSimulatorRoutes);
+await app.register(registerCheckoutSessionRoutes);
 if (config.nodeEnv !== "production") {
   await app.register(testConsoleRoutes);
 }
