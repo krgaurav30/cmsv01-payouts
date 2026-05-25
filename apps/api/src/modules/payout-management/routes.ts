@@ -575,9 +575,101 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
         });
       }
 
+      if (result.error === "beneficiary_not_found") {
+        return reply.status(404).send({
+          message: `Beneficiary not found: ${result.beneficiaryId}`
+        });
+      }
+
+      if (result.error === "beneficiary_not_approved") {
+        return reply.status(409).send({
+          message: `Beneficiary is still waiting for checker approval: ${result.beneficiaryId}`
+        });
+      }
+
+      if (result.error === "beneficiary_inactive") {
+        return reply.status(409).send({
+          message: `Beneficiary is inactive and cannot be used for payout creation: ${result.beneficiaryId}`
+        });
+      }
+
+      if (result.error === "beneficiary_package_not_assigned") {
+        return reply.status(409).send({
+          message: `Beneficiary ${result.beneficiaryId} is not assigned to package ${result.packageCode}`
+        });
+      }
+
+      if (result.error === "beneficiary_corporate_mismatch") {
+        return reply.status(409).send({
+          message: `Beneficiary does not belong to the selected child corporate: ${result.beneficiaryId}`
+        });
+      }
+
+      if (result.error === "beneficiary_type_not_allowed") {
+        return reply.status(409).send({
+          message: `Beneficiary type ${result.beneficiaryType} is not allowed for package ${result.packageCode ?? "this selection"}`
+        });
+      }
+
       if (result.error === "child_corporate_not_found") {
         return reply.status(404).send({
           message: "Linked child corporate not found"
+        });
+      }
+
+      if (result.error === "duplicate_transaction_reference") {
+        return reply.status(409).send({
+          message: `Transaction reference already exists and was processed earlier: ${result.transactionReference}`,
+          existingState: result.existingState
+        });
+      }
+
+      if (result.error === "subscription_not_found") {
+        return reply.status(404).send({
+          message: "No active package subscription was found for this transaction context"
+        });
+      }
+
+      if (result.error === "subscription_scope_mismatch") {
+        return reply.status(409).send({
+          message: "The selected package subscription does not belong to this corporate context"
+        });
+      }
+
+      if (result.error === "single_transaction_limit_exceeded") {
+        return reply.status(409).send({
+          message: `This transaction exceeds the single transaction limit of INR ${result.limit.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          limit: result.limit
+        });
+      }
+
+      if (result.error === "daily_cumulative_limit_exceeded") {
+        return reply.status(409).send({
+          message: `This transaction would exceed the daily cumulative transaction limit of INR ${result.limit.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          limit: result.limit,
+          currentTotal: result.currentTotal
+        });
+      }
+
+      if (result.error === "payment_method_required") {
+        return reply.status(409).send({
+          message: `Select a payment method. Allowed methods: ${result.allowedPaymentMethodCodes.join(", ")}`
+        });
+      }
+
+      if (result.error === "payment_method_not_allowed") {
+        return reply.status(409).send({
+          message: `Payment method ${result.paymentMethodCode} is not allowed for the selected package`
+        });
+      }
+
+      if (result.error === "payment_method_amount_out_of_range") {
+        return reply.status(409).send({
+          message: `This amount is outside the allowed range for ${result.paymentMethodCode}`,
+          paymentMethodCode: result.paymentMethodCode,
+          minAmount: result.minAmount,
+          maxAmount: result.maxAmount,
+          amount: result.amount
         });
       }
 
@@ -589,9 +681,9 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    return reply.status(202).send({
-      message: "Transaction accepted for background processing",
-      command: result.data
+    return reply.status(201).send({
+      message: "Transaction created successfully in draft state",
+      transaction: result.data
     });
   });
 

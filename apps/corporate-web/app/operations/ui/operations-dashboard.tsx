@@ -3584,7 +3584,7 @@ export function OperationsDashboard({
                       </label>
                     </div>
                     <p className="ops-meta">
-                      Required columns: Transaction Reference, Beneficiary ID, Amount. Optional columns: Package Code, Payment Method Code, Debit Account Number, Tag, Remark
+                      Required columns: Package Code, Transaction Reference, Beneficiary ID, Amount. Optional columns: Payment Method Code, Debit Account Number, Tag, Remark
                     </p>
                     <div className="ops-actions">
                       <a
@@ -3623,6 +3623,7 @@ export function OperationsDashboard({
                         Package
                         <select
                           name="packageCode"
+                          required={true}
                           value={selectedTransactionPackageCode}
                           onChange={(event) => {
                             setSelectedTransactionPackageCode(event.target.value);
@@ -3630,7 +3631,7 @@ export function OperationsDashboard({
                             setSelectedTransactionPaymentMethodCode("");
                           }}
                         >
-                          <option value="">Select package (optional)</option>
+                          <option value="">Select package</option>
                           {transactionPackageOptions.map((option) => (
                             <option key={option.value} value={option.value}>
                               {option.label}
@@ -3642,12 +3643,13 @@ export function OperationsDashboard({
                         Debit Account
                         <select
                           name="debitAccountId"
+                          required={true}
                           value={selectedTransactionDebitAccountId}
                           onChange={(event) =>
                             setSelectedTransactionDebitAccountId(event.target.value)
                           }
                         >
-                          <option value="">Select debit account (optional)</option>
+                          <option value="">Select debit account</option>
                           {selectedTransactionDebitAccounts.map((account) => (
                             <option key={account.debitAccountId} value={account.debitAccountId}>
                               {account.accountName} ({account.accountNumber})
@@ -3659,12 +3661,13 @@ export function OperationsDashboard({
                         Payment Method
                         <select
                           name="paymentMethodCode"
+                          required={true}
                           value={selectedTransactionPaymentMethodCode}
                           onChange={(event) =>
                             setSelectedTransactionPaymentMethodCode(event.target.value)
                           }
                         >
-                          <option value="">Select payment method (optional)</option>
+                          <option value="">Select payment method</option>
                           {selectedTransactionPaymentMethods.map((methodCode) => (
                             <option key={methodCode} value={methodCode}>
                               {methodCode}

@@ -32,6 +32,8 @@ if (!apiBaseUrl) {
 
 let producerConnected = false;
 let consumerConnected = false;
+const processingSentToBank = new Set<string>();
+const processingApproved = new Set<string>();
 
 type ProjectionBatchRow = {
   batch_id: string;
@@ -469,6 +471,10 @@ async function handleDomainEvent(event: DomainEventEnvelope) {
 }
 
 async function executeCbsDebitJourney(batchId: string) {
+  if (processingApproved.has(batchId)) {
+    return;
+  }
+  processingApproved.add(batchId);
   try {
     const batchRes = await db.query<{
       batch_id: string;
@@ -589,6 +595,8 @@ async function executeCbsDebitJourney(batchId: string) {
     }
   } catch (error) {
     console.error(`Error in executeCbsDebitJourney for batch ${batchId}:`, error);
+  } finally {
+    processingApproved.delete(batchId);
   }
 }
 
@@ -646,6 +654,7 @@ async function dispatchToPaymentHub(batchId: string) {
     const paymentMethod = batchDetails.payment_method_code || "NEFT";
 
     // 2. Introduce a mock clearing delay, and then call the simulated Payment Hub transfer API
+    processingSentToBank.add(batchId);
     setTimeout(async () => {
       try {
         console.log(`[Payment Hub] Simulating clearing rail response for batch ${batchId}...`);
@@ -691,9 +700,108 @@ async function dispatchToPaymentHub(batchId: string) {
         }
       } catch (err) {
         console.error(`[Payment Hub] Clearing simulation failed for batch ${batchId}:`, err);
+      } finally {
+        processingSentToBank.delete(batchId);
       }
     }, 5000); // 5 seconds clearing rail delay
   }
+}
+
+async function reprocessSentToBank(batchId: string) {
+  console.log(`[Reconciliation] Resuming clearing simulation for stuck batch ${batchId}...`);
+  let batchDetails;
+  try {
+    const queryResult = await db.query<{
+      batch_id: string;
+      utr: string | null;
+      narration: string | null;
+      total_amount: string;
+      payment_method_code: string | null;
+      beneficiary_account: string | null;
+      beneficiary_name: string | null;
+    }>(
+      `select 
+         pb.batch_id,
+         pb.utr,
+         pb.narration,
+         pb.total_amount,
+         pb.payment_method_code,
+         b.account_number as beneficiary_account,
+         b.name as beneficiary_name
+       from payout_batches pb
+       left join payout_items pi on pi.batch_id = pb.batch_id
+       left join beneficiaries b on b.beneficiary_id = pi.beneficiary_id
+       where pb.batch_id = $1
+       order by pi.item_id asc
+       limit 1`,
+      [batchId]
+    );
+    batchDetails = queryResult.rows[0];
+  } catch (dbErr) {
+    console.error(`[Reconciliation] Database query for batch ${batchId} failed:`, dbErr);
+  }
+
+  if (!batchDetails) {
+    console.error(`[Reconciliation] Batch details for batchId ${batchId} could not be retrieved.`);
+    return;
+  }
+
+  const utr = batchDetails.utr || `MOCKUTR${batchId.replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+  const narration = batchDetails.narration || `CMS-${utr}-PAYOUT`;
+  const amount = batchDetails.total_amount;
+  const beneficiaryAccount = batchDetails.beneficiary_account || "UNKNOWN";
+  const beneficiaryName = batchDetails.beneficiary_name || "UNKNOWN";
+  const paymentMethod = batchDetails.payment_method_code || "NEFT";
+
+  processingSentToBank.add(batchId);
+  setTimeout(async () => {
+    try {
+      console.log(`[Reconciliation] Simulating clearing rail response for stuck batch ${batchId}...`);
+      
+      const token = signJwt({
+        userId: "system-worker",
+        role: "system",
+        tenantScope: "system"
+      });
+
+      const phResponse = await fetch(`${apiBaseUrl}/v1/payment-hub/transfer`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          batchId,
+          utr,
+          narration,
+          amount,
+          beneficiaryAccount,
+          beneficiaryName,
+          paymentMethod
+        })
+      });
+
+      if (phResponse.status === 200) {
+        console.log(`[Reconciliation] Stuck batch ${batchId} cleared. Simulating paid.`);
+        await postToApi(`/v1/payouts/batches/${batchId}/simulate-bank-response`, {
+          actedByUserId: "system-worker",
+          status: "paid",
+          comment: "Mock bank clearing succeeded (reconciliation)"
+        });
+      } else {
+        console.warn(`[Reconciliation] Stuck batch ${batchId} clearing failed. Simulating failed.`);
+        await postToApi(`/v1/payouts/batches/${batchId}/simulate-bank-response`, {
+          actedByUserId: "system-worker",
+          status: "failed",
+          comment: "Mock bank clearing failed (reconciliation)"
+        });
+      }
+    } catch (err) {
+      console.error(`[Reconciliation] Clearing simulation failed for stuck batch ${batchId}:`, err);
+    } finally {
+      processingSentToBank.delete(batchId);
+    }
+  }, 5000);
 }
 
 async function executeCbsReversalJourney(batchId: string) {
@@ -820,7 +928,10 @@ async function runReconciliationLoop() {
 
 async function reconcileAmbiguousTransactions() {
   const ambiguousTx = await db.query<{ batch_id: string, state: string }>(
-    `select batch_id, state from payout_batches where state in ('cbs_debit_ambiguous', 'reversal_ambiguous')`
+    `select batch_id, state from payout_batches
+     where state in ('cbs_debit_ambiguous', 'reversal_ambiguous')
+        or (state = 'sent_to_bank' and dispatched_at is not null and dispatched_at < now() - interval '10 seconds')
+        or (state = 'approved' and approved_at is not null and approved_at < now() - interval '10 seconds')`
   );
 
   for (const row of ambiguousTx.rows) {
@@ -873,6 +984,15 @@ async function reconcileAmbiguousTransactions() {
         }
       } catch (err) {
         console.error(`Reconciliation of reversal failed for batch ${batchId}:`, err);
+      }
+    } else if (row.state === "sent_to_bank") {
+      if (!processingSentToBank.has(batchId)) {
+        await reprocessSentToBank(batchId);
+      }
+    } else if (row.state === "approved") {
+      if (!processingApproved.has(batchId)) {
+        console.log(`[Reconciliation] Resuming CBS debit execution for stuck approved batch ${batchId}...`);
+        await executeCbsDebitJourney(batchId);
       }
     }
   }

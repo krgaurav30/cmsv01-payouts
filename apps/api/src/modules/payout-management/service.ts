@@ -175,8 +175,8 @@ type TransactionCommandRow = {
 };
 
 type ResolvedSubscriptionContext = {
-  subscriptionId: string | null;
-  packageCode: string | null;
+  subscriptionId: string;
+  packageCode: string;
   effectiveSettings: EffectiveSettingsSnapshot | null;
 };
 
@@ -810,7 +810,7 @@ export class PayoutManagementService {
         corporateTenantId: payload.corporateTenantId,
         corporateId: payload.corporateId,
         subscriptionId: resolvedSubscription.subscriptionId ?? undefined,
-        packageCode: resolvedSubscription.packageCode ?? undefined,
+        packageCode: resolvedSubscription.packageCode,
         debitAccountId,
         paymentMethodCode:
           resolvedPaymentMethod && !("error" in resolvedPaymentMethod)
@@ -1072,30 +1072,29 @@ export class PayoutManagementService {
       .padStart(3, "0")}`;
     const generatedItemId = `${generatedBatchId}-item-001`;
 
-    return this.acceptTransactionCommand(
-      {
-        batchId: generatedBatchId,
-        bankTenantId: payload.bankTenantId,
-        corporateTenantId: payload.corporateTenantId,
-        corporateId: payload.corporateId,
-        packageCode: payload.packageCode,
-        debitAccountId: payload.debitAccountId,
-        paymentMethodCode: payload.paymentMethodCode,
-        createdByUserId: actor.userId,
-        title: payload.txnTitle,
-        tag: payload.tag,
-        remark: payload.remark,
-        items: [
-          {
-            itemId: generatedItemId,
-            beneficiaryId: payload.beneficiaryId,
-            amount: payload.amount,
-            purpose: "vendor_payout"
-          }
-        ]
-      },
-      "api"
-    );
+    const createResult = await this.createBatch({
+      batchId: generatedBatchId,
+      bankTenantId: payload.bankTenantId,
+      corporateTenantId: payload.corporateTenantId,
+      corporateId: payload.corporateId,
+      packageCode: payload.packageCode,
+      debitAccountId: payload.debitAccountId,
+      paymentMethodCode: payload.paymentMethodCode,
+      createdByUserId: actor.userId,
+      title: payload.txnTitle,
+      tag: payload.tag,
+      remark: payload.remark,
+      items: [
+        {
+          itemId: generatedItemId,
+          beneficiaryId: payload.beneficiaryId,
+          amount: payload.amount,
+          purpose: "vendor_payout"
+        }
+      ]
+    });
+
+    return createResult;
   }
 
   async createAndSubmitBatch(payload: PayoutBatchCreateRequest) {
@@ -1168,7 +1167,7 @@ export class PayoutManagementService {
     const commandPayload: PayoutBatchCreateRequest = {
       ...payload,
       subscriptionId: resolvedSubscription.subscriptionId ?? undefined,
-      packageCode: resolvedSubscription.packageCode ?? undefined
+      packageCode: resolvedSubscription.packageCode
     };
 
     const commandId = `cmd-${Date.now()}-${Math.floor(Math.random() * 100000)
@@ -2239,7 +2238,7 @@ export class PayoutManagementService {
         corporateId: upload.corporate_id ?? "",
         sourceUploadId: uploadId,
         subscriptionId: upload.subscription_id ?? undefined,
-        packageCode: upload.package_code ?? undefined,
+        packageCode: upload.package_code || "PAYOUT",
         debitAccountId,
         paymentMethodCode:
           resolvedPaymentMethod && !("error" in resolvedPaymentMethod)
@@ -3073,22 +3072,11 @@ export class PayoutManagementService {
         input.packageCode
       );
     } else {
-      const subscriptions = await this.subscriptionManagementService.listSubscriptions({
-        corporateTenantId: input.corporateTenantId,
-        corporateId: input.corporateId,
-        status: "active"
-      });
-      subscription = subscriptions[0] ?? null;
+      return { error: "subscription_not_found" } as const;
     }
 
     if (!subscription) {
-      return input.subscriptionId || input.packageCode
-        ? ({ error: "subscription_not_found" } as const)
-        : ({
-            subscriptionId: null,
-            packageCode: null,
-            effectiveSettings: null
-          } satisfies ResolvedSubscriptionContext);
+      return { error: "subscription_not_found" } as const;
     }
 
     if (

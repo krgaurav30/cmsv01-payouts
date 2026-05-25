@@ -174,7 +174,7 @@ function parseWorkbookFromBuffer(buffer: Buffer): ParsedUpload {
     }
   }
 
-  const requiredLabels = ["transactionReference", "beneficiaryId", "amount"];
+  const requiredLabels = ["packageCode", "transactionReference", "beneficiaryId", "amount"];
   
   const missing = requiredLabels.filter((label) => headerMap[label] === undefined);
 
@@ -215,6 +215,11 @@ function parseWorkbookFromBuffer(buffer: Buffer): ParsedUpload {
 
     if (normalizedPackageCode) {
       explicitPackageCodes.add(normalizedPackageCode);
+    }
+
+    if (!packageCode) {
+      errors.push(`Row ${i + 1}: Package Code is required.`);
+      continue;
     }
 
     if (!transactionReference) {

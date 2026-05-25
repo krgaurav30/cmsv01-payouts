@@ -134,6 +134,10 @@ export class CheckoutSessionService {
     const finalPaymentMethodCode = overrides?.paymentMethodCode || session.paymentMethodCode;
     const finalDebitAccountId = overrides?.debitAccountId;
 
+    if (!finalPackageCode) {
+      return { error: "transaction_creation_failed" as const, details: "packageCode is required" };
+    }
+
     if (!finalBeneficiaryId) {
       return { error: "transaction_creation_failed" as const, details: "beneficiaryId is required" };
     }
@@ -143,7 +147,7 @@ export class CheckoutSessionService {
       bankTenantId: session.bankTenantId,
       corporateTenantId: session.corporateTenantId,
       corporateId: session.corporateId,
-      packageCode: finalPackageCode ?? undefined,
+      packageCode: finalPackageCode,
       debitAccountId: finalDebitAccountId ?? undefined,
       paymentMethodCode: finalPaymentMethodCode ?? undefined,
       actorUsername: actorUsername,

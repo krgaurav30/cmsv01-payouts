@@ -158,7 +158,7 @@ Content-Type: application/json
       ["txnTitle", "Yes", "Human-readable transaction title."],
       ["beneficiaryId", "Yes", "Approved and active beneficiary to pay out."],
       ["amount", "Yes", "Transaction amount object with value and INR currency."],
-      ["packageCode", "No", "Optional package code. If omitted, resolved via default subscription context."],
+      ["packageCode", "Yes", "Workspace package code (e.g., ZELPAY or MAINPAY)."],
       ["debitAccountId", "No", "Optional debit account identifier. If omitted, resolved via default debit account of the package/subscription."],
       ["paymentMethodCode", "No", "Optional payment method code (e.g., IMPS, NEFT, RTGS)."],
       ["tag", "No", "Optional operational tag."],
