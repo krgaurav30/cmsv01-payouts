@@ -440,6 +440,24 @@ async function handleDomainEvent(event: DomainEventEnvelope) {
 
   await syncTransactionProjection(batchId);
 
+  if (event.eventType === "transaction.created") {
+    const payload = event.payload as any;
+    const isAutoSubmit = ["partner_api", "checkout_sdk", "api"].includes(payload.tag || "");
+    if (isAutoSubmit) {
+      console.log(`[Worker] Auto-submitting partner/checkout transaction ${batchId}...`);
+      try {
+        await postToApi(`/v1/payouts/batches/${batchId}/actions`, {
+          action: "submit",
+          actedByUserId: payload.createdByUserId,
+          comment: "Automatically submitted by background worker (Scenario 2)"
+        });
+      } catch (err) {
+        console.error(`[Worker] Auto-submission failed for batch ${batchId}:`, err);
+      }
+    }
+    return;
+  }
+
   if (
     [
       "transaction.submitted",

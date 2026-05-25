@@ -683,6 +683,15 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
 
     return reply.status(201).send({
       message: "Transaction created successfully in draft state",
+      command: {
+        commandId: result.data.commandId,
+        batchId: result.data.batchId,
+        status: "accepted",
+        transactionReference: result.data.transactionReference,
+        subscriptionId: result.data.subscriptionId,
+        packageCode: result.data.packageCode,
+        acceptedAt: result.data.acceptedAt
+      },
       transaction: result.data
     });
   });

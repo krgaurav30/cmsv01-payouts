@@ -1056,7 +1056,34 @@ export class PayoutManagementService {
     };
   }
 
-  async createPublishedTransaction(payload: PublishedPayoutCreateRequest) {
+  async createPublishedTransaction(payload: PublishedPayoutCreateRequest): Promise<
+    | {
+        data: PayoutBatch & {
+          commandId: string;
+          status: "accepted";
+          transactionReference: string;
+          acceptedAt: string;
+        };
+      }
+    | { error: "actor_not_found" }
+    | { error: "forbidden" }
+    | { error: "beneficiary_not_found"; beneficiaryId: string }
+    | { error: "beneficiary_not_approved"; beneficiaryId: string }
+    | { error: "beneficiary_inactive"; beneficiaryId: string }
+    | { error: "beneficiary_package_not_assigned"; beneficiaryId: string; packageCode: string }
+    | { error: "beneficiary_corporate_mismatch"; beneficiaryId: string }
+    | { error: "beneficiary_type_not_allowed"; beneficiaryId: string; beneficiaryType: string; packageCode?: string }
+    | { error: "child_corporate_not_found" }
+    | { error: "duplicate_transaction_reference"; transactionReference: string; existingState: string }
+    | { error: "subscription_not_found" }
+    | { error: "subscription_scope_mismatch" }
+    | { error: "single_transaction_limit_exceeded"; limit: number }
+    | { error: "daily_cumulative_limit_exceeded"; limit: number; currentTotal: number }
+    | { error: "payment_method_required"; allowedPaymentMethodCodes: string[] }
+    | { error: "payment_method_not_allowed"; paymentMethodCode: string }
+    | { error: "payment_method_amount_out_of_range"; paymentMethodCode: string; minAmount: number; maxAmount: number; amount: number }
+    | { error: "bank_not_found" }
+  > {
     const actor = await this.identityAccessService.getCorporateUserByUsername(
       payload.actorUsername
     );
@@ -1082,7 +1109,7 @@ export class PayoutManagementService {
       paymentMethodCode: payload.paymentMethodCode,
       createdByUserId: actor.userId,
       title: payload.txnTitle,
-      tag: payload.tag,
+      tag: payload.tag || "partner_api",
       remark: payload.remark,
       items: [
         {
@@ -1094,7 +1121,21 @@ export class PayoutManagementService {
       ]
     });
 
-    return createResult;
+    if (!("data" in createResult) || !createResult.data) {
+      return "error" in createResult ? (createResult as any) : { error: "child_corporate_not_found" as const };
+    }
+
+    const commandId = `cmd-api-${Date.now()}-${Math.floor(Math.random() * 100000).toString().padStart(5, "0")}`;
+
+    return {
+      data: {
+        ...createResult.data,
+        commandId,
+        status: "accepted" as const,
+        transactionReference: createResult.data.title,
+        acceptedAt: createResult.data.createdAt ?? new Date().toISOString()
+      }
+    };
   }
 
   async createAndSubmitBatch(payload: PayoutBatchCreateRequest) {
