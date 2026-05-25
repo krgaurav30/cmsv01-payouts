@@ -352,7 +352,7 @@ export default function CheckoutPage({ params: paramsPromise }: { params: Promis
                   style={styles.select}
                 >
                   <option value="">-- Choose Payment Method --</option>
-                  {filteredPaymentMethods.map((m) => (
+                  {filteredPaymentMethods.map((m: string) => (
                     <option key={m} value={m}>
                       {m}
                     </option>

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 declare module "fastify" {
   interface FastifyRequest {
     correlationId: string;
+    responseBody?: any;
   }
 }
 
@@ -11,6 +12,7 @@ import { loadConfig } from "@cmsv01/shared/config";
 import { testDatabaseConnection } from "@cmsv01/shared/db";
 import { tenantContextPlugin } from "@cmsv01/shared/tenant-context";
 import { jwtAuthPlugin } from "./modules/identity-access/jwt-auth.js";
+import { PartnerApiActivityService } from "./modules/partner-api-activity/service.js";
 
 import { approvalMatrixManagementRoutes } from "./modules/approval-matrix-management/routes.js";
 import { debitAccountManagementRoutes } from "./modules/debit-account-management/routes.js";
@@ -48,11 +50,85 @@ const app = Fastify({
 });
 
 app.decorateRequest("correlationId", "");
+app.decorateRequest("responseBody", undefined);
 
 app.addHook("onRequest", async (request, reply) => {
   const correlationId = (request.headers["x-correlation-id"] as string) || `corr-${randomUUID().replace(/-/g, "").slice(0, 16)}`;
   request.correlationId = correlationId;
   reply.header("X-Correlation-ID", correlationId);
+});
+
+// Capture response body payload for partner APIs
+app.addHook("onSend", async (request, reply, payload) => {
+  const path = request.raw.url || "";
+  if (path.startsWith("/v1/partner/") || path.startsWith("/v1/checkout/sessions/")) {
+    request.responseBody = payload;
+  }
+  return payload;
+});
+
+// Record API activity asynchronously after sending the response
+app.addHook("onResponse", async (request, reply) => {
+  const path = request.raw.url || "";
+  const isPartnerRoute = path.startsWith("/v1/partner/");
+  const isCheckoutPayRoute = path.startsWith("/v1/checkout/sessions/") && path.endsWith("/pay");
+
+  if (isPartnerRoute || isCheckoutPayRoute) {
+    let category: "beneficiary" | "payment" = "payment";
+    let apiName = "API Call";
+
+    if (path.includes("/beneficiaries")) {
+      category = "beneficiary";
+      if (path.endsWith("/authorize")) {
+        apiName = "Authorize Beneficiary";
+      } else {
+        apiName = "Create Beneficiary";
+      }
+    } else if (path.includes("/payments/transactions")) {
+      category = "payment";
+      if (path.endsWith("/authorize")) {
+        apiName = "Authorize Payment";
+      } else if (path.endsWith("/status")) {
+        apiName = "Get Transaction Status";
+      } else {
+        apiName = "Make Payment";
+      }
+    } else if (path.includes("/partner/checkout/sessions")) {
+      category = "payment";
+      apiName = "Create Checkout Session";
+    } else if (isCheckoutPayRoute) {
+      category = "payment";
+      apiName = "Pay Checkout Session";
+    }
+
+    let responseBodyParsed: any = null;
+    if (request.responseBody) {
+      try {
+        if (typeof request.responseBody === "string") {
+          responseBodyParsed = JSON.parse(request.responseBody);
+        } else if (Buffer.isBuffer(request.responseBody)) {
+          responseBodyParsed = JSON.parse(request.responseBody.toString("utf-8"));
+        }
+      } catch {
+        responseBodyParsed = request.responseBody;
+      }
+    }
+
+    const activityService = new PartnerApiActivityService();
+    await activityService.logActivity({
+      activityId: request.correlationId,
+      category,
+      apiName,
+      method: request.method,
+      path,
+      requestHeaders: request.headers,
+      requestBody: request.body,
+      responseStatus: reply.statusCode,
+      responseHeaders: reply.getHeaders(),
+      responseBody: responseBodyParsed,
+      ipAddress: request.ip
+    });
+  }
 });
 
 await testDatabaseConnection(config);

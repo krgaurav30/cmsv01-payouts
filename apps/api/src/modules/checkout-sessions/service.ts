@@ -173,6 +173,7 @@ export class CheckoutSessionService {
     return {
       success: true as const,
       commandId: resultData.commandId,
+      batchId: resultData.batchId,
       status: resultData.status,
       subscriptionId: resultData.subscriptionId,
       packageCode: resultData.packageCode

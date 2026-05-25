@@ -1226,6 +1226,7 @@ export class PayoutManagementService {
     return {
       data: {
         commandId,
+        batchId: payload.batchId,
         status: "accepted" as const,
         transactionReference: payload.title,
         subscriptionId: resolvedSubscription.subscriptionId,

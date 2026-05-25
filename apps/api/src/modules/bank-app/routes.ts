@@ -7,6 +7,7 @@ import {
   PARTNER_WEBHOOK_EVENTS,
   WebhookManagementService
 } from "../webhook-management/service.js";
+import { PartnerApiActivityService } from "../partner-api-activity/service.js";
 
 function buildSwaggerSpec() {
   return {
@@ -243,6 +244,26 @@ function buildSwaggerSpec() {
 export const bankAppRoutes: FastifyPluginAsync = async (app) => {
   const partnerApiKeyService = new PartnerApiKeyService(loadConfig());
   const webhookManagementService = new WebhookManagementService();
+  const partnerApiActivityService = new PartnerApiActivityService();
+
+  app.get("/bank/dev-portal/activities", async (request) => {
+    const query = request.query as { category?: string; limit?: string };
+    const category = query.category === "beneficiary" ? "beneficiary" : "payment";
+    const limit = query.limit ? parseInt(query.limit, 10) : 50;
+    const items = await partnerApiActivityService.listActivities(category, limit);
+    return { items };
+  });
+
+  app.get("/bank/dev-portal/activities/:activityId", async (request, reply) => {
+    const params = request.params as { activityId: string };
+    const result = await partnerApiActivityService.getActivityDetails(params.activityId);
+    if (!result) {
+      return reply.status(404).send({
+        message: "Activity log not found"
+      });
+    }
+    return result;
+  });
 
   app.get("/bank/dev-portal/api-keys", async () => {
     return {

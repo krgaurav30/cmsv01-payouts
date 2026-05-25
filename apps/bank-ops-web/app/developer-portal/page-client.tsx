@@ -286,6 +286,124 @@ export function DeveloperPortalPageClient({ isEmbedded = false }: { isEmbedded?:
   });
   const [webhookOutput, setWebhookOutput] = useState("Ready.");
 
+  // Activity log states
+  const [activities, setActivities] = useState<any[]>([]);
+  const [activitiesIsLoading, setActivitiesIsLoading] = useState(false);
+  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
+  const [selectedActivityDetails, setSelectedActivityDetails] = useState<any | null>(null);
+  const [selectedActivityIsLoading, setSelectedActivityIsLoading] = useState(false);
+  const [activityFilterStatus, setActivityFilterStatus] = useState<"all" | "success" | "error">("all");
+  const [activitySearchTerm, setActivitySearchTerm] = useState("");
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [expandedSteps, setExpandedSteps] = useState<Record<string, boolean>>({
+    request: true,
+    response: true
+  });
+  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<any | null>(null);
+  const [timelineData, setTimelineData] = useState<any[]>([]);
+  const [timelineIsLoading, setTimelineIsLoading] = useState(false);
+
+  const toggleStep = (stepKey: string) => {
+    setExpandedSteps((prev) => ({ ...prev, [stepKey]: !prev[stepKey] }));
+  };
+
+  async function loadActivities(category: "beneficiary" | "payment") {
+    setActivitiesIsLoading(true);
+    try {
+      const response = await fetchJson<{ items: any[] }>(
+        `/bank/dev-portal/activities?category=${category}&limit=50`
+      );
+      setActivities(response.items ?? []);
+    } catch (err) {
+      console.error("Failed to load developer portal activities:", err);
+    } finally {
+      setActivitiesIsLoading(false);
+    }
+  }
+
+  async function loadActivityDetails(activityId: string) {
+    setSelectedActivityIsLoading(true);
+    try {
+      const response = await fetchJson<{ activity: any; webhookDeliveries: any[] }>(
+        `/bank/dev-portal/activities/${encodeURIComponent(activityId)}`
+      );
+      setSelectedActivityDetails(response);
+    } catch (err) {
+      console.error("Failed to load activity details:", err);
+    } finally {
+      setSelectedActivityIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (selectedSection === "activity-beneficiary") {
+      void loadActivities("beneficiary");
+      setSelectedActivityId(null);
+      setSelectedActivityDetails(null);
+      setSelectedGroup(null);
+      setTimelineData([]);
+    } else if (selectedSection === "activity-payment") {
+      void loadActivities("payment");
+      setSelectedActivityId(null);
+      setSelectedActivityDetails(null);
+      setSelectedGroup(null);
+      setTimelineData([]);
+    }
+  }, [selectedSection]);
+
+  useEffect(() => {
+    if (selectedActivityId) {
+      void loadActivityDetails(selectedActivityId);
+    } else {
+      setSelectedActivityDetails(null);
+    }
+  }, [selectedActivityId]);
+
+  useEffect(() => {
+    if (!selectedGroup) {
+      setTimelineData([]);
+      return;
+    }
+
+    async function loadTimeline() {
+      setTimelineIsLoading(true);
+      try {
+        const promises = selectedGroup.allActivities.map((act: any) =>
+          fetchJson<{ activity: any; webhookDeliveries: any[] }>(
+            `/bank/dev-portal/activities/${encodeURIComponent(act.activityId)}`
+          )
+        );
+        const detailsList = await Promise.all(promises);
+        setTimelineData(detailsList);
+      } catch (err) {
+        console.error("Failed to load timeline details:", err);
+      } finally {
+        setTimelineIsLoading(false);
+      }
+    }
+
+    void loadTimeline();
+  }, [selectedGroup]);
+
+  const filteredActivities = activities.filter((act) => {
+    if (activityFilterStatus === "success") {
+      if (act.responseStatus < 200 || act.responseStatus >= 300) return false;
+    } else if (activityFilterStatus === "error") {
+      if (act.responseStatus >= 200 && act.responseStatus < 300) return false;
+    }
+
+    if (activitySearchTerm.trim()) {
+      const term = activitySearchTerm.toLowerCase();
+      const matchesId = String(act.activityId).toLowerCase().includes(term);
+      const matchesPath = String(act.path).toLowerCase().includes(term);
+      const matchesName = String(act.apiName).toLowerCase().includes(term);
+      return matchesId || matchesPath || matchesName;
+    }
+
+    return true;
+  });
+
   useEffect(() => {
     void loadApiKeys();
     void loadWebhooks();
@@ -486,6 +604,8 @@ export function DeveloperPortalPageClient({ isEmbedded = false }: { isEmbedded?:
         )
       : webhookEventPresets;
 
+  const groupedActivities = groupActivities(filteredActivities);
+
   return (
     <>
       <section className="docs-layout">
@@ -515,6 +635,12 @@ export function DeveloperPortalPageClient({ isEmbedded = false }: { isEmbedded?:
               <h3>Platform</h3>
               <button className={selectedSection === "api-keys" ? "api-link api-link-active" : "api-link"} onClick={() => setSelectedSection("api-keys")} type="button">Generate API Key</button>
               <button className={selectedSection === "webhooks" ? "api-link api-link-active" : "api-link"} onClick={() => setSelectedSection("webhooks")} type="button">Register Webhook</button>
+            </section>
+
+            <section className="api-group">
+              <h3>Activity</h3>
+              <button className={selectedSection === "activity-beneficiary" ? "api-link api-link-active" : "api-link"} onClick={() => setSelectedSection("activity-beneficiary")} type="button">Beneficiary Logs</button>
+              <button className={selectedSection === "activity-payment" ? "api-link api-link-active" : "api-link"} onClick={() => setSelectedSection("activity-payment")} type="button">Payment Logs</button>
             </section>
           </div>
         </aside>
@@ -1161,6 +1287,441 @@ export function DeveloperPortalPageClient({ isEmbedded = false }: { isEmbedded?:
             </div>
           </article>
         ) : null}
+
+        {selectedSection.startsWith("activity-") ? (
+          <article className="docs-panel" style={{ display: "flex", flexDirection: "column", gap: "20px", width: "100%", minHeight: "600px" }}>
+            <div className="panel-head" style={{ marginBottom: "10px" }}>
+              <div>
+                <p className="section-kicker">Developer Console</p>
+                <h2>API Activity Logs - {selectedSection === "activity-beneficiary" ? "Beneficiary" : "Payment"}</h2>
+              </div>
+            </div>
+
+            {/* Filter controls */}
+            <div style={{ display: "flex", gap: "16px", alignItems: "center", background: "#0F172A", padding: "12px 16px", borderRadius: "8px", border: "1px solid #1E293B" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 1 }}>
+                <span style={{ fontSize: "10px", color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>Search Request ID / Path</span>
+                <input 
+                  value={activitySearchTerm}
+                  onChange={(e) => setActivitySearchTerm(e.target.value)}
+                  placeholder="Filter by req_... or path"
+                  style={{ background: "#1E293B", color: "#F8FAFC", border: "1px solid #334155", borderRadius: "6px", height: "32px", padding: "0 10px", fontSize: "13px" }}
+                />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px", width: "150px" }}>
+                <span style={{ fontSize: "10px", color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>Status Filter</span>
+                <select
+                  value={activityFilterStatus}
+                  onChange={(e) => setActivityFilterStatus(e.target.value as any)}
+                  style={{ background: "#1E293B", color: "#F8FAFC", border: "1px solid #334155", borderRadius: "6px", height: "32px", padding: "0 8px", fontSize: "13px" }}
+                >
+                  <option value="all">All statuses</option>
+                  <option value="success">Success (2xx)</option>
+                  <option value="error">Error (4xx/5xx)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Consolidated Full Width Table */}
+            <div style={{ background: "#0F172A", border: "1px solid #1E293B", borderRadius: "8px", overflow: "hidden" }}>
+              <div style={{ padding: "12px 16px", background: "#1E293B", borderBottom: "1px solid #334155", fontWeight: 600, color: "#94A3B8", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                API Requests Log History
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                {activitiesIsLoading ? (
+                  <div style={{ padding: "32px", textAlign: "center", color: "#64748B" }}>
+                    <div className="spinner" style={{ width: "20px", height: "20px", border: "2px solid #10B981", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", marginRight: "8px", verticalAlign: "middle" }}></div>
+                    Loading activities...
+                  </div>
+                ) : groupedActivities.length === 0 ? (
+                  <div style={{ padding: "48px 24px", textAlign: "center", color: "#64748B" }}>No activity logs found.</div>
+                ) : (
+                  <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid #334155", background: "#111827" }}>
+                        <th style={{ padding: "12px 16px", fontWeight: 600, color: "#94A3B8", width: "120px" }}>Status</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 600, color: "#94A3B8", width: "180px" }}>Time</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 600, color: "#94A3B8", width: "80px" }}>Method</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 600, color: "#94A3B8" }}>Path</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 600, color: "#94A3B8", width: "150px" }}>API Key</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 600, color: "#94A3B8", width: "220px" }}>Request ID</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {groupedActivities.map((group) => {
+                        const act = group.parent;
+                        const isSuccess = act.responseStatus >= 200 && act.responseStatus < 300;
+                        const isHovered = hoveredRowId === group.resourceId;
+                        return (
+                          <tr
+                            key={group.resourceId}
+                            onMouseEnter={() => setHoveredRowId(group.resourceId)}
+                            onMouseLeave={() => setHoveredRowId(null)}
+                            onClick={() => {
+                              setSelectedGroup(group);
+                              setIsModalOpen(true);
+                              setExpandedSteps({
+                                [`${act.activityId}_req`]: true,
+                                [`${act.activityId}_resp`]: true
+                              });
+                            }}
+                            style={{
+                              borderBottom: "1px solid #1E293B",
+                              cursor: "pointer",
+                              background: isHovered ? "#1E293B" : "transparent",
+                              transition: "background 0.15s"
+                            }}
+                          >
+                            <td style={{ padding: "12px 16px" }}>
+                              <span style={{
+                                fontSize: "11px",
+                                fontWeight: 700,
+                                color: isSuccess ? "#34D399" : "#F87171",
+                                background: isSuccess ? "rgba(52, 211, 153, 0.1)" : "rgba(248, 113, 113, 0.1)",
+                                padding: "2px 6px",
+                                borderRadius: "4px"
+                              }}>
+                                {act.responseStatus}
+                              </span>
+                              {group.allActivities.length > 1 && (
+                                <span style={{ fontSize: "10px", color: "#64748B", marginLeft: "6px" }}>
+                                  (+{group.allActivities.length - 1} calls)
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ padding: "12px 16px", color: "#94A3B8" }}>
+                              {new Date(act.createdAt).toLocaleString("en-IN")}
+                            </td>
+                            <td style={{ padding: "12px 16px" }}>
+                              <code style={{ color: "#38BDF8", fontWeight: 700 }}>{act.method}</code>
+                            </td>
+                            <td style={{ padding: "12px 16px" }}>
+                              <code style={{ color: "#E2E8F0" }}>{act.path}</code>
+                            </td>
+                            <td style={{ padding: "12px 16px", color: "#64748B" }}>
+                              {act.maskedKey || "None"}
+                            </td>
+                            <td style={{ padding: "12px 16px", color: "#64748B" }}>
+                              <code>{group.resourceId}</code>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* Backdrop Overlay */}
+            {isModalOpen && (
+              <div 
+                onClick={() => setIsModalOpen(false)}
+                style={{
+                  position: "fixed",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  background: "rgba(15, 23, 42, 0.4)",
+                  backdropFilter: "blur(4px)",
+                  zIndex: 9999
+                }}
+              />
+            )}
+
+            {/* Timeline Side Sheet Drawer */}
+            {isModalOpen && (
+              <div style={{
+                position: "fixed",
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: "100%",
+                maxWidth: "680px",
+                background: "#0F172A",
+                borderLeft: "1px solid #1E293B",
+                boxShadow: "-8px 0 32px rgba(15, 23, 42, 0.3)",
+                zIndex: 10000,
+                display: "flex",
+                flexDirection: "column"
+              }}>
+                {/* Drawer Header */}
+                <div style={{
+                  padding: "20px 24px",
+                  borderBottom: "1px solid #1E293B",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  background: "#0F172A"
+                }}>
+                  <div>
+                    <h3 style={{ margin: 0, color: "#F1F5F9", fontSize: "16px", fontWeight: 600 }}>API Activity Detail</h3>
+                    <code style={{ fontSize: "11px", color: "#64748B", marginTop: "2px", display: "block" }}>
+                      Resource ID: {selectedGroup?.resourceId}
+                    </code>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "#94A3B8",
+                      fontSize: "20px",
+                      cursor: "pointer",
+                      padding: "4px 8px",
+                      lineHeight: 1
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Drawer Content - Scrollable */}
+                <div style={{ padding: "24px", overflowY: "auto", flex: 1, background: "#0B0F19" }}>
+                  {timelineIsLoading ? (
+                    <div style={{ padding: "48px", textAlign: "center", color: "#64748B" }}>
+                      <div className="spinner" style={{ width: "24px", height: "24px", border: "2px solid #10B981", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block" }}></div>
+                      <p style={{ marginTop: "12px", fontSize: "13px" }}>Loading trace timeline...</p>
+                    </div>
+                  ) : timelineData.length === 0 ? (
+                    <div style={{ padding: "24px", color: "#64748B", textAlign: "center" }}>No activity logs found for this sequence.</div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+                      
+                      {/* Summary metadata card (using parent/first activity info) */}
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", background: "#0F172A", padding: "14px 18px", borderRadius: "8px", border: "1px solid #1E293B" }}>
+                        <div style={{ flex: 1, minWidth: "120px" }}>
+                          <span style={{ fontSize: "10px", color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>Primary Resource ID</span>
+                          <div style={{ fontSize: "13px", color: "#E2E8F0", marginTop: "4px", fontWeight: 600 }}>
+                            <code>{selectedGroup?.resourceId}</code>
+                          </div>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: "10px", color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>Sequence Length</span>
+                          <div style={{ marginTop: "4px", fontSize: "13px", color: "#38BDF8", fontWeight: 700 }}>
+                            {timelineData.length} API Calls
+                          </div>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: "10px", color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>Initiated At</span>
+                          <div style={{ marginTop: "4px", fontSize: "12px", color: "#94A3B8" }}>
+                            {new Date(timelineData[0].activity.createdAt).toLocaleString("en-IN")}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Timeline Trace Sequence */}
+                      <div>
+                        <h4 style={{ margin: "0 0 16px 0", color: "#94A3B8", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          API Execution Sequence Timeline
+                        </h4>
+
+                        <div style={{ display: "flex", flexDirection: "column", position: "relative" }}>
+                          {timelineData.flatMap((detail: any, detailIndex: number) => {
+                            const act = detail.activity;
+                            const isSuccess = act.responseStatus >= 200 && act.responseStatus < 300;
+                            
+                            const reqKey = `${act.activityId}_req`;
+                            const respKey = `${act.activityId}_resp`;
+                            const isReqExpanded = !!expandedSteps[reqKey];
+                            const isRespExpanded = !!expandedSteps[respKey];
+
+                            // Build the list of sub-nodes for this activity
+                            const nodes = [];
+
+                            // Node A: The API Request & Response
+                            nodes.push(
+                              <div key={`${act.activityId}_api`} style={{ display: "flex", gap: "16px", position: "relative" }}>
+                                <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                                  <div style={{
+                                    width: "12px",
+                                    height: "12px",
+                                    borderRadius: "50%",
+                                    background: isSuccess ? "#10B981" : "#EF4444",
+                                    border: "2px solid #0F172A",
+                                    zIndex: 2
+                                  }} />
+                                  {/* Line connecting to subsequent nodes */}
+                                  <div style={{ width: "2px", flex: 1, background: "#1E293B", marginTop: "4px", marginBottom: "-12px" }} />
+                                </div>
+                                <div style={{ flex: 1, background: "#0F172A", border: "1px solid #1E293B", borderRadius: "8px", overflow: "hidden", marginBottom: "16px" }}>
+                                  
+                                  {/* Toggle Header */}
+                                  <div 
+                                    onClick={() => {
+                                      setExpandedSteps(prev => ({
+                                        ...prev,
+                                        [reqKey]: !prev[reqKey],
+                                        [respKey]: !prev[respKey]
+                                      }));
+                                    }}
+                                    style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none", background: "#1E293B" }}
+                                  >
+                                    <div>
+                                      <span className={`method-badge ${act.method.toLowerCase()}`} style={{ fontSize: "9px", padding: "1px 5px", marginRight: "8px" }}>
+                                        {act.method}
+                                      </span>
+                                      <strong style={{ fontSize: "13px", color: "#F1F5F9" }}>{act.apiName}</strong>
+                                      <code style={{ fontSize: "11px", color: "#64748B", marginLeft: "10px" }}>{act.path}</code>
+                                    </div>
+                                    <span style={{ fontSize: "11px", color: "#94A3B8" }}>
+                                      <span style={{
+                                        fontSize: "11px",
+                                        fontWeight: 700,
+                                        color: isSuccess ? "#34D399" : "#F87171",
+                                        background: isSuccess ? "rgba(52, 211, 153, 0.1)" : "rgba(248, 113, 113, 0.1)",
+                                        padding: "1px 5px",
+                                        borderRadius: "3px",
+                                        marginRight: "10px"
+                                      }}>
+                                        {act.responseStatus}
+                                      </span>
+                                      {isReqExpanded || isRespExpanded ? "Hide Trace ▲" : "Show Trace ▼"}
+                                    </span>
+                                  </div>
+
+                                  {(isReqExpanded || isRespExpanded) && (
+                                    <div style={{ padding: "16px", background: "#0B0F19", display: "flex", flexDirection: "column", gap: "12px" }}>
+                                      {/* Request Details */}
+                                      {isReqExpanded && (
+                                        <div style={{ borderBottom: "1px solid #1E293B", paddingBottom: "12px" }}>
+                                          <span style={{ fontSize: "10px", color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>Headers</span>
+                                          <pre style={{ margin: "4px 0 8px 0", padding: "8px", background: "#0F172A", border: "1px solid #1E293B", borderRadius: "4px", fontSize: "11px", color: "#94A3B8", overflowX: "auto" }}>
+                                            {JSON.stringify(act.requestHeaders, null, 2)}
+                                          </pre>
+                                          <span style={{ fontSize: "10px", color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>Request Body Payload</span>
+                                          {act.requestBody ? (
+                                            <pre style={{ margin: "4px 0 0 0", padding: "12px", background: "#0F172A", border: "1px solid #1E293B", borderRadius: "4px", fontSize: "12px", color: "#F1F5F9", whiteSpace: "pre-wrap", overflowX: "auto" }}>
+                                              {JSON.stringify(act.requestBody, null, 2)}
+                                            </pre>
+                                          ) : (
+                                            <div style={{ color: "#475569", fontSize: "11px", fontStyle: "italic", marginTop: "4px" }}>No request body payload</div>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* Response Details */}
+                                      {isRespExpanded && (
+                                        <div>
+                                          <span style={{ fontSize: "10px", color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>Response Body Payload</span>
+                                          {act.responseBody ? (
+                                            <pre style={{ margin: "4px 0 0 0", padding: "12px", background: "#0F172A", border: "1px solid #1E293B", borderRadius: "4px", fontSize: "12px", color: "#F1F5F9", whiteSpace: "pre-wrap", overflowX: "auto" }}>
+                                              {JSON.stringify(act.responseBody, null, 2)}
+                                            </pre>
+                                          ) : (
+                                            <div style={{ color: "#475569", fontSize: "11px", fontStyle: "italic", marginTop: "4px" }}>No response body payload</div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+
+                            // Node B: Associated Outbound Webhooks (if any)
+                            if (detail.webhookDeliveries && detail.webhookDeliveries.length > 0) {
+                              detail.webhookDeliveries.forEach((wh: any) => {
+                                const stepKey = `webhook_${wh.deliveryId}`;
+                                const isExpanded = !!expandedSteps[stepKey];
+                                const isWhSuccess = wh.status === "successful" || wh.responseStatus === 200;
+                                
+                                nodes.push(
+                                  <div key={wh.deliveryId} style={{ display: "flex", gap: "16px", position: "relative" }}>
+                                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                                      <div style={{
+                                        width: "12px",
+                                        height: "12px",
+                                        borderRadius: "50%",
+                                        background: isWhSuccess ? "#10B981" : "#F59E0B",
+                                        border: "2px solid #0F172A",
+                                        zIndex: 2
+                                      }} />
+                                      <div style={{ width: "2px", flex: 1, background: "#1E293B", marginTop: "4px", marginBottom: "-12px" }} />
+                                    </div>
+                                    <div style={{ flex: 1, background: "#0F172A", border: "1px solid #1E293B", borderRadius: "8px", overflow: "hidden", marginBottom: "16px" }}>
+                                      <div 
+                                        onClick={() => toggleStep(stepKey)}
+                                        style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none" }}
+                                      >
+                                        <div>
+                                          <span style={{
+                                            fontSize: "10px",
+                                            fontWeight: 600,
+                                            background: "rgba(245, 158, 11, 0.15)",
+                                            color: "#F59E0B",
+                                            padding: "1px 6px",
+                                            borderRadius: "3px",
+                                            marginRight: "8px",
+                                            textTransform: "uppercase"
+                                          }}>
+                                            Webhook
+                                          </span>
+                                          <strong style={{ fontSize: "13px", color: "#F1F5F9" }}>
+                                            Delivered: {wh.eventType}
+                                          </strong>
+                                          <span style={{ fontSize: "11px", color: isWhSuccess ? "#34D399" : "#F59E0B", marginLeft: "12px" }}>
+                                            {wh.status.toUpperCase()} ({wh.responseStatus || "No Code"})
+                                          </span>
+                                        </div>
+                                        <span style={{ fontSize: "11px", color: "#64748B" }}>{isExpanded ? "Hide Details ▲" : "Show Details ▼"}</span>
+                                      </div>
+                                      {isExpanded && (
+                                        <div style={{ padding: "16px", borderTop: "1px solid #1E293B", background: "#0B0F19", display: "flex", flexDirection: "column", gap: "12px" }}>
+                                          <div>
+                                            <span style={{ fontSize: "10px", color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>Target URL</span>
+                                            <div style={{ fontSize: "12px", color: "#38BDF8", marginTop: "4px", wordBreak: "break-all" }}>
+                                              {wh.targetUrl}
+                                            </div>
+                                          </div>
+                                          {wh.responseBody && (
+                                            <div>
+                                              <span style={{ fontSize: "10px", color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>Response Payload</span>
+                                              <pre style={{ margin: "4px 0 0 0", padding: "8px", background: "#0F172A", border: "1px solid #1E293B", borderRadius: "4px", fontSize: "11px", color: "#94A3B8", overflowX: "auto" }}>
+                                                {wh.responseBody}
+                                              </pre>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              });
+                            }
+
+                            return nodes;
+                          })}
+                        </div>
+                      </div>
+
+                    </div>
+                  )}
+                </div>
+
+                {/* Drawer Footer */}
+                <div style={{
+                  padding: "16px 24px",
+                  borderTop: "1px solid #1E293B",
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  background: "#0F172A"
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="button button-secondary"
+                    style={{ height: "32px", padding: "0 16px", fontSize: "12px", cursor: "pointer" }}
+                  >
+                    Close Trace Details
+                  </button>
+                </div>
+              </div>
+            )}
+          </article>
+        ) : null}
       </section>
     </>
   );
@@ -1189,4 +1750,89 @@ function extractJsonFromExample(example: string): string {
   const firstBraceIndex = lines.findIndex(l => l.trim().startsWith("{") || l.trim().startsWith("["));
   if (firstBraceIndex === -1) return "";
   return lines.slice(firstBraceIndex).join("\n");
+}
+
+function groupActivities(activityList: any[]) {
+  const groups: Record<string, any[]> = {};
+
+  activityList.forEach((act) => {
+    let resourceId: string | null = null;
+    const path = act.path || "";
+
+    if (act.category === "payment") {
+      const pathMatch = path.match(/(txn-[a-zA-Z0-9_-]+)/);
+      if (pathMatch) {
+        resourceId = pathMatch[1];
+      } else {
+        const resp = act.responseBody || {};
+        const req = act.requestBody || {};
+        if (resp.batchId) {
+          resourceId = resp.batchId;
+        } else if (resp.command?.batchId) {
+          resourceId = resp.command.batchId;
+        } else if (resp.command?.commandId) {
+          resourceId = resp.command.commandId;
+        } else if (req.batchId) {
+          resourceId = req.batchId;
+        } else if (req.command?.batchId) {
+          resourceId = req.command.batchId;
+        }
+      }
+    } else if (act.category === "beneficiary") {
+      const pathMatch = path.match(/\/beneficiaries\/([^\/]+)/);
+      if (pathMatch && pathMatch[1] !== "authorize") {
+        resourceId = pathMatch[1];
+      } else {
+        const resp = act.responseBody || {};
+        const req = act.requestBody || {};
+        if (resp.beneficiary?.beneficiaryId) {
+          resourceId = resp.beneficiary.beneficiaryId;
+        } else if (resp.beneficiaryId) {
+          resourceId = resp.beneficiaryId;
+        } else if (req.beneficiaryId) {
+          resourceId = req.beneficiaryId;
+        } else if (req.beneficiary?.beneficiaryId) {
+          resourceId = req.beneficiary.beneficiaryId;
+        }
+      }
+    }
+
+    const key = resourceId || act.activityId;
+    if (!groups[key]) {
+      groups[key] = [];
+    }
+    groups[key].push(act);
+  });
+
+  const groupedResult = Object.entries(groups).map(([resourceId, items]) => {
+    const sortedItems = [...items].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+    let parent = sortedItems.find((item) => {
+      const p = item.path || "";
+      if (item.category === "payment") {
+        return (
+          item.method === "POST" &&
+          (p === "/v1/partner/payments/transactions" || p.includes("/checkout/sessions") || p.endsWith("/pay"))
+        );
+      } else {
+        return item.method === "POST" && p === "/v1/partner/beneficiaries";
+      }
+    });
+
+    if (!parent) {
+      parent = sortedItems[0];
+    }
+
+    return {
+      resourceId,
+      parent,
+      allActivities: sortedItems
+    };
+  });
+
+  return groupedResult.sort(
+    (a, b) => new Date(b.parent.createdAt).getTime() - new Date(a.parent.createdAt).getTime()
+  );
 }
