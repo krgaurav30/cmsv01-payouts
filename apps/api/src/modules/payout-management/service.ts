@@ -623,6 +623,7 @@ export class PayoutManagementService {
         createdByUserId: payload.createdByUserId,
         createdByRole: actor.role,
         state: "draft",
+        tag: payload.tag,
         utr: batchUtr,
         narration: batchNarration,
         occurredAt: new Date().toISOString()

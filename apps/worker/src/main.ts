@@ -442,7 +442,15 @@ async function handleDomainEvent(event: DomainEventEnvelope) {
 
   if (event.eventType === "transaction.created") {
     const payload = event.payload as any;
-    const isAutoSubmit = ["partner_api", "checkout_sdk", "api"].includes(payload.tag || "");
+    let tag = payload.tag || "";
+    if (!tag) {
+      const batchRes = await db.query(
+        "select tag from payout_batches where batch_id = $1",
+        [batchId]
+      );
+      tag = batchRes.rows[0]?.tag || "";
+    }
+    const isAutoSubmit = ["partner_api", "checkout_sdk", "api"].includes(tag);
     if (isAutoSubmit) {
       console.log(`[Worker] Auto-submitting partner/checkout transaction ${batchId}...`);
       try {
