@@ -38,7 +38,8 @@ export default function CheckoutPage({ params: paramsPromise }: { params: Promis
   const [selectedDebitAccountId, setSelectedDebitAccountId] = useState("");
   const [selectedBeneficiaryId, setSelectedBeneficiaryId] = useState("");
   const [selectedPaymentMethodCode, setSelectedPaymentMethodCode] = useState("");
-  const [makerUsername, setMakerUsername] = useState("");
+  const [makerUsername, setMakerUsername] = useState("grvmaker");
+  const [remark, setRemark] = useState("");
   
   const [submitting, setSubmitting] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
@@ -121,7 +122,8 @@ export default function CheckoutPage({ params: paramsPromise }: { params: Promis
           packageCode: selectedPackageCode || undefined,
           debitAccountId: selectedDebitAccountId || undefined,
           beneficiaryId: selectedBeneficiaryId || undefined,
-          paymentMethodCode: selectedPaymentMethodCode || undefined
+          paymentMethodCode: selectedPaymentMethodCode || undefined,
+          remark: remark.trim() || undefined
         })
       });
 
@@ -306,23 +308,37 @@ export default function CheckoutPage({ params: paramsPromise }: { params: Promis
                 </select>
               </div>
 
-              {/* 3. Select Beneficiary */}
+              {/* 3. Beneficiary */}
               <div style={styles.inputGroup}>
                 <label style={styles.label}>Beneficiary (Allowed in Package)</label>
-                <select
-                  required
-                  disabled={submitting || session?.status !== "open" || !selectedPackageCode}
-                  value={selectedBeneficiaryId}
-                  onChange={(e) => setSelectedBeneficiaryId(e.target.value)}
-                  style={styles.select}
-                >
-                  <option value="">-- Choose Beneficiary --</option>
-                  {filteredBeneficiaries.map((b) => (
-                    <option key={b.beneficiaryId} value={b.beneficiaryId}>
-                      {b.name} ({b.accountNumber})
-                    </option>
-                  ))}
-                </select>
+                {session?.beneficiaryId ? (
+                  <input
+                    type="text"
+                    disabled
+                    value={
+                      (() => {
+                        const b = beneficiaries.find((x) => x.beneficiaryId === session.beneficiaryId);
+                        return b ? `${b.name} (${b.beneficiaryId})` : session.beneficiaryId;
+                      })()
+                    }
+                    style={styles.disabledInput}
+                  />
+                ) : (
+                  <select
+                    required
+                    disabled={submitting || session?.status !== "open" || !selectedPackageCode}
+                    value={selectedBeneficiaryId}
+                    onChange={(e) => setSelectedBeneficiaryId(e.target.value)}
+                    style={styles.select}
+                  >
+                    <option value="">-- Choose Beneficiary --</option>
+                    {filteredBeneficiaries.map((b) => (
+                      <option key={b.beneficiaryId} value={b.beneficiaryId}>
+                        {b.name} ({b.accountNumber})
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               {/* 4. Select Payment Method */}
@@ -344,20 +360,36 @@ export default function CheckoutPage({ params: paramsPromise }: { params: Promis
                 </select>
               </div>
 
-              {/* 5. Maker Username */}
+              {/* 5. Transaction Remark */}
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Transaction Remark (Optional)</label>
+                <input
+                  type="text"
+                  disabled={submitting || session?.status !== "open"}
+                  value={remark}
+                  onChange={(e) => setRemark(e.target.value)}
+                  placeholder="e.g. Invoice #2049 payout"
+                  style={styles.input}
+                />
+                <span style={styles.helpText}>
+                  Provide a short reference note/narration for this transaction.
+                </span>
+              </div>
+
+              {/* 6. Maker Username */}
               <div style={styles.inputGroup}>
                 <label style={styles.label}>Authorize Maker Username</label>
                 <input
                   type="text"
                   required
-                  disabled={submitting || session?.status !== "open"}
+                  disabled={true}
                   value={makerUsername}
                   onChange={(e) => setMakerUsername(e.target.value)}
                   placeholder="e.g. grvmaker"
-                  style={styles.input}
+                  style={styles.disabledInput}
                 />
                 <span style={styles.helpText}>
-                  Please enter your approved maker account ID to verify and execute this payout.
+                  Maker account is pre-authenticated from the parent corporate environment.
                 </span>
               </div>
 
@@ -506,6 +538,19 @@ const styles = {
     boxSizing: "border-box" as const,
     transition: "border-color 0.15s ease",
     color: "#0F172A"
+  },
+  disabledInput: {
+    border: "1px solid #E2E8F0",
+    borderRadius: "8px",
+    height: "44px",
+    padding: "0 14px",
+    fontSize: "15px",
+    outline: "none",
+    width: "100%",
+    boxSizing: "border-box" as const,
+    background: "#F1F5F9",
+    color: "#64748B",
+    cursor: "not-allowed"
   },
   select: {
     border: "1px solid #CBD5E1",

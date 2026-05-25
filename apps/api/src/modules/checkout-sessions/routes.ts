@@ -68,6 +68,7 @@ export const registerCheckoutSessionRoutes: FastifyPluginAsync = async (app) => 
       debitAccountId?: string;
       paymentMethodCode?: string;
       beneficiaryId?: string;
+      remark?: string;
     };
 
     if (!body.actorUsername) {
@@ -80,7 +81,8 @@ export const registerCheckoutSessionRoutes: FastifyPluginAsync = async (app) => 
       packageCode: body.packageCode,
       debitAccountId: body.debitAccountId,
       paymentMethodCode: body.paymentMethodCode,
-      beneficiaryId: body.beneficiaryId
+      beneficiaryId: body.beneficiaryId,
+      remark: body.remark
     });
 
     if ("error" in result) {

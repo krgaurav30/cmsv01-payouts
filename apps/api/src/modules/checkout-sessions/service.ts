@@ -117,6 +117,7 @@ export class CheckoutSessionService {
       debitAccountId?: string;
       paymentMethodCode?: string;
       beneficiaryId?: string;
+      remark?: string;
     }
   ) {
     const session = await this.getCheckoutSession(sessionId);
@@ -153,7 +154,7 @@ export class CheckoutSessionService {
         currency: session.amountCurrency as "INR"
       },
       tag: "checkout_sdk",
-      remark: `Paid via Checkout Session ${sessionId}`
+      remark: overrides?.remark || `Paid via Checkout Session ${sessionId}`
     });
 
     if (!("data" in result)) {
