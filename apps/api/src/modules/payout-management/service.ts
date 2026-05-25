@@ -532,13 +532,8 @@ export class PayoutManagementService {
       };
     }
 
-    const batchUtr = payload.utr || generate16DigitUtr();
-    let batchNarration = payload.narration;
-    if (!batchNarration) {
-      const packageCode = resolvedSubscription.packageCode || payload.packageCode || "PAYOUT";
-      const remarkSuffix = payload.remark ? `-${payload.remark}` : "";
-      batchNarration = `CMS-${batchUtr}-${packageCode}${remarkSuffix}`.slice(0, 64);
-    }
+    const batchUtr = payload.utr || null;
+    const batchNarration = payload.narration || null;
 
     await withDatabaseTransaction(this.config, async (client) => {
       await client.query(
@@ -1458,8 +1453,12 @@ export class PayoutManagementService {
         const lockedBatchResult = await client.query<{
           state: PayoutBatch["state"];
           approval_comment: string | null;
+          utr: string | null;
+          narration: string | null;
+          package_code: string | null;
+          remark: string | null;
         }>(
-          `select state, approval_comment
+          `select state, approval_comment, utr, narration, package_code, remark
            from payout_batches
            where batch_id = $1
            for update`,
@@ -1561,13 +1560,29 @@ export class PayoutManagementService {
               );
             }
 
+            let finalUtr = lockedBatch.utr;
+            let finalNarration = lockedBatch.narration;
+
+            if (nextState === "approved") {
+              if (!finalUtr) {
+                finalUtr = generate16DigitUtr();
+              }
+              if (!finalNarration) {
+                const packageCode = lockedBatch.package_code || "PAYOUT";
+                const remarkSuffix = lockedBatch.remark ? `-${lockedBatch.remark}` : "";
+                finalNarration = `CMS-${finalUtr}-${packageCode}${remarkSuffix}`.slice(0, 64);
+              }
+            }
+
             await client.query(
               `update payout_batches
                set state = $2,
                    approval_comment = $3,
                    approved_at = $4,
                    approved_by_user_id = $5,
-                   approved_by_role = $6
+                   approved_by_role = $6,
+                   utr = $7,
+                   narration = $8
                where batch_id = $1`,
               [
                 batchId,
@@ -1575,7 +1590,9 @@ export class PayoutManagementService {
                 payload.comment ?? lockedBatch.approval_comment,
                 now,
                 actor.userId,
-                actor.role
+                actor.role,
+                finalUtr,
+                finalNarration
               ]
             );
             await this.appendTransactionOutboxEvent(
