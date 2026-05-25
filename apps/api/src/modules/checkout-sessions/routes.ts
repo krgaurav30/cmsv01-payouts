@@ -119,6 +119,7 @@ export const registerCheckoutSessionRoutes: FastifyPluginAsync = async (app) => 
     return reply.status(200).send({
       message: "Checkout payment approved and submitted successfully",
       commandId: result.commandId,
+      batchId: result.batchId,
       status: result.status,
       subscriptionId: result.subscriptionId,
       packageCode: result.packageCode

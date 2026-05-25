@@ -90,7 +90,7 @@ export class PartnerApiActivityService {
       `select delivery_id, webhook_id, event_type, target_url, response_status, response_body, status, attempted_at
        from partner_webhook_deliveries
        where activity_id = $1
-       order by attempted_at desc`,
+       order by attempted_at asc`,
       [activityId]
     );
 

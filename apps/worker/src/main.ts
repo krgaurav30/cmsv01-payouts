@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { loadConfig } from "@cmsv01/shared/config";
 import { signJwt } from "@cmsv01/shared/crypto";
 import { getDatabasePool } from "@cmsv01/shared/db";
@@ -455,6 +456,16 @@ async function handleDomainEvent(event: DomainEventEnvelope) {
   if (event.eventType === "transaction.failed") {
     await executeCbsReversalJourney(batchId);
   }
+
+  if (
+    [
+      "transaction.sent_to_bank",
+      "transaction.paid",
+      "transaction.failed"
+    ].includes(event.eventType)
+  ) {
+    await dispatchWebhookForEvent(event);
+  }
 }
 
 async function executeCbsDebitJourney(batchId: string) {
@@ -864,6 +875,145 @@ async function reconcileAmbiguousTransactions() {
         console.error(`Reconciliation of reversal failed for batch ${batchId}:`, err);
       }
     }
+  }
+}
+
+async function dispatchWebhookForEvent(event: DomainEventEnvelope) {
+  try {
+    // 1. Fetch active webhooks subscribed to this event type
+    const webhooksRes = await db.query<{
+      webhook_id: string;
+      webhook_url: string;
+      signing_secret: string;
+    }>(
+      `select webhook_id, webhook_url, signing_secret 
+       from partner_webhooks 
+       where status = 'active' and $1 = any(event_types)`,
+      [event.eventType]
+    );
+
+    if (webhooksRes.rows.length === 0) {
+      return;
+    }
+
+    // 2. Correlate with partner api activity
+    let activityId: string | null = null;
+    const batchId = event.aggregateId;
+    
+    if (batchId) {
+      // Find associated command ID
+      const commandRes = await db.query<{ command_id: string }>(
+        `select command_id from transaction_commands where batch_id = $1`,
+        [batchId]
+      );
+      const commandId = commandRes.rows[0]?.command_id || null;
+
+      const activityRes = await db.query<{ activity_id: string }>(
+        `select activity_id from partner_api_activities
+         where response_body->>'batchId' = $1
+            or response_body->'command'->>'batchId' = $1
+            or request_body->>'batchId' = $1
+            or path like '%' || $1 || '%'
+            or ($2::text is not null and (
+                 response_body->>'commandId' = $2
+              or response_body->'command'->>'commandId' = $2
+              or request_body->>'commandId' = $2
+              or request_body->'command'->>'commandId' = $2
+              or path like '%' || $2 || '%'
+            ))
+         order by created_at desc
+         limit 1`,
+        [batchId, commandId]
+      );
+      if (activityRes.rows.length > 0) {
+        activityId = activityRes.rows[0].activity_id;
+      }
+    }
+
+    const webhookPayload = {
+      id: event.eventId,
+      type: event.eventType,
+      created: event.occurredAt,
+      data: {
+        object: event.payload
+      }
+    };
+
+    const payloadString = JSON.stringify(webhookPayload);
+
+    // 3. Dispatch for each webhook
+    await Promise.all(
+      webhooksRes.rows.map(async (wh) => {
+        const deliveryId = `whd_${Date.now()}_${Math.floor(Math.random() * 100000)
+          .toString()
+          .padStart(5, "0")}`;
+
+        // Create pending delivery attempt
+        await db.query(
+          `insert into partner_webhook_deliveries (
+             delivery_id, webhook_id, event_type, target_url, payload, status, attempted_at, activity_id
+           ) values ($1, $2, $3, $4, $5::jsonb, 'pending', now(), $6)`,
+          [deliveryId, wh.webhook_id, event.eventType, wh.webhook_url, payloadString, activityId]
+        );
+
+        // Sign the payload
+        const timestamp = Math.floor(Date.now() / 1000);
+        const signaturePayload = `t=${timestamp},${payloadString}`;
+        const signature = createHmac("sha256", wh.signing_secret)
+          .update(signaturePayload)
+          .digest("hex");
+        const xSignature = `t=${timestamp},v1=${signature}`;
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        let responseStatus: number | null = null;
+        let responseBody: string | null = null;
+        let deliveryStatus: "successful" | "failed" = "failed";
+
+        try {
+          console.log(`[Worker Webhook] Dispatching event ${event.eventType} (delivery: ${deliveryId}) to ${wh.webhook_url}`);
+          const res = await fetch(wh.webhook_url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Signature": xSignature,
+              "User-Agent": "FuturePay-Webhook-Dispatcher/1.0"
+            },
+            body: payloadString,
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+          responseStatus = res.status;
+          responseBody = await res.text().catch(() => "");
+          if (res.ok) {
+            deliveryStatus = "successful";
+          }
+        } catch (err) {
+          clearTimeout(timeoutId);
+          responseStatus = null;
+          responseBody = err instanceof Error ? err.message : String(err);
+          console.error(`[Worker Webhook] Failed to dispatch webhook (delivery: ${deliveryId}) to ${wh.webhook_url}:`, err);
+        }
+
+        // Update delivery status
+        await db.query(
+          `update partner_webhook_deliveries
+           set response_status = $2, response_body = $3, status = $4, attempted_at = now()
+           where delivery_id = $1`,
+          [deliveryId, responseStatus, responseBody, deliveryStatus]
+        );
+
+        // Update webhook metadata
+        await db.query(
+          `update partner_webhooks
+           set last_delivery_at = now(), last_delivery_status = $2, last_delivery_http_status = $3, updated_at = now()
+           where webhook_id = $1`,
+          [wh.webhook_id, deliveryStatus, responseStatus]
+        );
+      })
+    );
+  } catch (error) {
+    console.error(`Error in dispatchWebhookForEvent for event ${event.eventId}:`, error);
   }
 }
 
