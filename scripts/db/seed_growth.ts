@@ -60,7 +60,7 @@ async function main() {
     await db.query("delete from payout_items where batch_id like 'seed-txn-%'");
     await db.query("delete from payout_batches where batch_id like 'seed-txn-%'");
 
-    console.log("\nStarting transaction generation for the last 365 days (1 year) with compounding 7% per annum growth and weekly seasonality...");
+    console.log("\nStarting transaction generation for the last 365 days (1 year) with compounding 15% per annum growth and weekly seasonality...");
 
     let totalBatchesCreated = 0;
     let totalItemsCreated = 0;
@@ -75,21 +75,21 @@ async function main() {
       const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
       // 1. Calculate compounding growth factor (t goes from 0 up to 365)
-      // Compound 7% annual growth factor: P = P0 * (1 + 0.07)^(t/365)
+      // Compound 15% annual growth factor: P = P0 * (1 + 0.15)^(t/365)
       const t = 365 - day;
-      const growthFactor = Math.pow(1.07, t / 365);
+      const growthFactor = Math.pow(1.15, t / 365);
 
       // 2. Seasonality multiplier
       let seasonalityFactor = 1.0;
       if (isWeekend) {
-        seasonalityFactor = Math.random() * (0.23 - 0.17) + 0.17; // 17% - 23%
+        seasonalityFactor = Math.random() * (0.22 - 0.18) + 0.18; // 18% - 22%
       } else {
-        const peakBoost = (dayOfWeek === 2 || dayOfWeek === 4) ? 0.15 : 0;
-        seasonalityFactor = (Math.random() * (1.28 - 1.15) + 1.15) + peakBoost; // 115% - 143%
+        const peakBoost = (dayOfWeek === 2 || dayOfWeek === 4) ? 0.10 : 0;
+        seasonalityFactor = (Math.random() * (1.28 - 1.18) + 1.18) + peakBoost; // 118% - 138%
       }
 
-      // 3. Add noise (±12%)
-      const noiseFactor = Math.random() * (1.12 - 0.88) + 0.88;
+      // 3. Add noise (±4%)
+      const noiseFactor = Math.random() * (1.04 - 0.96) + 0.96;
 
       // Calculate final target daily volume
       const targetDailyVolume = baseDailyVolume * growthFactor * seasonalityFactor * noiseFactor;
@@ -165,7 +165,7 @@ async function main() {
     }
 
     await db.query("COMMIT");
-    console.log(`\nSuccess! Seeded ${totalBatchesCreated} payout batches with compounding 7% per annum growth trend.`);
+    console.log(`\nSuccess! Seeded ${totalBatchesCreated} payout batches with compounding 15% per annum growth trend.`);
 
   } catch (err) {
     await db.query("ROLLBACK");

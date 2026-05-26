@@ -106,12 +106,15 @@ export function TimeseriesChart({ transactions }: TimeseriesChartProps) {
         });
       }
 
+      const todayStart = new Date(now);
+      todayStart.setHours(0, 0, 0, 0);
+
       validTxns.forEach(txn => {
         const txnDate = new Date(txn.createdAt!);
         txnDate.setHours(0, 0, 0, 0);
         
-        const diffTime = now.getTime() - txnDate.getTime();
-        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        const diffTime = todayStart.getTime() - txnDate.getTime();
+        const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
         if (diffDays >= 0 && diffDays < historyDays) {
           const bucketIndex = historyDays - 1 - diffDays;
@@ -149,11 +152,14 @@ export function TimeseriesChart({ transactions }: TimeseriesChartProps) {
         });
       }
 
+      const todayStart = new Date(now);
+      todayStart.setHours(0, 0, 0, 0);
+
       validTxns.forEach(txn => {
         const txnDate = new Date(txn.createdAt!);
         txnDate.setHours(0, 0, 0, 0);
-        const diffTime = now.getTime() - txnDate.getTime();
-        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        const diffTime = todayStart.getTime() - txnDate.getTime();
+        const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
         if (diffDays >= 0 && diffDays < historyDays) {
           const bucketIndex = historyDays - 1 - diffDays;
