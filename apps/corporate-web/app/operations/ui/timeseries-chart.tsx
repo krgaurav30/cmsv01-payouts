@@ -746,9 +746,16 @@ export function TimeseriesChart({ transactions }: TimeseriesChartProps) {
 
           {/* X Axis Tick Labels */}
           {xTicks.map((pt, i) => {
-            const isDailyForecast = showForecast && forecastHorizon === "30d";
-            const shouldRenderText = rangeFilter !== "30d" || isDailyForecast || i % 3 === 0 || i === xTicks.length - 1;
-            if (!shouldRenderText && !showForecast) return null;
+            const totalTicks = xTicks.length;
+            let shouldRenderText = true;
+            
+            if (totalTicks > 18) {
+              shouldRenderText = (i % 3 === 0) || (i === totalTicks - 1);
+            } else if (totalTicks > 8) {
+              shouldRenderText = (i % 2 === 0) || (i === totalTicks - 1);
+            }
+            
+            if (!shouldRenderText) return null;
             
             return (
               <text
