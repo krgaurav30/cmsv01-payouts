@@ -2112,3 +2112,29 @@
   border: 1px solid var(--border);
 }
 
+/* ─── Timeseries Chart Widget ─── */
+.ops-chart-card {
+  transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease);
+}
+
+.ops-chart-card:hover {
+  border-color: var(--action-border) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+
+.ops-chart-tooltip {
+  animation: ops-tooltip-fade 120ms var(--ease) forwards;
+}
+
+@keyframes ops-tooltip-fade {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+

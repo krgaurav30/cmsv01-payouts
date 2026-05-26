@@ -36,6 +36,7 @@ import {
   readSession
 } from "../../../lib/session";
 import { Chatbot } from "./chatbot";
+import { TimeseriesChart } from "./timeseries-chart";
 import type {
   ApprovalMatrix,
   BankTenant,
@@ -3371,6 +3372,9 @@ export function OperationsDashboard({
                 </div>
               </div>
             </div>
+
+            {/* Timeseries Transaction Volume Chart */}
+            <TimeseriesChart transactions={transactions} />
 
             {/* Responsive Two-Column Grid */}
             <div className="ops-dashboard-grid">
