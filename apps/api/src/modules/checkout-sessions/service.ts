@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { loadConfig } from "@cmsv01/shared/config";
 import { getDatabasePool } from "@cmsv01/shared/db";
+import { Decimal } from "@cmsv01/shared/decimal";
 import { PayoutManagementService } from "../payout-management/service.js";
 import type { CheckoutSession, CheckoutSessionCreateRequest } from "./contracts.js";
 
@@ -51,7 +52,7 @@ export class CheckoutSessionService {
         payload.corporateTenantId,
         payload.corporateId,
         payload.transactionReference,
-        payload.amount.value,
+        Decimal.fromCents(BigInt(payload.amount.value)).toString(),
         payload.amount.currency,
         payload.packageCode ?? null,
         payload.beneficiaryId,
@@ -94,7 +95,7 @@ export class CheckoutSessionService {
       corporateTenantId: row.corporate_tenant_id,
       corporateId: row.corporate_id,
       transactionReference: row.transaction_reference,
-      amountValue: row.amount_value,
+      amountValue: Decimal.fromString(row.amount_value).toCents().toString(),
       amountCurrency: row.amount_currency,
       packageCode: row.package_code,
       beneficiaryId: row.beneficiary_id,
