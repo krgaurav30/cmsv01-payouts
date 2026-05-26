@@ -305,15 +305,29 @@ export class PayoutManagementService {
 
   async getBatch(batchId: string) {
     const result = await this.db.query<PayoutBatchRow>(
-      `select batch_id, bank_tenant_id, corporate_tenant_id, corporate_id, subscription_id,
-              source_upload_id, package_code, debit_account_id, payment_method_code, created_by_user_id, created_by_role, title, tag, remark, state,
-              total_amount, approval_comment, bank_reference, created_at, submitted_at,
-              submitted_by_user_id, submitted_by_role, approved_at, approved_by_user_id,
-              approved_by_role, rejected_at,
-              rejected_by_user_id, rejected_by_role, dispatched_at, completed_at,
-              failure_reason, utr, narration
-       from payout_batches
-       where batch_id = $1`,
+      `select pb.batch_id, pb.bank_tenant_id, pb.corporate_tenant_id,
+              pb.corporate_id, pb.source_upload_id, pb.subscription_id, pb.package_code,
+              pb.debit_account_id, pb.payment_method_code,
+              first_item.beneficiary_id as primary_beneficiary_id,
+              first_item.beneficiary_name as primary_beneficiary_name,
+              pb.created_by_user_id, pb.created_by_role, pb.title, pb.tag, pb.remark,
+              pb.state, pb.total_amount, pb.approval_comment, pb.bank_reference,
+              pb.created_at, pb.submitted_at, pb.submitted_by_user_id, pb.submitted_by_role,
+              pb.approved_at, pb.approved_by_user_id, pb.approved_by_role, pb.rejected_at,
+              pb.rejected_by_user_id, pb.rejected_by_role, pb.dispatched_at, pb.completed_at,
+              pb.failure_reason, pb.utr, pb.narration, pac.approval_levels_required, pac.current_approval_level,
+              pac.roles_by_level, pac.matched_matrix_ids
+       from payout_batches pb
+       left join payout_batch_approval_contexts pac on pac.batch_id = pb.batch_id
+       left join lateral (
+         select pi.beneficiary_id, b.name as beneficiary_name
+         from payout_items pi
+         left join beneficiaries b on b.beneficiary_id = pi.beneficiary_id
+         where pi.batch_id = pb.batch_id
+         order by pi.item_id
+         limit 1
+       ) first_item on true
+       where pb.batch_id = $1`,
       [batchId]
     );
 
@@ -2723,7 +2737,7 @@ export class PayoutManagementService {
       debitAccountId: row.debit_account_id ?? null,
       paymentMethodCode: row.payment_method_code ?? null,
       primaryBeneficiaryId: itemsResult.rows[0]?.beneficiary_id ?? null,
-      primaryBeneficiaryName: null,
+      primaryBeneficiaryName: row.primary_beneficiary_name ?? null,
       createdByUserId: row.created_by_user_id,
       createdByRole: row.created_by_role,
       title: row.title,
