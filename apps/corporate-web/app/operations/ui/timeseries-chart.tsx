@@ -21,6 +21,7 @@ type ChartDataPoint = {
 export function TimeseriesChart({ transactions }: TimeseriesChartProps) {
   const [rangeFilter, setRangeFilter] = useState<"7d" | "30d" | "90d" | "180d" | "365d">("30d");
   const [showForecast, setShowForecast] = useState<boolean>(false);
+  const [forecastHorizon, setForecastHorizon] = useState<"30d" | "180d" | "365d">("30d");
   
   const [hoveredPoint, setHoveredPoint] = useState<ChartDataPoint | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
@@ -35,104 +36,248 @@ export function TimeseriesChart({ transactions }: TimeseriesChartProps) {
     );
   }, [transactions]);
 
-  // Aggregate and format chart data based on selected filter range
+  // Aggregate and format chart data based on selected filter range or forecast mode
   const chartData = useMemo(() => {
     const now = new Date();
 
-    // ─── 1. Monthly Aggregation (Last 6 Months & One Year) ───
-    if (!showForecast && (rangeFilter === "180d" || rangeFilter === "365d")) {
-      const monthsCount = rangeFilter === "180d" ? 6 : 12;
+    // ─── CASE A: HISTORICAL DATA ONLY (FORECAST MODE OFF) ───
+    if (!showForecast) {
+      if (rangeFilter === "180d" || rangeFilter === "365d") {
+        // Group by month
+        const monthsCount = rangeFilter === "180d" ? 6 : 12;
+        const datesList: ChartDataPoint[] = [];
+
+        for (let i = monthsCount - 1; i >= 0; i--) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const monthStr = d.toLocaleDateString("en-IN", { month: "short" });
+          const yearStr = d.toLocaleDateString("en-IN", { year: "2-digit" });
+          const dateLabel = `${monthStr} '${yearStr}`;
+          const fullDateLabel = d.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+          const monthKey = `${d.getFullYear()}-${d.getMonth()}`;
+
+          datesList.push({
+            dateLabel,
+            fullDateLabel,
+            amount: 0,
+            count: 0,
+            isForecast: false,
+            monthKey
+          });
+        }
+
+        validTxns.forEach(txn => {
+          const txnDate = new Date(txn.createdAt!);
+          const mKey = `${txnDate.getFullYear()}-${txnDate.getMonth()}`;
+          const bucket = datesList.find(b => b.monthKey === mKey);
+          if (bucket) {
+            bucket.amount += (txn.totalAmount.value / 100);
+            bucket.count += 1;
+          }
+        });
+
+        return datesList;
+      }
+
+      // Group daily for 7d, 30d, 90d
+      const historyDays = rangeFilter === "7d" ? 7 : rangeFilter === "30d" ? 30 : 90;
       const datesList: ChartDataPoint[] = [];
 
-      for (let i = monthsCount - 1; i >= 0; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const monthStr = d.toLocaleDateString("en-IN", { month: "short" });
-        const yearStr = d.toLocaleDateString("en-IN", { year: "2-digit" });
-        const dateLabel = `${monthStr} '${yearStr}`;
-        const fullDateLabel = d.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
-        const monthKey = `${d.getFullYear()}-${d.getMonth()}`;
+      for (let i = historyDays - 1; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        d.setHours(0, 0, 0, 0);
+
+        const dateLabel = rangeFilter === "30d"
+          ? d.getDate().toString()
+          : d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+
+        const fullDateLabel = d.toLocaleDateString("en-IN", {
+          day: "numeric",
+          month: "long",
+          year: "numeric"
+        });
 
         datesList.push({
           dateLabel,
           fullDateLabel,
           amount: 0,
           count: 0,
-          isForecast: false,
-          monthKey
+          isForecast: false
         });
       }
 
       validTxns.forEach(txn => {
         const txnDate = new Date(txn.createdAt!);
-        const mKey = `${txnDate.getFullYear()}-${txnDate.getMonth()}`;
-        const bucket = datesList.find(b => b.monthKey === mKey);
-        if (bucket) {
-          bucket.amount += (txn.totalAmount.value / 100);
-          bucket.count += 1;
+        txnDate.setHours(0, 0, 0, 0);
+        
+        const diffTime = now.getTime() - txnDate.getTime();
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays >= 0 && diffDays < historyDays) {
+          const bucketIndex = historyDays - 1 - diffDays;
+          if (datesList[bucketIndex]) {
+            datesList[bucketIndex].amount += (txn.totalAmount.value / 100);
+            datesList[bucketIndex].count += 1;
+          }
         }
       });
 
       return datesList;
     }
 
-    // ─── 2. Daily Aggregation (7d, 30d, 90d, Forecast) ───
-    const historyDays = showForecast ? 90 : (rangeFilter === "7d" ? 7 : rangeFilter === "30d" ? 30 : 90);
+    // ─── CASE B: FORECAST MODE ACTIVE ───
+
+    // B1: Daily Forecast Horizon (Next 30 Days)
+    if (forecastHorizon === "30d") {
+      const historyDays = 90;
+      const datesList: ChartDataPoint[] = [];
+
+      for (let i = historyDays - 1; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        d.setHours(0, 0, 0, 0);
+
+        const dateLabel = d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+        const fullDateLabel = d.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+
+        datesList.push({
+          dateLabel,
+          fullDateLabel,
+          amount: 0,
+          count: 0,
+          isForecast: false
+        });
+      }
+
+      validTxns.forEach(txn => {
+        const txnDate = new Date(txn.createdAt!);
+        txnDate.setHours(0, 0, 0, 0);
+        const diffTime = now.getTime() - txnDate.getTime();
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays >= 0 && diffDays < historyDays) {
+          const bucketIndex = historyDays - 1 - diffDays;
+          if (datesList[bucketIndex]) {
+            datesList[bucketIndex].amount += (txn.totalAmount.value / 100);
+            datesList[bucketIndex].count += 1;
+          }
+        }
+      });
+
+      // Linear trend calculation
+      const n = datesList.length;
+      if (n < 5) return datesList;
+
+      let sumT = 0, sumV = 0, sumTV = 0, sumTT = 0;
+      for (let i = 0; i < n; i++) {
+        sumT += i;
+        sumV += datesList[i].amount;
+        sumTV += i * datesList[i].amount;
+        sumTT += i * i;
+      }
+      const tMean = sumT / n;
+      const vMean = sumV / n;
+      
+      let num = 0, den = 0;
+      for (let i = 0; i < n; i++) {
+        num += (i - tMean) * (datesList[i].amount - vMean);
+        den += (i - tMean) * (i - tMean);
+      }
+      const slope = den === 0 ? 0 : num / den;
+      const intercept = vMean - slope * tMean;
+
+      // Seasonality coefficients
+      const weekdaySum = Array(7).fill(0);
+      const weekdayCount = Array(7).fill(0);
+      const startOfWeekday = new Date(now);
+      startOfWeekday.setDate(now.getDate() - (n - 1));
+
+      for (let i = 0; i < n; i++) {
+        const currentDate = new Date(startOfWeekday);
+        currentDate.setDate(startOfWeekday.getDate() + i);
+        const w = currentDate.getDay();
+        weekdaySum[w] += datesList[i].amount;
+        weekdayCount[w] += 1;
+      }
+      const weekdayAverages = weekdaySum.map((val, idx) => weekdayCount[idx] === 0 ? 0 : val / weekdayCount[idx]);
+      const seasonalityFactors = weekdayAverages.map(avg => vMean === 0 ? 1.0 : avg / vMean);
+
+      // Residual standard error
+      let sumResidualSq = 0;
+      for (let i = 0; i < n; i++) {
+        const currentDate = new Date(startOfWeekday);
+        currentDate.setDate(startOfWeekday.getDate() + i);
+        const w = currentDate.getDay();
+        const trendVal = slope * i + intercept;
+        const residual = datesList[i].amount - (trendVal * seasonalityFactors[w]);
+        sumResidualSq += residual * residual;
+      }
+      const rse = Math.sqrt(sumResidualSq / (n - 2 || 1));
+      const confidenceBound = Math.max(rse, vMean * 0.12 || 1000);
+
+      // Future projections
+      const forecastList: ChartDataPoint[] = [];
+      for (let f = 1; f <= 30; f++) {
+        const futureDate = new Date(now);
+        futureDate.setDate(now.getDate() + f);
+        const w = futureDate.getDay();
+        const tFuture = n - 1 + f;
+        const trendVal = slope * tFuture + intercept;
+        const forecastVal = Math.max(0, trendVal * seasonalityFactors[w]);
+        
+        const margin = 1.64 * confidenceBound;
+
+        forecastList.push({
+          dateLabel: futureDate.toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
+          fullDateLabel: futureDate.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }),
+          amount: parseFloat(forecastVal.toFixed(2)),
+          count: Math.round(forecastVal / 18000) || 0,
+          isForecast: true,
+          amountMin: parseFloat(Math.max(0, forecastVal - margin).toFixed(2)),
+          amountMax: parseFloat((forecastVal + margin).toFixed(2))
+        });
+      }
+
+      return [...datesList, ...forecastList];
+    }
+
+    // B2: Monthly Forecast Horizon (Next 6 Months or Next Year)
+    const historyMonths = forecastHorizon === "180d" ? 6 : 12;
+    const forecastMonths = forecastHorizon === "180d" ? 6 : 12;
     const datesList: ChartDataPoint[] = [];
 
-    for (let i = historyDays - 1; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(now.getDate() - i);
-      d.setHours(0, 0, 0, 0);
-
-      // Labeling rules:
-      // For 30d, we display only the day number as tick labels to avoid X-axis clutter.
-      const dateLabel = rangeFilter === "30d" && !showForecast
-        ? d.getDate().toString()
-        : d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
-
-      const fullDateLabel = d.toLocaleDateString("en-IN", {
-        day: "numeric",
-        month: "long",
-        year: "numeric"
-      });
+    // History monthly aggregates
+    for (let i = historyMonths - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthStr = d.toLocaleDateString("en-IN", { month: "short" });
+      const yearStr = d.toLocaleDateString("en-IN", { year: "2-digit" });
+      const dateLabel = `${monthStr} '${yearStr}`;
+      const fullDateLabel = d.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+      const monthKey = `${d.getFullYear()}-${d.getMonth()}`;
 
       datesList.push({
         dateLabel,
         fullDateLabel,
         amount: 0,
         count: 0,
-        isForecast: false
+        isForecast: false,
+        monthKey
       });
     }
 
     validTxns.forEach(txn => {
       const txnDate = new Date(txn.createdAt!);
-      txnDate.setHours(0, 0, 0, 0);
-      
-      const diffTime = now.getTime() - txnDate.getTime();
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-
-      if (diffDays >= 0 && diffDays < historyDays) {
-        const bucketIndex = historyDays - 1 - diffDays;
-        if (datesList[bucketIndex]) {
-          datesList[bucketIndex].amount += (txn.totalAmount.value / 100);
-          datesList[bucketIndex].count += 1;
-        }
+      const mKey = `${txnDate.getFullYear()}-${txnDate.getMonth()}`;
+      const bucket = datesList.find(b => b.monthKey === mKey);
+      if (bucket) {
+        bucket.amount += (txn.totalAmount.value / 100);
+        bucket.count += 1;
       }
     });
 
-    if (!showForecast) {
-      return datesList;
-    }
-
-    // ─── 3. AI Forecast Calculations (Linear Trend + Weekday Seasonality) ───
+    // Fit trend: Monthly aggregate volume = m * t + c
     const n = datesList.length;
-    if (n < 5) return datesList;
-
-    let sumT = 0;
-    let sumV = 0;
-    let sumTV = 0;
-    let sumTT = 0;
+    let sumT = 0, sumV = 0, sumTV = 0, sumTT = 0;
     for (let i = 0; i < n; i++) {
       sumT += i;
       sumV += datesList[i].amount;
@@ -142,8 +287,7 @@ export function TimeseriesChart({ transactions }: TimeseriesChartProps) {
     const tMean = sumT / n;
     const vMean = sumV / n;
     
-    let num = 0;
-    let den = 0;
+    let num = 0, den = 0;
     for (let i = 0; i < n; i++) {
       num += (i - tMean) * (datesList[i].amount - vMean);
       den += (i - tMean) * (i - tMean);
@@ -151,85 +295,40 @@ export function TimeseriesChart({ transactions }: TimeseriesChartProps) {
     const slope = den === 0 ? 0 : num / den;
     const intercept = vMean - slope * tMean;
 
-    const weekdaySum = Array(7).fill(0);
-    const weekdayCount = Array(7).fill(0);
-    
-    const startOfWeekday = new Date(now);
-    startOfWeekday.setDate(now.getDate() - (n - 1));
-    
-    for (let i = 0; i < n; i++) {
-      const currentDate = new Date(startOfWeekday);
-      currentDate.setDate(startOfWeekday.getDate() + i);
-      const w = currentDate.getDay();
-      
-      weekdaySum[w] += datesList[i].amount;
-      weekdayCount[w] += 1;
-    }
-    
-    const weekdayAverages = weekdaySum.map((val, idx) => {
-      const count = weekdayCount[idx];
-      return count === 0 ? 0 : val / count;
-    });
-
-    const overallAverage = vMean;
-    const seasonalityFactors = weekdayAverages.map(avg => {
-      return overallAverage === 0 ? 1.0 : avg / overallAverage;
-    });
-
+    // Monthly residual standard deviation for bounds
     let sumResidualSq = 0;
     for (let i = 0; i < n; i++) {
-      const currentDate = new Date(startOfWeekday);
-      currentDate.setDate(startOfWeekday.getDate() + i);
-      const w = currentDate.getDay();
-      
-      const trendValue = slope * i + intercept;
-      const seasonalValue = trendValue * seasonalityFactors[w];
-      const residual = datesList[i].amount - seasonalValue;
+      const trendVal = slope * i + intercept;
+      const residual = datesList[i].amount - trendVal;
       sumResidualSq += residual * residual;
     }
-    
     const rse = Math.sqrt(sumResidualSq / (n - 2 || 1));
-    const confidenceBound = Math.max(rse, overallAverage * 0.15 || 1000);
+    const confidenceBound = Math.max(rse, vMean * 0.10 || 15000); // minimum bound envelope
 
+    // Generate future monthly forecast
     const forecastList: ChartDataPoint[] = [];
-    for (let f = 1; f <= 30; f++) {
-      const futureDate = new Date(now);
-      futureDate.setDate(now.getDate() + f);
-      futureDate.setHours(0, 0, 0, 0);
-
-      const w = futureDate.getDay();
-      const tFuture = n - 1 + f;
+    for (let f = 1; f <= forecastMonths; f++) {
+      const futureDate = new Date(now.getFullYear(), now.getMonth() + f, 1);
+      const monthStr = futureDate.toLocaleDateString("en-IN", { month: "short" });
+      const yearStr = futureDate.toLocaleDateString("en-IN", { year: "2-digit" });
       
-      const trendVal = slope * tFuture + intercept;
-      const forecastVal = Math.max(0, trendVal * seasonalityFactors[w]);
-
-      const margin = 1.64 * confidenceBound;
-      const minVal = Math.max(0, forecastVal - margin);
-      const maxVal = forecastVal + margin;
-
-      const dateLabel = futureDate.toLocaleDateString("en-IN", {
-        day: "numeric",
-        month: "short"
-      });
-      const fullDateLabel = futureDate.toLocaleDateString("en-IN", {
-        day: "numeric",
-        month: "long",
-        year: "numeric"
-      });
+      const tFuture = n - 1 + f;
+      const forecastVal = Math.max(0, slope * tFuture + intercept);
+      const margin = 1.64 * confidenceBound; // 90% confidence boundaries
 
       forecastList.push({
-        dateLabel,
-        fullDateLabel,
+        dateLabel: `${monthStr} '${yearStr}`,
+        fullDateLabel: futureDate.toLocaleDateString("en-IN", { month: "long", year: "numeric" }),
         amount: parseFloat(forecastVal.toFixed(2)),
-        count: Math.round(forecastVal / (overallAverage / (sumV / (validTxns.length || 1)) || 15000)) || 0,
+        count: Math.round(forecastVal / 18000) || 0,
         isForecast: true,
-        amountMin: parseFloat(minVal.toFixed(2)),
-        amountMax: parseFloat(maxVal.toFixed(2))
+        amountMin: parseFloat(Math.max(0, forecastVal - margin).toFixed(2)),
+        amountMax: parseFloat((forecastVal + margin).toFixed(2))
       });
     }
 
     return [...datesList, ...forecastList];
-  }, [validTxns, rangeFilter, showForecast]);
+  }, [validTxns, rangeFilter, showForecast, forecastHorizon]);
 
   // Max value calculation for Y scaling
   const maxVolume = useMemo(() => {
@@ -238,7 +337,7 @@ export function TimeseriesChart({ transactions }: TimeseriesChartProps) {
     return maxVal === 0 ? 1000 : maxVal * 1.12; 
   }, [chartData]);
 
-  // Dimensions
+  // SVG dimensions
   const width = 800;
   const height = 240;
   const paddingLeft = 65;
@@ -290,25 +389,24 @@ export function TimeseriesChart({ transactions }: TimeseriesChartProps) {
     return historyPoints[historyPoints.length - 1].x;
   }, [showForecast, historyPoints]);
 
-  // X Axis Ticks based on formatting rules:
-  // - 30d: Ticks for ALL 30 points (each daily step gets a label)
-  // - 90d: Divided into weeks (every 7th day)
-  // - 180d & 365d: Divided into months (every point has a label)
+  // X Axis Ticks based on formatting rules
   const xTicks = useMemo(() => {
     if (showForecast) {
-      return points.filter((_, i) => i === 0 || i === 45 || i === 89 || i === 104 || i === points.length - 1);
+      if (forecastHorizon === "30d") {
+        // Daily ticks (every 15 days for daily forecast to keep it clean)
+        return points.filter((_, i) => i === 0 || i === 45 || i === 89 || i === 104 || i === points.length - 1);
+      }
+      // Monthly forecast (6M or 1Y): render ALL monthly points (historical and projected)
+      return points;
     }
     if (rangeFilter === "30d") {
-      // 30 scale ticks (every point is marked)
       return points;
     }
     if (rangeFilter === "90d") {
-      // Divided into weeks (every 7 days)
       return points.filter((_, i) => i % 7 === 0 || i === points.length - 1);
     }
-    // For 7d, 180d, 365d: every segment gets a tick
     return points;
-  }, [points, rangeFilter, showForecast]);
+  }, [points, rangeFilter, showForecast, forecastHorizon]);
 
   const formatYAxisLabel = (val: number) => {
     if (val >= 10000000) return `₹${(val / 10000000).toFixed(1)}Cr`;
@@ -403,12 +501,12 @@ export function TimeseriesChart({ transactions }: TimeseriesChartProps) {
             }}
           >
             {showForecast 
-              ? "Weekly-seasoned regression trend projecting transaction volumes & 90% confidence boundaries for the next 30 days."
+              ? "Weekly-seasoned regression trend projecting transaction volumes & 90% confidence boundaries for selected forecast horizons."
               : "Aggregated processed payout totals across authorized subscriptions."}
           </p>
         </div>
 
-        {/* Filter controls with new 6M and 1Y selections */}
+        {/* Dynamic primary tab filters */}
         <div style={{ display: "flex", gap: "6px" }}>
           {([
             { id: "7d", label: "7 Days" },
@@ -458,10 +556,57 @@ export function TimeseriesChart({ transactions }: TimeseriesChartProps) {
             }}
           >
             <span>🔮</span>
-            <span>AI Forecast (30d)</span>
+            <span>AI Forecast</span>
           </button>
         </div>
       </div>
+
+      {/* FORECAST PERIOD SELECTOR (Renders sub-buttons only when forecast is enabled) */}
+      {showForecast && (
+        <div 
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            marginBottom: "16px",
+            background: "var(--surface-subtle)",
+            padding: "8px 12px",
+            borderRadius: "var(--radius-lg)",
+            border: "1px solid var(--border)",
+            width: "fit-content"
+          }}
+        >
+          <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)" }}>
+            Select Forecast Horizon:
+          </span>
+          <div style={{ display: "flex", gap: "4px" }}>
+            {([
+              { id: "30d", label: "Next 30 Days (Daily)" },
+              { id: "180d", label: "Next 6 Months (Monthly)" },
+              { id: "365d", label: "Next Year (Monthly)" }
+            ] as const).map((horizon) => (
+              <button
+                key={horizon.id}
+                onClick={() => setForecastHorizon(horizon.id)}
+                type="button"
+                style={{
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  padding: "4px 10px",
+                  borderRadius: "var(--radius-md)",
+                  border: forecastHorizon === horizon.id ? "1px solid #818CF8" : "1px solid var(--border)",
+                  background: forecastHorizon === horizon.id ? "#EEF2F6" : "var(--surface)",
+                  color: forecastHorizon === horizon.id ? "#4F46E5" : "var(--text-secondary)",
+                  cursor: "pointer",
+                  transition: "all 100ms ease"
+                }}
+              >
+                {horizon.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div style={{ position: "relative", width: "100%", height: `${height}px` }}>
         <svg
@@ -595,8 +740,8 @@ export function TimeseriesChart({ transactions }: TimeseriesChartProps) {
 
           {/* X Axis Tick Labels */}
           {xTicks.map((pt, i) => {
-            // Render labels for 30d only every 3rd label, or render all rotated/smaller to avoid clutter
-            const shouldRenderText = rangeFilter !== "30d" || i % 3 === 0 || i === xTicks.length - 1;
+            const isDailyForecast = showForecast && forecastHorizon === "30d";
+            const shouldRenderText = rangeFilter !== "30d" || isDailyForecast || i % 3 === 0 || i === xTicks.length - 1;
             if (!shouldRenderText && !showForecast) return null;
             
             return (
@@ -607,7 +752,7 @@ export function TimeseriesChart({ transactions }: TimeseriesChartProps) {
                 textAnchor="middle"
                 fill="var(--text-tertiary)"
                 style={{ 
-                  fontSize: rangeFilter === "30d" ? "9px" : "10px", 
+                  fontSize: rangeFilter === "30d" && !showForecast ? "9px" : "10px", 
                   fontFamily: "inherit", 
                   fontWeight: 500 
                 }}

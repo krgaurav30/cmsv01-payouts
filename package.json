@@ -14,6 +14,7 @@
     "build:corporate-web": "npm run build --workspace corporate-web",
     "db:migrate": "node --dns-result-order=ipv4first --env-file=.env --import tsx scripts/db/migrate.ts",
     "db:seed": "node --dns-result-order=ipv4first --env-file=.env --import tsx scripts/db/seed.ts",
+    "db:seed-growth": "node --dns-result-order=ipv4first --env-file=.env --import tsx scripts/db/seed_growth.ts",
     "dev": "node scripts/dev/start-all.cjs",
     "dev:all": "node scripts/dev/start-all.cjs",
     "dev:api": "node scripts/dev/run-service.cjs api",
