@@ -304,6 +304,17 @@ export function DeveloperPortalPageClient({ isEmbedded = false }: { isEmbedded?:
   const [timelineData, setTimelineData] = useState<any[]>([]);
   const [timelineIsLoading, setTimelineIsLoading] = useState(false);
 
+  useEffect(() => {
+    if (isModalOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isModalOpen]);
+
   const toggleStep = (stepKey: string) => {
     setExpandedSteps((prev) => ({ ...prev, [stepKey]: !prev[stepKey] }));
   };
