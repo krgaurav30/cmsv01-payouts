@@ -19,6 +19,10 @@ const nextConfig = {
       {
         source: "/bank/:path*",
         destination: `${bffUrl}/bank/:path*`
+      },
+      {
+        source: "/bff/:path*",
+        destination: `${bffUrl}/bff/:path*`
       }
     ];
   }

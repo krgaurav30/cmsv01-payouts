@@ -35,6 +35,7 @@ import {
   readSelectedCorporateId,
   readSession
 } from "../../../lib/session";
+import { Chatbot } from "./chatbot";
 import type {
   ApprovalMatrix,
   BankTenant,
@@ -7034,6 +7035,7 @@ export function OperationsDashboard({
           })()
         ) : null}
       </main>
+      {session && <Chatbot session={session} />}
     </div>
   );
 }

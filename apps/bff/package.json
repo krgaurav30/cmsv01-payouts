@@ -1,5 +1,8 @@
 {
   "name": "@cmsv01/bff",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "openai": "^4.85.4"
+  }
 }
