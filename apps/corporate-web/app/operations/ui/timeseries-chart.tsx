@@ -749,10 +749,15 @@ export function TimeseriesChart({ transactions }: TimeseriesChartProps) {
             const totalTicks = xTicks.length;
             let shouldRenderText = true;
             
-            if (totalTicks > 18) {
-              shouldRenderText = (i % 3 === 0) || (i === totalTicks - 1);
+            if (totalTicks >= 90) {
+              // Daily forecast: render only the preset milestone ticks
+              shouldRenderText = true;
+            } else if (totalTicks > 18) {
+              // 30d history, 1 Year forecast: render every 4th label
+              shouldRenderText = (i % 4 === 0);
             } else if (totalTicks > 8) {
-              shouldRenderText = (i % 2 === 0) || (i === totalTicks - 1);
+              // 90d history, 6M forecast: render every 2nd label
+              shouldRenderText = (i % 2 === 0);
             }
             
             if (!shouldRenderText) return null;
