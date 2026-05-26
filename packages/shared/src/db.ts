@@ -12,6 +12,7 @@ export function getDatabasePool(config: AppConfig) {
   if (!pool) {
     pool = new Pool({
       connectionString: config.databaseUrl,
+      max: config.databaseMaxConnections,
       ssl: {
         rejectUnauthorized: config.dbSslRejectUnauthorized
       }

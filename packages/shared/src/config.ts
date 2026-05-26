@@ -8,6 +8,7 @@ const configSchema = z.object({
   KAFKA_BROKERS: z.string().default("localhost:9092"),
   KAFKA_OUTBOX_TOPIC: z.string().default("cmsv01.domain-events"),
   DATABASE_URL: z.string().min(1),
+  DATABASE_MAX_CONNECTIONS: z.coerce.number().int().positive().default(3),
   BENEFICIARY_PUBLISH_API_KEY: z.string().default("bank-alpha-dev-key"),
   KAFKA_SASL_USERNAME: z.string().optional(),
   KAFKA_SASL_PASSWORD: z.string().optional(),
@@ -22,6 +23,7 @@ export type AppConfig = {
   kafkaBrokers: string[];
   kafkaOutboxTopic: string;
   databaseUrl: string;
+  databaseMaxConnections: number;
   beneficiaryPublishApiKey: string;
   kafkaSaslUsername?: string;
   kafkaSaslPassword?: string;
@@ -43,6 +45,7 @@ export function loadConfig(): AppConfig {
     kafkaBrokers: env.KAFKA_BROKERS.split(",").map((broker) => broker.trim()),
     kafkaOutboxTopic: env.KAFKA_OUTBOX_TOPIC,
     databaseUrl: env.DATABASE_URL,
+    databaseMaxConnections: env.DATABASE_MAX_CONNECTIONS,
     beneficiaryPublishApiKey: env.BENEFICIARY_PUBLISH_API_KEY,
     kafkaSaslUsername: env.KAFKA_SASL_USERNAME,
     kafkaSaslPassword: env.KAFKA_SASL_PASSWORD,
