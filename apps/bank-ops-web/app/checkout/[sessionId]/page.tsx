@@ -232,7 +232,7 @@ export default function CheckoutPage({ params: paramsPromise }: { params: Promis
               <div style={styles.receiptRow}>
                 <span>Amount Paid</span>
                 <strong style={styles.receiptValue}>
-                  {session?.amountCurrency} {Number(session?.amountValue).toLocaleString()}
+                  {session?.amountCurrency} {Number(Number(session?.amountValue || 0) / 100).toLocaleString()}
                 </strong>
               </div>
             </div>
@@ -250,7 +250,7 @@ export default function CheckoutPage({ params: paramsPromise }: { params: Promis
             <div style={styles.amountBox}>
               <span style={styles.amountLabel}>PAYMENT AMOUNT</span>
               <div style={styles.amount}>
-                {session?.amountCurrency} {Number(session?.amountValue).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                {session?.amountCurrency} {Number(Number(session?.amountValue || 0) / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </div>
               <div style={styles.merchantInfo}>
                 To: <span style={{ fontWeight: 600, color: "#1E293B" }}>{session?.corporateId}</span>
@@ -417,7 +417,7 @@ export default function CheckoutPage({ params: paramsPromise }: { params: Promis
                     disabled={submitting}
                     style={styles.payButton}
                   >
-                    {submitting ? "Processing..." : `Pay ${session?.amountCurrency} ${Number(session?.amountValue).toLocaleString()}`}
+                    {submitting ? "Processing..." : `Pay ${session?.amountCurrency} ${Number(Number(session?.amountValue || 0) / 100).toLocaleString()}`}
                   </button>
                 </div>
               ) : (

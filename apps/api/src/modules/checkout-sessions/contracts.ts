@@ -6,7 +6,7 @@ export const checkoutSessionCreateSchema = z.object({
   corporateId: z.string().min(3),
   transactionReference: z.string().min(2),
   amount: z.object({
-    value: z.number().positive(),
+    value: z.number().int().positive(),
     currency: z.string().min(2)
   }),
   packageCode: z.string().min(2).optional(),

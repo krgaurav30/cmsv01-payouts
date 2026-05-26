@@ -112,7 +112,7 @@ export function SettingsSection({
             <label>
               Max single transaction amount (INR)
               <input
-                defaultValue={settings?.maxSingleTransactionAmount ?? 500000}
+                defaultValue={settings ? settings.maxSingleTransactionAmount / 100 : 500000}
                 disabled={!canEditSettings}
                 inputMode="decimal"
                 min={1}
@@ -127,7 +127,7 @@ export function SettingsSection({
               Max daily cumulative transaction amount (INR)
               <input
                 defaultValue={
-                  settings?.maxDailyCumulativeTransactionAmount ?? 5000000
+                  settings ? settings.maxDailyCumulativeTransactionAmount / 100 : 5000000
                 }
                 disabled={!canEditSettings}
                 inputMode="decimal"

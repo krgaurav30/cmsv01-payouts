@@ -20,7 +20,7 @@ function humanize(value: string) {
 }
 
 function formatAmount(value: number) {
-  return Number(value).toLocaleString("en-IN", {
+  return Number(value / 100).toLocaleString("en-IN", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });

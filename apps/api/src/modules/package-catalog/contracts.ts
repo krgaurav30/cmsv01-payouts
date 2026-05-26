@@ -24,8 +24,8 @@ export const paymentMethodCreateSchema = z
     paymentMethodCode: paymentMethodCodeSchema,
     displayName: z.string().trim().min(2),
     name: z.string().trim().min(2).optional(),
-    minAmount: z.number().nonnegative().nullable().optional(),
-    maxAmount: z.number().positive().nullable().optional(),
+    minAmount: z.number().int().nonnegative().nullable().optional(),
+    maxAmount: z.number().int().positive().nullable().optional(),
     cutoffTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/)
   })
   .refine(
@@ -149,8 +149,8 @@ export const paymentMethodUpdateSchema = z
   .object({
     displayName: z.string().trim().min(2),
     name: z.string().trim().min(2).optional(),
-    minAmount: z.number().nonnegative().nullable().optional(),
-    maxAmount: z.number().positive().nullable().optional(),
+    minAmount: z.number().int().nonnegative().nullable().optional(),
+    maxAmount: z.number().int().positive().nullable().optional(),
     cutoffTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/),
     status: paymentMethodStatusSchema
   })

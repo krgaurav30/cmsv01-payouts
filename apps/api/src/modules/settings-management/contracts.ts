@@ -10,8 +10,8 @@ export const corporateTenantSettingsSchema = z.object({
   supportPhone: z.string().min(6).max(30).optional().or(z.literal("")),
   registeredAddress: z.string().min(5).max(500).optional().or(z.literal("")),
   defaultApprovalNoteTemplate: z.string().min(2).max(500).optional().or(z.literal("")),
-  maxSingleTransactionAmount: z.number().positive(),
-  maxDailyCumulativeTransactionAmount: z.number().positive(),
+  maxSingleTransactionAmount: z.number().int().positive(),
+  maxDailyCumulativeTransactionAmount: z.number().int().positive(),
   maxBulkUploadRows: z.number().int().positive().max(5000),
   duplicateReferencePolicy: duplicateReferencePolicySchema
 });

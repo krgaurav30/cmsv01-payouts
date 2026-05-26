@@ -6,6 +6,7 @@
     "./config": "./src/config.ts",
     "./crypto": "./src/crypto.ts",
     "./db": "./src/db.ts",
+    "./decimal": "./src/decimal.ts",
     "./events": "./src/events.ts",
     "./kafka": "./src/kafka.ts",
     "./outbox": "./src/outbox.ts",

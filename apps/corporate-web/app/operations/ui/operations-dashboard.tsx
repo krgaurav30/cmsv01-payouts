@@ -2320,7 +2320,7 @@ export function OperationsDashboard({
           itemId: createSimpleId("ITEM"),
           beneficiaryId,
           amount: {
-            value: Number(formData.get("amount")),
+            value: Math.round(Number(formData.get("amount")) * 100),
             currency: "INR"
           },
           purpose:
@@ -2471,8 +2471,8 @@ export function OperationsDashboard({
       createdByUserId: session.userId,
       subscriptionId: approvalMatrixSubscriptionId,
       debitAccountIds: approvalMatrixDebitAccountIds,
-      amountFrom: Number(formData.get("amountFrom")),
-      amountTo: Number(formData.get("amountTo")),
+      amountFrom: Math.round(Number(formData.get("amountFrom")) * 100),
+      amountTo: Math.round(Number(formData.get("amountTo")) * 100),
       approvalLevels: approvalMatrixLevels,
       roles: selectedRoles,
       status: isEdit && editingApprovalMatrix ? editingApprovalMatrix.status : "active"
@@ -3022,9 +3022,9 @@ export function OperationsDashboard({
       defaultApprovalNoteTemplate: optionalText(
         formData.get("defaultApprovalNoteTemplate")
       ),
-      maxSingleTransactionAmount: Number(formData.get("maxSingleTransactionAmount") ?? 0),
-      maxDailyCumulativeTransactionAmount: Number(
-        formData.get("maxDailyCumulativeTransactionAmount") ?? 0
+      maxSingleTransactionAmount: Math.round(Number(formData.get("maxSingleTransactionAmount") ?? 0) * 100),
+      maxDailyCumulativeTransactionAmount: Math.round(
+        Number(formData.get("maxDailyCumulativeTransactionAmount") ?? 0) * 100
       ),
       maxBulkUploadRows: Number(formData.get("maxBulkUploadRows") ?? 0),
       duplicateReferencePolicy: formData.get("duplicateReferencePolicy") === "on"
@@ -6570,7 +6570,7 @@ export function OperationsDashboard({
                   <label>
                     Max single transaction amount (INR)
                     <input
-                      defaultValue={settings?.maxSingleTransactionAmount ?? 500000}
+                      defaultValue={settings ? settings.maxSingleTransactionAmount / 100 : 500000}
                       disabled={!canEditSettings}
                       inputMode="decimal"
                       min={1}
@@ -6585,7 +6585,7 @@ export function OperationsDashboard({
                     Max daily cumulative transaction amount (INR)
                     <input
                       defaultValue={
-                        settings?.maxDailyCumulativeTransactionAmount ?? 5000000
+                        settings ? settings.maxDailyCumulativeTransactionAmount / 100 : 5000000
                       }
                       disabled={!canEditSettings}
                       inputMode="decimal"
@@ -7188,7 +7188,7 @@ function csvToArray(value: FormDataEntryValue | null) {
 }
 
 function formatAmount(value: number) {
-  return Number(value).toLocaleString("en-IN", {
+  return Number(value / 100).toLocaleString("en-IN", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });

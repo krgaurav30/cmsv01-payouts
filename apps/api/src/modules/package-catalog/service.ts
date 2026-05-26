@@ -1,4 +1,5 @@
 import { loadConfig } from "@cmsv01/shared/config";
+import { Decimal } from "@cmsv01/shared/decimal";
 import { getDatabasePool } from "@cmsv01/shared/db";
 
 import type {
@@ -119,8 +120,8 @@ export class PackageCatalogService {
         paymentMethodCode,
         (payload.displayName || payload.name || "").trim(),
         paymentMethodCode.toLowerCase(),
-        payload.minAmount ?? null,
-        payload.maxAmount ?? null,
+        payload.minAmount !== null && payload.minAmount !== undefined ? Decimal.fromCents(BigInt(payload.minAmount)).toString() : null,
+        payload.maxAmount !== null && payload.maxAmount !== undefined ? Decimal.fromCents(BigInt(payload.maxAmount)).toString() : null,
         payload.cutoffTime
       ]
     );
@@ -149,8 +150,8 @@ export class PackageCatalogService {
       [
         normalizedCode,
         (payload.displayName || payload.name || "").trim(),
-        payload.minAmount ?? null,
-        payload.maxAmount ?? null,
+        payload.minAmount !== null && payload.minAmount !== undefined ? Decimal.fromCents(BigInt(payload.minAmount)).toString() : null,
+        payload.maxAmount !== null && payload.maxAmount !== undefined ? Decimal.fromCents(BigInt(payload.maxAmount)).toString() : null,
         payload.cutoffTime,
         payload.status
       ]
@@ -613,8 +614,8 @@ export class PackageCatalogService {
       const existing = paymentMethodsByPackage.get(row.package_id) ?? [];
       existing.push({
         paymentMethodCode: row.payment_method_code,
-        minAmountOverride: row.min_amount_override ? Number(row.min_amount_override) : null,
-        maxAmountOverride: row.max_amount_override ? Number(row.max_amount_override) : null,
+        minAmountOverride: row.min_amount_override ? Number(Decimal.fromString(row.min_amount_override).toCents()) : null,
+        maxAmountOverride: row.max_amount_override ? Number(Decimal.fromString(row.max_amount_override).toCents()) : null,
         pricingOverrides: row.pricing_overrides_json ?? {}
       });
       paymentMethodsByPackage.set(row.package_id, existing);
@@ -668,8 +669,8 @@ function mapPaymentMethodRow(row: PaymentMethodRow) {
     railFamily: row.rail_family,
     settlementMode: row.settlement_mode,
     weekendSupport: row.weekend_support,
-    minAmount: row.min_amount ? Number(row.min_amount) : null,
-    maxAmount: row.max_amount ? Number(row.max_amount) : null,
+    minAmount: row.min_amount ? Number(Decimal.fromString(row.min_amount).toCents()) : null,
+    maxAmount: row.max_amount ? Number(Decimal.fromString(row.max_amount).toCents()) : null,
     cutoffTime: row.cutoff_time,
     status: row.status,
     createdAt: row.created_at?.toISOString() ?? null,

@@ -232,18 +232,20 @@ function parseWorkbookFromBuffer(buffer: Buffer): ParsedUpload {
       continue;
     }
 
-    let amount = 0;
+    let amountValParsed = 0;
     if (typeof amountVal === "number") {
-      amount = amountVal;
+      amountValParsed = amountVal;
     } else {
       const parsed = parseFloat(String(amountVal || "").trim());
-      if (!isNaN(parsed)) amount = parsed;
+      if (!isNaN(parsed)) amountValParsed = parsed;
     }
 
-    if (amount <= 0) {
+    if (amountValParsed <= 0) {
       errors.push(`Row ${i + 1}: Amount must be a positive number.`);
       continue;
     }
+
+    const amount = Math.round(amountValParsed * 100);
 
     parsedRows.push({
       ...(normalizedPackageCode ? { packageCode: normalizedPackageCode } : {}),

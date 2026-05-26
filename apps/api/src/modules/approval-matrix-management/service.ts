@@ -1,4 +1,5 @@
 import { loadConfig } from "@cmsv01/shared/config";
+import { Decimal } from "@cmsv01/shared/decimal";
 import { getDatabasePool } from "@cmsv01/shared/db";
 
 import { IdentityAccessService } from "../identity-access/service.js";
@@ -197,8 +198,8 @@ export class ApprovalMatrixManagementService {
             payload.corporateTenantId,
             payload.subscriptionId,
             payload.debitAccountIds,
-            payload.amountFrom,
-            payload.amountTo,
+            Decimal.fromCents(BigInt(payload.amountFrom)).toString(),
+            Decimal.fromCents(BigInt(payload.amountTo)).toString(),
             payload.approvalLevels,
             payload.roles,
             payload.status,
@@ -222,8 +223,8 @@ export class ApprovalMatrixManagementService {
             payload.corporateTenantId,
             payload.subscriptionId,
             payload.debitAccountIds,
-            payload.amountFrom,
-            payload.amountTo,
+            Decimal.fromCents(BigInt(payload.amountFrom)).toString(),
+            Decimal.fromCents(BigInt(payload.amountTo)).toString(),
             payload.approvalLevels,
             payload.roles,
             payload.status,
@@ -243,7 +244,8 @@ export class ApprovalMatrixManagementService {
     subscriptionId?: string | null,
     debitAccountId?: string | null
   ) {
-    const params: Array<string | number> = [corporateTenantId, amount];
+    const amountDecimal = Decimal.fromCents(BigInt(amount)).toString();
+    const params: Array<string | number> = [corporateTenantId, amountDecimal];
     let subscriptionClause = "";
     let debitAccountClause = "";
 
@@ -442,8 +444,8 @@ export class ApprovalMatrixManagementService {
             payload.name,
             payload.subscriptionId,
             payload.debitAccountIds,
-            payload.amountFrom,
-            payload.amountTo,
+            Decimal.fromCents(BigInt(payload.amountFrom)).toString(),
+            Decimal.fromCents(BigInt(payload.amountTo)).toString(),
             payload.approvalLevels,
             payload.roles,
             payload.status,
@@ -474,8 +476,8 @@ export class ApprovalMatrixManagementService {
             payload.corporateTenantId,
             payload.subscriptionId,
             payload.debitAccountIds,
-            payload.amountFrom,
-            payload.amountTo,
+            Decimal.fromCents(BigInt(payload.amountFrom)).toString(),
+            Decimal.fromCents(BigInt(payload.amountTo)).toString(),
             payload.approvalLevels,
             payload.roles,
             payload.status,
@@ -500,8 +502,8 @@ function mapApprovalMatrixRow(row: ApprovalMatrixRow) {
     packageDisplayName: row.package_display_name,
     debitAccountIds: row.debit_account_ids ?? [],
     entityType: "transaction",
-    amountFrom: Number(row.amount_from),
-    amountTo: Number(row.amount_to),
+    amountFrom: Number(Decimal.fromString(row.amount_from).toCents()),
+    amountTo: Number(Decimal.fromString(row.amount_to).toCents()),
     approvalLevels: Math.min(Math.max(row.approval_levels, 1), 3) as 1 | 2 | 3,
     roles: row.roles ?? [],
     status: row.status,

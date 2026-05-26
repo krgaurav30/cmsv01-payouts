@@ -9,8 +9,8 @@ export const approvalMatrixCreateSchema = z.object({
   subscriptionId: z.string().min(3),
   createdByUserId: z.string().min(3),
   debitAccountIds: z.array(z.string().min(1)).min(1),
-  amountFrom: z.number().nonnegative(),
-  amountTo: z.number().positive(),
+  amountFrom: z.number().int().nonnegative(),
+  amountTo: z.number().int().positive(),
   approvalLevels: z.number().int().min(1).max(3),
   roles: z.array(z.string().min(2)).min(1),
   status: approvalMatrixStatusSchema.default("active")

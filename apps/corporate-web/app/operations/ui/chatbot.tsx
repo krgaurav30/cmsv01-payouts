@@ -558,7 +558,7 @@ export function Chatbot({ session }: ChatbotProps) {
                     <strong>Title:</strong> {msg.transaction.title}
                   </div>
                   <div>
-                    <strong>Amount:</strong> ₹{Number(msg.transaction.totalAmount?.value || msg.transaction.totalAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                    <strong>Amount:</strong> ₹{Number((msg.transaction.totalAmount?.value || msg.transaction.totalAmount || 0) / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                   </div>
                   {msg.transaction.utr && (
                     <div>

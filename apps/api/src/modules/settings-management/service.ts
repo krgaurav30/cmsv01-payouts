@@ -1,4 +1,5 @@
 import { loadConfig } from "@cmsv01/shared/config";
+import { Decimal } from "@cmsv01/shared/decimal";
 import { getDatabasePool } from "@cmsv01/shared/db";
 
 import { IdentityAccessService } from "../identity-access/service.js";
@@ -151,8 +152,8 @@ export class SettingsManagementService {
         normalizeOptional(payload.supportPhone),
         normalizeOptional(payload.registeredAddress),
         normalizeOptional(payload.defaultApprovalNoteTemplate),
-        payload.maxSingleTransactionAmount,
-        payload.maxDailyCumulativeTransactionAmount,
+        Decimal.fromCents(BigInt(payload.maxSingleTransactionAmount)).toString(),
+        Decimal.fromCents(BigInt(payload.maxDailyCumulativeTransactionAmount)).toString(),
         payload.maxBulkUploadRows,
         payload.duplicateReferencePolicy,
         payload.actedByUserId,
@@ -172,10 +173,10 @@ function mapSettingsRow(row: CorporateTenantSettingsRow) {
     supportPhone: row.support_phone,
     registeredAddress: row.registered_address,
     defaultApprovalNoteTemplate: row.default_approval_note_template,
-    maxSingleTransactionAmount: Number(row.max_single_transaction_amount),
-    maxDailyCumulativeTransactionAmount: Number(
+    maxSingleTransactionAmount: Number(Decimal.fromString(row.max_single_transaction_amount).toCents()),
+    maxDailyCumulativeTransactionAmount: Number(Decimal.fromString(
       row.max_daily_cumulative_transaction_amount
-    ),
+    ).toCents()),
     maxBulkUploadRows: row.max_bulk_upload_rows,
     duplicateReferencePolicy:
       row.duplicate_reference_policy === "disabled" ? "disabled" : "enabled",

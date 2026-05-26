@@ -129,11 +129,13 @@ export function ProductCatalogPageClient() {
     event.preventDefault();
     const form = event.currentTarget;
     const formData = new FormData(form);
+    const minAmountRaw = parseOptionalNumber(formData.get("minAmount"));
+    const maxAmountRaw = parseOptionalNumber(formData.get("maxAmount"));
     const payload = {
       paymentMethodCode: String(formData.get("paymentMethodCode") ?? "").trim().toUpperCase(),
       displayName: String(formData.get("displayName") ?? "").trim(),
-      minAmount: parseOptionalNumber(formData.get("minAmount")),
-      maxAmount: parseOptionalNumber(formData.get("maxAmount")),
+      minAmount: minAmountRaw !== null ? Math.round(minAmountRaw * 100) : null,
+      maxAmount: maxAmountRaw !== null ? Math.round(maxAmountRaw * 100) : null,
       cutoffTime: String(formData.get("cutoffTime") ?? "").trim(),
       status: formData.get("statusActive") === "on" ? "active" : "inactive"
     };
@@ -381,13 +383,13 @@ export function ProductCatalogPageClient() {
                 </label>
                 <label>
                   <span>Minimum amount</span>
-                  <input defaultValue={editingPaymentMethod?.minAmount ?? ""} name="minAmount" type="number" step="0.01" />
+                  <input defaultValue={editingPaymentMethod?.minAmount ? editingPaymentMethod.minAmount / 100 : ""} name="minAmount" type="number" step="0.01" />
                 </label>
               </div>
               <div className="action-grid">
                 <label>
                   <span>Maximum amount</span>
-                  <input defaultValue={editingPaymentMethod?.maxAmount ?? ""} name="maxAmount" type="number" step="0.01" />
+                  <input defaultValue={editingPaymentMethod?.maxAmount ? editingPaymentMethod.maxAmount / 100 : ""} name="maxAmount" type="number" step="0.01" />
                 </label>
                 <label className="ops-toggle-bank">
                   <input defaultChecked={editingPaymentMethod?.status !== "inactive"} name="statusActive" type="checkbox" />
@@ -663,7 +665,7 @@ function formatRange(minAmount: number | null, maxAmount: number | null) {
 }
 
 function formatAmount(value: number) {
-  return Number(value).toLocaleString("en-IN", {
+  return Number(value / 100).toLocaleString("en-IN", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });

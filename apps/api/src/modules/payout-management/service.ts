@@ -1,4 +1,5 @@
 import { loadConfig } from "@cmsv01/shared/config";
+import { Decimal } from "@cmsv01/shared/decimal";
 import {
   getDatabasePool,
   type DatabaseExecutor,
@@ -494,38 +495,44 @@ export class PayoutManagementService {
         };
       }
 
-      if (
-        selectedPaymentMethod &&
-        selectedPaymentMethod.minAmount !== null &&
-        item.amount.value < selectedPaymentMethod.minAmount
-      ) {
-        return {
-          error: "payment_method_amount_out_of_range" as const,
-          paymentMethodCode: selectedPaymentMethod.paymentMethodCode,
-          minAmount: selectedPaymentMethod.minAmount,
-          maxAmount: selectedPaymentMethod.maxAmount,
-          amount: item.amount.value
-        };
-      }
+      const itemAmountDecimal = Decimal.fromCents(BigInt(item.amount.value));
+      if (selectedPaymentMethod) {
+        if (selectedPaymentMethod.minAmount !== null) {
+          const minDecimal = Decimal.fromCents(BigInt(selectedPaymentMethod.minAmount));
+          if (itemAmountDecimal.lessThan(minDecimal)) {
+            return {
+              error: "payment_method_amount_out_of_range" as const,
+              paymentMethodCode: selectedPaymentMethod.paymentMethodCode,
+              minAmount: selectedPaymentMethod.minAmount,
+              maxAmount: selectedPaymentMethod.maxAmount,
+              amount: item.amount.value
+            };
+          }
+        }
 
-      if (
-        selectedPaymentMethod &&
-        selectedPaymentMethod.maxAmount !== null &&
-        item.amount.value > selectedPaymentMethod.maxAmount
-      ) {
-        return {
-          error: "payment_method_amount_out_of_range" as const,
-          paymentMethodCode: selectedPaymentMethod.paymentMethodCode,
-          minAmount: selectedPaymentMethod.minAmount,
-          maxAmount: selectedPaymentMethod.maxAmount,
-          amount: item.amount.value
-        };
+        if (selectedPaymentMethod.maxAmount !== null) {
+          const maxDecimal = Decimal.fromCents(BigInt(selectedPaymentMethod.maxAmount));
+          if (itemAmountDecimal.greaterThan(maxDecimal)) {
+            return {
+              error: "payment_method_amount_out_of_range" as const,
+              paymentMethodCode: selectedPaymentMethod.paymentMethodCode,
+              minAmount: selectedPaymentMethod.minAmount,
+              maxAmount: selectedPaymentMethod.maxAmount,
+              amount: item.amount.value
+            };
+          }
+        }
       }
     }
 
-    const totalAmount = payload.items.reduce((sum, item) => sum + item.amount.value, 0);
+    const totalAmountDecimal = payload.items.reduce(
+      (sum, item) => sum.add(Decimal.fromCents(BigInt(item.amount.value))),
+      Decimal.fromCents(0n)
+    );
+    const totalAmount = Number(totalAmountDecimal.toCents());
 
-    if (totalAmount > effectiveSingleLimit) {
+    const effectiveSingleLimitDecimal = Decimal.fromCents(BigInt(effectiveSingleLimit));
+    if (totalAmountDecimal.greaterThan(effectiveSingleLimitDecimal)) {
       return {
         error: "single_transaction_limit_exceeded" as const,
         limit: effectiveSingleLimit
@@ -537,8 +544,10 @@ export class PayoutManagementService {
       payload.corporateId,
       payload.batchId
     );
+    const currentDailyTotalDecimal = Decimal.fromCents(BigInt(currentDailyTotal));
+    const effectiveDailyLimitDecimal = Decimal.fromCents(BigInt(effectiveDailyLimit));
 
-    if (currentDailyTotal + totalAmount > effectiveDailyLimit) {
+    if (currentDailyTotalDecimal.add(totalAmountDecimal).greaterThan(effectiveDailyLimitDecimal)) {
       return {
         error: "daily_cumulative_limit_exceeded" as const,
         limit: effectiveDailyLimit,
@@ -594,7 +603,7 @@ export class PayoutManagementService {
           payload.title,
           payload.tag ?? null,
           payload.remark ?? null,
-          totalAmount,
+          totalAmountDecimal.toString(),
           batchUtr,
           batchNarration
         ]
@@ -613,7 +622,7 @@ export class PayoutManagementService {
             item.itemId,
             payload.batchId,
             item.beneficiaryId,
-            item.amount.value,
+            Decimal.fromCents(BigInt(item.amount.value)).toString(),
             item.amount.currency,
             item.purpose
           ]
@@ -2470,7 +2479,7 @@ export class PayoutManagementService {
       };
     }
 
-    if (payload.amount > batch.totalAmount.value) {
+    if (Decimal.fromCents(BigInt(payload.amount)).greaterThan(Decimal.fromCents(BigInt(batch.totalAmount.value)))) {
       return {
         error: "refund_amount_exceeds_batch" as const,
         batchAmount: batch.totalAmount.value
@@ -2505,7 +2514,7 @@ export class PayoutManagementService {
         batch.subscriptionId,
         batch.packageCode,
         payload.requestedByUserId,
-        payload.amount,
+        Decimal.fromCents(BigInt(payload.amount)).toString(),
         payload.reason
       ]
     );
@@ -2679,7 +2688,7 @@ export class PayoutManagementService {
       state: this.mapInternalToUserState(row.state),
       internalState: row.state,
       totalAmount: {
-        value: Number(row.total_amount),
+        value: Number(Decimal.fromString(row.total_amount).toCents()),
         currency: this.baseCurrency
       },
       approvalComment: row.approval_comment,
@@ -2746,7 +2755,7 @@ export class PayoutManagementService {
       state: this.mapInternalToUserState(row.state),
       internalState: row.state,
       totalAmount: {
-        value: Number(row.total_amount),
+        value: Number(Decimal.fromString(row.total_amount).toCents()),
         currency: this.baseCurrency
       },
       approvalComment: row.approval_comment,
@@ -2980,7 +2989,7 @@ export class PayoutManagementService {
       params
     );
 
-    return Number(result.rows[0]?.total_amount ?? 0);
+    return Number(Decimal.fromString(result.rows[0]?.total_amount ?? "0").toCents());
   }
 
   private async resolveSelectedDebitAccount(
@@ -3452,7 +3461,7 @@ function mapPayoutItemRow(row: PayoutItemRow) {
     itemId: row.item_id,
     beneficiaryId: row.beneficiary_id,
     amount: {
-      value: Number(row.amount),
+      value: Number(Decimal.fromString(row.amount).toCents()),
       currency: row.currency as "INR"
     },
     purpose: row.purpose,
@@ -3473,7 +3482,7 @@ function mapRefundRow(row: PayoutRefundRow) {
     subscriptionId: row.subscription_id,
     packageCode: row.package_code,
     requestedByUserId: row.requested_by_user_id,
-    amount: Number(row.amount),
+    amount: Number(Decimal.fromString(row.amount).toCents()),
     reason: row.reason,
     state: row.state,
     createdAt: row.created_at?.toISOString() ?? null,

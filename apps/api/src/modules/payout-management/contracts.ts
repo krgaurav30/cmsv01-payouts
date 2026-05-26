@@ -19,7 +19,7 @@ export const payoutItemStateSchema = z.enum([
 ]);
 
 export const moneySchema = z.object({
-  value: z.number().positive(),
+  value: z.number().int().positive(),
   currency: z.literal("INR").default("INR")
 });
 
@@ -54,7 +54,7 @@ export const payoutBulkRowSchema = z.object({
   transactionReference: z.string().min(2),
   beneficiaryId: z.string().min(3),
   debitAccountNumber: z.string().min(6).optional(),
-  amount: z.number().positive(),
+  amount: z.number().int().positive(),
   tag: z.string().min(1).optional(),
   remark: z.string().min(1).optional()
 });
@@ -150,7 +150,7 @@ export const payoutRefundCreateSchema = z.object({
   subscriptionId: z.string().min(3).optional(),
   packageCode: z.string().min(2).optional(),
   requestedByUserId: z.string().min(3),
-  amount: z.number().positive(),
+  amount: z.number().int().positive(),
   reason: z.string().min(5).max(500)
 });
 
