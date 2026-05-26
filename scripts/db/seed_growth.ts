@@ -60,24 +60,24 @@ async function main() {
     await db.query("delete from payout_items where batch_id like 'seed-txn-%'");
     await db.query("delete from payout_batches where batch_id like 'seed-txn-%'");
 
-    console.log("\nStarting transaction generation for the last 365 days (1 year) with compounding 15% per annum growth and weekly seasonality...");
+    console.log("\nStarting transaction generation for the last 1095 days (3 years) with compounding 10% per annum growth and weekly seasonality...");
 
     let totalBatchesCreated = 0;
     let totalItemsCreated = 0;
 
     const baseDailyVolume = 40000; // Base daily volume of ~ ₹40,000
 
-    for (let day = 365; day >= 0; day--) {
+    for (let day = 1095; day >= 0; day--) {
       const targetDate = new Date();
       targetDate.setDate(targetDate.getDate() - day);
       
       const dayOfWeek = targetDate.getDay(); // 0 is Sunday, 6 is Saturday
       const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-      // 1. Calculate compounding growth factor (t goes from 0 up to 365)
-      // Compound 15% annual growth factor: P = P0 * (1 + 0.15)^(t/365)
-      const t = 365 - day;
-      const growthFactor = Math.pow(1.15, t / 365);
+      // 1. Calculate compounding growth factor (t goes from 0 up to 1095)
+      // Compound 10% annual growth factor: P = P0 * (1 + 0.10)^(t/365)
+      const t = 1095 - day;
+      const growthFactor = Math.pow(1.10, t / 365);
 
       // 2. Seasonality multiplier
       let seasonalityFactor = 1.0;
@@ -165,7 +165,7 @@ async function main() {
     }
 
     await db.query("COMMIT");
-    console.log(`\nSuccess! Seeded ${totalBatchesCreated} payout batches with compounding 15% per annum growth trend.`);
+    console.log(`\nSuccess! Seeded ${totalBatchesCreated} payout batches with compounding 10% per annum growth trend over 3 years.`);
 
   } catch (err) {
     await db.query("ROLLBACK");

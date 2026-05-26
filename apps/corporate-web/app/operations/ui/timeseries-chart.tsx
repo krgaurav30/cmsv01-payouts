@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, MouseEvent } from "react";
+import { useState, useMemo, useRef, MouseEvent, useEffect } from "react";
 import type { PayoutBatch } from "../../../lib/types";
 
 interface TimeseriesChartProps {
@@ -18,16 +18,39 @@ type ChartDataPoint = {
   monthKey?: string; // used for grouping
 };
 
+const HISTORICAL_OPTIONS = [
+  { value: "7d", label: "7 Days" },
+  { value: "30d", label: "30 Days" },
+  { value: "90d", label: "Quarter (90 Days)" },
+  { value: "180d", label: "6 Months" },
+  { value: "365d", label: "1 Year" },
+  { value: "1095d", label: "3 Years" }
+] as const;
+
 export function TimeseriesChart({ transactions }: TimeseriesChartProps) {
-  const [rangeFilter, setRangeFilter] = useState<"7d" | "30d" | "90d" | "180d" | "365d">("30d");
-  const [showForecast, setShowForecast] = useState<boolean>(false);
+  const [rangeFilter, setRangeFilter] = useState<"7d" | "30d" | "90d" | "180d" | "365d" | "1095d">("30d");
+  const [showForecast, setShowForecast] = useState(false);
   const [forecastHorizon, setForecastHorizon] = useState<"30d" | "180d" | "365d">("30d");
-  
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   const [hoveredPoint, setHoveredPoint] = useState<ChartDataPoint | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
-  const containerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handleClickOutside = (event: globalThis.MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+
 
   // Filter valid transactions: "paid", "sent_to_bank", "approved" states
   const validTxns = useMemo(() => {
@@ -42,9 +65,9 @@ export function TimeseriesChart({ transactions }: TimeseriesChartProps) {
 
     // ─── CASE A: HISTORICAL DATA ONLY (FORECAST MODE OFF) ───
     if (!showForecast) {
-      if (rangeFilter === "180d" || rangeFilter === "365d") {
+      if (rangeFilter === "180d" || rangeFilter === "365d" || rangeFilter === "1095d") {
         // Group by month
-        const monthsCount = rangeFilter === "180d" ? 6 : 12;
+        const monthsCount = rangeFilter === "180d" ? 6 : rangeFilter === "365d" ? 12 : 36;
         const datesList: ChartDataPoint[] = [];
 
         for (let i = monthsCount - 1; i >= 0; i--) {
@@ -512,62 +535,164 @@ export function TimeseriesChart({ transactions }: TimeseriesChartProps) {
           </p>
         </div>
 
-        {/* Dynamic primary tab filters */}
-        <div style={{ display: "flex", gap: "6px" }}>
-          {([
-            { id: "7d", label: "7 Days" },
-            { id: "30d", label: "30 Days" },
-            { id: "90d", label: "Quarter" },
-            { id: "180d", label: "6 Months" },
-            { id: "365d", label: "1 Year" }
-          ] as const).map((range) => (
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          {/* Sleek Minimalist Custom Select Dropdown Drop-in */}
+          <div ref={dropdownRef} style={{ position: "relative" }}>
             <button
-              key={range.id}
-              onClick={() => {
-                setRangeFilter(range.id);
-                setShowForecast(false);
-              }}
+              onClick={() => setDropdownOpen(!dropdownOpen)}
               type="button"
               style={{
-                fontSize: "11px",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                fontSize: "12px",
                 fontWeight: 600,
-                padding: "6px 12px",
-                borderRadius: "var(--radius-md)",
-                border: !showForecast && rangeFilter === range.id ? "1px solid var(--action-border)" : "1px solid var(--border)",
-                background: !showForecast && rangeFilter === range.id ? "var(--action-hover-bg)" : "var(--surface)",
-                color: !showForecast && rangeFilter === range.id ? "var(--action-text)" : "var(--text-secondary)",
+                padding: "8px 14px",
+                borderRadius: "var(--radius-lg)",
+                border: "1px solid var(--border)",
+                background: "var(--surface)",
+                color: "var(--text-primary)",
                 cursor: "pointer",
-                transition: "all 120ms ease"
+                outline: "none",
+                transition: "all 120ms ease",
+                boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = "var(--border-strong)";
+                e.currentTarget.style.background = "var(--surface-hover)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = dropdownOpen ? "var(--border-focus)" : "var(--border)";
+                e.currentTarget.style.background = "var(--surface)";
               }}
             >
-              {range.label}
+              {/* Elegant SVG Calendar Icon */}
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ color: !showForecast ? "var(--text-secondary)" : "var(--text-tertiary)" }}
+              >
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+              
+              <span>{HISTORICAL_OPTIONS.find(opt => opt.value === rangeFilter)?.label || "30 Days"}</span>
+              
+              <span style={{ fontSize: "10px", color: "var(--text-tertiary)" }}>
+                {dropdownOpen ? "▲" : "▼"}
+              </span>
             </button>
-          ))}
+
+            {dropdownOpen && (
+              <div
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  top: "calc(100% + 6px)",
+                  width: "180px",
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "12px",
+                  boxShadow: "0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.05)",
+                  padding: "6px",
+                  zIndex: 50
+                }}
+              >
+                <div style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase", color: "var(--text-tertiary)", padding: "6px 8px 4px 8px", letterSpacing: "0.05em" }}>
+                  Historical Range
+                </div>
+                {HISTORICAL_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => {
+                      setRangeFilter(opt.value);
+                      setShowForecast(false);
+                      setDropdownOpen(false);
+                    }}
+                    type="button"
+                    style={{
+                      display: "flex",
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "8px 10px",
+                      borderRadius: "6px",
+                      fontSize: "12px",
+                      fontWeight: (!showForecast && rangeFilter === opt.value) ? 600 : 500,
+                      background: (!showForecast && rangeFilter === opt.value) ? "var(--action-hover-bg)" : "transparent",
+                      color: (!showForecast && rangeFilter === opt.value) ? "var(--action-text)" : "var(--text-primary)",
+                      border: 0,
+                      cursor: "pointer",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      transition: "all 100ms ease"
+                    }}
+                    onMouseEnter={(e) => {
+                      if (showForecast || rangeFilter !== opt.value) {
+                        e.currentTarget.style.background = "var(--surface-subtle)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (showForecast || rangeFilter !== opt.value) {
+                        e.currentTarget.style.background = "transparent";
+                      }
+                    }}
+                  >
+                    <span>{opt.label}</span>
+                    {!showForecast && rangeFilter === opt.value && <span style={{ fontSize: "10px" }}>✓</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* AI Forecast Toggle Button */}
           <button
-            onClick={() => setShowForecast(true)}
+            onClick={() => {
+              setShowForecast(!showForecast);
+            }}
             type="button"
             style={{
-              fontSize: "11px",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              fontSize: "12px",
               fontWeight: 600,
-              padding: "6px 12px",
-              borderRadius: "var(--radius-md)",
+              padding: "8px 14px",
+              borderRadius: "var(--radius-lg)",
               border: showForecast ? "1px solid #818CF8" : "1px solid var(--border)",
               background: showForecast ? "rgba(99, 102, 241, 0.08)" : "var(--surface)",
               color: showForecast ? "#6366F1" : "var(--text-secondary)",
               cursor: "pointer",
               transition: "all 120ms ease",
-              display: "flex",
-              alignItems: "center",
-              gap: "4px"
+              boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)"
+            }}
+            onMouseEnter={(e) => {
+              if (!showForecast) {
+                e.currentTarget.style.borderColor = "var(--border-strong)";
+                e.currentTarget.style.background = "var(--surface-hover)";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!showForecast) {
+                e.currentTarget.style.borderColor = "var(--border)";
+                e.currentTarget.style.background = "var(--surface)";
+              }
             }}
           >
-            <span>🔮</span>
-            <span>AI Forecast</span>
+            <span>🔮 AI Forecast</span>
           </button>
         </div>
       </div>
 
-      {/* FORECAST PERIOD SELECTOR (Renders sub-buttons only when forecast is enabled) */}
+      {/* FORECAST PERIOD SELECTOR */}
       {showForecast && (
         <div 
           style={{
@@ -752,6 +877,9 @@ export function TimeseriesChart({ transactions }: TimeseriesChartProps) {
             if (totalTicks >= 90) {
               // Daily forecast: render only the preset milestone ticks
               shouldRenderText = true;
+            } else if (totalTicks > 30) {
+              // 3 Years History: render every 6th label
+              shouldRenderText = (i % 6 === 0);
             } else if (totalTicks > 18) {
               // 30d history, 1 Year forecast: render every 4th label
               shouldRenderText = (i % 4 === 0);
