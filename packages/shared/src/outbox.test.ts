@@ -12,7 +12,7 @@ async function run() {
   const testEventId = `test-event-${Date.now()}`;
   const testEvent: DomainEventEnvelope = {
     eventId: testEventId,
-    aggregateType: "transaction",
+    aggregateType: "test-integration" as any,
     aggregateId: "test-batch-123",
     eventType: "transaction.submitted",
     eventKey: "test-batch-123",

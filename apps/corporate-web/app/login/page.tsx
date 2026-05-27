@@ -7,7 +7,8 @@ import "./styles.css";
 
 const LOGIN_ERRORS: Record<string, string> = {
   invalid_credentials: "Invalid username or password.",
-  service_unavailable: "Login service is temporarily unavailable."
+  service_unavailable: "Login service is temporarily unavailable.",
+  session_expired: "Your session has expired. Please log in again."
 };
 
 export default async function LoginPage({
@@ -18,11 +19,10 @@ export default async function LoginPage({
   const cookieStore = await cookies();
   const session = parseSessionCookie(cookieStore.get(SESSION_COOKIE)?.value);
 
-  if (session) {
+  const params = searchParams ? await searchParams : undefined;
+  if (session && !params?.error) {
     redirect("/operations/home");
   }
-
-  const params = searchParams ? await searchParams : undefined;
   const error =
     params?.error && params.error in LOGIN_ERRORS
       ? LOGIN_ERRORS[params.error]

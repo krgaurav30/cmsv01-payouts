@@ -63,12 +63,19 @@ async function fetchApi<T>(apiBase: string, path: string, cookieHeader: string, 
       }
     });
 
+    if (response.status === 401) {
+      throw new Error("Unauthorized");
+    }
+
     if (!response.ok) {
       return fallback;
     }
 
     return (await response.json()) as T;
-  } catch {
+  } catch (err: any) {
+    if (err.message === "Unauthorized") {
+      throw err;
+    }
     return fallback;
   }
 }

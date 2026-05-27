@@ -39,6 +39,8 @@ export function LoginCard({ error }: LoginCardProps) {
         dangerouslySetInnerHTML={{
           __html: `
             (function() {
+              document.cookie = "cmsCorporateSession=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+              document.cookie = "cmsSelectedCorporateId=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
               const bffUrl = "${process.env.NEXT_PUBLIC_BFF_URL || 'https://cmsv01-bff.onrender.com'}";
               console.log("Waking up BFF and Core API in background via " + bffUrl + "/health ...");
               fetch(bffUrl + "/health", { mode: "no-cors" }).catch(() => {});

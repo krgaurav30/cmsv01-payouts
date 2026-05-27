@@ -356,8 +356,9 @@ export class PayoutManagementService {
     return { items };
   }
 
-  async getBatch(batchId: string) {
-    const result = await this.db.query<PayoutBatchRow>(
+  async getBatch(batchId: string, client?: DatabaseExecutor) {
+    const executor = client || this.db;
+    const result = await executor.query<PayoutBatchRow>(
       `select pb.batch_id, pb.bank_tenant_id, pb.corporate_tenant_id,
               pb.corporate_id, pb.source_upload_id, pb.subscription_id, pb.package_code,
               pb.debit_account_id, pb.payment_method_code,
@@ -388,7 +389,7 @@ export class PayoutManagementService {
     return row ? this.mapBatchRow(row) : null;
   }
 
-  async createBatch(payload: PayoutBatchCreateRequest) {
+  async createBatch(payload: PayoutBatchCreateRequest, client?: DatabaseExecutor) {
     const actor = await this.identityAccessService.getCorporateUserById(payload.createdByUserId);
     const bankTenant = await this.tenantManagementService.getBankTenant(payload.bankTenantId);
     const corporateTenant = await this.tenantManagementService.getCorporateTenant(
@@ -489,10 +490,16 @@ export class PayoutManagementService {
       )
     );
 
+    const beneficiaryIds = payload.items.map((item) => item.beneficiaryId);
+    const fetchedBeneficiaries = await this.beneficiaryManagementService.getBeneficiariesByIds(
+      beneficiaryIds
+    );
+    const beneficiaryMap = new Map(
+      fetchedBeneficiaries.map((b) => [b.beneficiaryId.trim().toUpperCase(), b])
+    );
+
     for (const item of payload.items) {
-      const beneficiary = await this.beneficiaryManagementService.getBeneficiary(
-        item.beneficiaryId
-      );
+      const beneficiary = beneficiaryMap.get(item.beneficiaryId.trim().toUpperCase());
 
       if (!beneficiary) {
         return {
@@ -594,7 +601,8 @@ export class PayoutManagementService {
     const currentDailyTotal = await this.getCurrentDailyCumulativeAmount(
       payload.corporateTenantId,
       payload.corporateId,
-      payload.batchId
+      payload.batchId,
+      client
     );
     const currentDailyTotalDecimal = Decimal.fromCents(BigInt(currentDailyTotal));
     const effectiveDailyLimitDecimal = Decimal.fromCents(BigInt(effectiveDailyLimit));
@@ -610,8 +618,8 @@ export class PayoutManagementService {
     const batchUtr = payload.utr || null;
     const batchNarration = payload.narration || null;
 
-    await withDatabaseTransaction(this.config, async (client) => {
-      await client.query(
+    const executeDbOps = async (trx: DatabaseExecutor) => {
+      await trx.query(
         `insert into payout_batches (
            batch_id, bank_tenant_id, corporate_tenant_id, corporate_id, created_by_user_id,
            source_upload_id, subscription_id, package_code, debit_account_id, payment_method_code, created_by_role, title, tag, remark, state,
@@ -663,10 +671,10 @@ export class PayoutManagementService {
         ]
       );
 
-      await client.query(`delete from payout_items where batch_id = $1`, [payload.batchId]);
+      await trx.query(`delete from payout_items where batch_id = $1`, [payload.batchId]);
 
       for (const item of payload.items) {
-        await client.query(
+        await trx.query(
           `insert into payout_items (
              item_id, batch_id, beneficiary_id, amount, currency, purpose, state,
              bank_reference, failure_reason, processed_at
@@ -683,7 +691,7 @@ export class PayoutManagementService {
         );
       }
 
-      await this.appendTransactionOutboxEvent(client, payload.batchId, "transaction.created", {
+      await this.appendTransactionOutboxEvent(trx, payload.batchId, "transaction.created", {
         batchId: payload.batchId,
         bankTenantId: payload.bankTenantId,
         corporateTenantId: payload.corporateTenantId,
@@ -704,11 +712,20 @@ export class PayoutManagementService {
         utr: batchUtr,
         narration: batchNarration,
         initiationChannel: payload.initiationChannel,
-        occurredAt: Date.now()});
-    });
+        occurredAt: Date.now()
+      });
+    };
+
+    if (client) {
+      await executeDbOps(client);
+    } else {
+      await withDatabaseTransaction(this.config, async (trx) => {
+        await executeDbOps(trx);
+      });
+    }
 
     return {
-      data: await this.getBatch(payload.batchId)
+      data: await this.getBatch(payload.batchId, client)
     };
   }
 
@@ -1356,8 +1373,8 @@ export class PayoutManagementService {
     };
   }
 
-  async createAndSubmitBatch(payload: PayoutBatchCreateRequest) {
-    const createResult = await this.createBatch(payload);
+  async createAndSubmitBatch(payload: PayoutBatchCreateRequest, client?: DatabaseExecutor) {
+    const createResult = await this.createBatch(payload, client);
 
     if ("error" in createResult) {
       return createResult;
@@ -1367,7 +1384,7 @@ export class PayoutManagementService {
       action: "submit",
       actedByUserId: payload.createdByUserId,
       comment: `Submitted by maker ${payload.createdByUserId}`
-    });
+    }, client);
   }
 
   async acceptTransactionCommand(
@@ -1715,9 +1732,9 @@ export class PayoutManagementService {
     });
   }
 
-  async applyApprovalAction(batchId: string, payload: PayoutApprovalActionRequest) {
+  async applyApprovalAction(batchId: string, payload: PayoutApprovalActionRequest, client?: DatabaseExecutor) {
     const actor = await this.identityAccessService.getCorporateUserById(payload.actedByUserId);
-    const batch = await this.getBatch(batchId);
+    const batch = await this.getBatch(batchId, client);
 
     if (!actor || actor.approvalState !== "approved") {
       return {
@@ -1778,8 +1795,8 @@ export class PayoutManagementService {
 
     const now = Date.now();
     if (payload.action === "submit") {
-      await withDatabaseTransaction(this.config, async (client) => {
-        await client.query(
+      const executeSubmit = async (trx: DatabaseExecutor) => {
+        await trx.query(
           `update payout_batches
            set state = $2,
                approval_comment = $3,
@@ -1796,10 +1813,10 @@ export class PayoutManagementService {
           batch.subscriptionId,
           batch.debitAccountId,
           batch.totalAmount.value,
-          client
+          trx
         );
 
-        await this.appendTransactionOutboxEvent(client, batchId, "transaction.submitted", {
+        await this.appendTransactionOutboxEvent(trx, batchId, "transaction.submitted", {
           batchId,
           transactionReference: batch.title,
           bankTenantId: batch.bankTenantId,
@@ -1811,10 +1828,18 @@ export class PayoutManagementService {
           comment: payload.comment ?? batch.approvalComment,
           state: nextState,
           occurredAt: now});
-      });
+      };
+
+      if (client) {
+        await executeSubmit(client);
+      } else {
+        await withDatabaseTransaction(this.config, async (trx) => {
+          await executeSubmit(trx);
+        });
+      }
     } else {
-      const actionResult = await withDatabaseTransaction(this.config, async (client) => {
-        const lockedBatchResult = await client.query<{
+      const executeAction = async (trx: DatabaseExecutor) => {
+        const lockedBatchResult = await trx.query<{
           state: PayoutBatch["state"];
           approval_comment: string | null;
           utr: string | null;
@@ -1842,7 +1867,7 @@ export class PayoutManagementService {
           };
         }
 
-        const context = await this.getApprovalContextRow(batchId, true, client);
+        const context = await this.getApprovalContextRow(batchId, true, trx);
         const currentLevel = context?.current_approval_level ?? 1;
         const currentRoles = this.getRolesForLevel(context, currentLevel);
 
@@ -1852,7 +1877,7 @@ export class PayoutManagementService {
           };
         }
 
-        await client.query(
+        await trx.query(
           `insert into payout_batch_approval_actions (
              action_id, batch_id, approval_level, action, actor_user_id, actor_role, comment, created_at
            )
@@ -1871,7 +1896,7 @@ export class PayoutManagementService {
         if (payload.action === "approve") {
           const requiredLevels = context?.approval_levels_required ?? 1;
           if (currentLevel < requiredLevels) {
-            await client.query(
+            await trx.query(
               `update payout_batch_approval_contexts
                set current_approval_level = $2,
                    updated_at = (extract(epoch from now()) * 1000)::bigint
@@ -1879,7 +1904,7 @@ export class PayoutManagementService {
               [batchId, currentLevel + 1]
             );
 
-            await client.query(
+            await trx.query(
               `update payout_batches
                set state = 'partially_approved',
                    approval_comment = $2
@@ -1891,7 +1916,7 @@ export class PayoutManagementService {
               ]
             );
             await this.appendTransactionOutboxEvent(
-              client,
+              trx,
               batchId,
               "transaction.partially_approved",
               {
@@ -1914,7 +1939,7 @@ export class PayoutManagementService {
             );
           } else {
             if (context) {
-              await client.query(
+              await trx.query(
                 `update payout_batch_approval_contexts
                  set status = 'approved',
                      updated_at = (extract(epoch from now()) * 1000)::bigint
@@ -1937,7 +1962,7 @@ export class PayoutManagementService {
               }
             }
 
-            await client.query(
+            await trx.query(
               `update payout_batches
                set state = $2,
                    approval_comment = $3,
@@ -1959,7 +1984,7 @@ export class PayoutManagementService {
               ]
             );
             await this.appendTransactionOutboxEvent(
-              client,
+              trx,
               batchId,
               "transaction.approved",
               {
@@ -1980,7 +2005,7 @@ export class PayoutManagementService {
           }
         } else {
           if (context) {
-            await client.query(
+            await trx.query(
               `update payout_batch_approval_contexts
                set status = 'rejected',
                    updated_at = (extract(epoch from now()) * 1000)::bigint
@@ -1989,7 +2014,7 @@ export class PayoutManagementService {
             );
           }
 
-          await client.query(
+          await trx.query(
             `update payout_batches
              set state = $2,
                  approval_comment = $3,
@@ -2007,7 +2032,7 @@ export class PayoutManagementService {
             ]
           );
 
-          await this.appendTransactionOutboxEvent(client, batchId, "transaction.rejected", {
+          await this.appendTransactionOutboxEvent(trx, batchId, "transaction.rejected", {
             batchId,
             transactionReference: batch.title,
             bankTenantId: batch.bankTenantId,
@@ -2021,14 +2046,23 @@ export class PayoutManagementService {
             approvalLevel: currentLevel,
             occurredAt: now});
         }
-      });
+      };
+
+      let actionResult;
+      if (client) {
+        actionResult = await executeAction(client);
+      } else {
+        actionResult = await withDatabaseTransaction(this.config, async (trx) => {
+          return executeAction(trx);
+        });
+      }
 
       if (actionResult && "error" in actionResult) {
         return actionResult;
       }
     }
 
-    const updatedBatch = await this.getBatch(batchId);
+    const updatedBatch = await this.getBatch(batchId, client);
 
     if (updatedBatch) {
       if (payload.action === "submit") {
@@ -2565,6 +2599,8 @@ export class PayoutManagementService {
     const created: PayoutBatch[] = [];
     const rejected: Array<{ rowNumber: number; transactionReference: string; reason: string }> = [];
     const referencesSeen = new Set<string>();
+    const debitAccountCache = new Map<string, string | null>();
+    
     const settings = await this.settingsManagementService.getSettingsForCorporateTenant(
       upload.corporate_tenant_id
     );
@@ -2588,125 +2624,138 @@ export class PayoutManagementService {
       ])
     );
 
-    for (const [index, row] of rows.entries()) {
-      const transactionReference = row.transactionReference.trim();
-      const normalizedReference = transactionReference.toLowerCase();
-      const rowNumber = index + 2;
+    const chunkSize = 100;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
 
-      if (
-        settings?.duplicateReferencePolicy !== "disabled" &&
-        referencesSeen.has(normalizedReference)
-      ) {
-        rejected.push({
-          rowNumber,
-          transactionReference,
-          reason: "Duplicate transaction reference found inside the uploaded file"
-        });
-        continue;
-      }
+      await withDatabaseTransaction(this.config, async (client) => {
+        for (const [chunkIndex, row] of chunk.entries()) {
+          const globalIndex = i + chunkIndex;
+          const transactionReference = row.transactionReference.trim();
+          const normalizedReference = transactionReference.toLowerCase();
+          const rowNumber = globalIndex + 2;
 
-      if (settings?.duplicateReferencePolicy !== "disabled") {
-        referencesSeen.add(normalizedReference);
-      }
-
-      const beneficiary = beneficiaryMap.get(row.beneficiaryId.trim().toUpperCase());
-      if (!beneficiary) {
-        rejected.push({
-          rowNumber,
-          transactionReference,
-          reason: `Beneficiary not found: ${row.beneficiaryId}`
-        });
-        continue;
-      }
-
-      let debitAccountId: string | undefined;
-      if (row.debitAccountNumber) {
-        const resolvedDebitAccountId = upload.subscription_id
-          ? await this.resolveDebitAccountIdByNumber(
-              upload.subscription_id,
-              row.debitAccountNumber
-            )
-          : null;
-        debitAccountId = resolvedDebitAccountId ?? undefined;
-
-        if (!debitAccountId) {
-          rejected.push({
-            rowNumber,
-            transactionReference,
-            reason: `Debit account not found for this package: ${row.debitAccountNumber}`
-          });
-          continue;
-        }
-      }
-
-      const resolvedPaymentMethod = this.resolveSelectedPaymentMethod(
-        uploadEffectiveSettings,
-        row.paymentMethodCode
-      );
-
-      if (resolvedPaymentMethod && "error" in resolvedPaymentMethod) {
-        rejected.push({
-          rowNumber,
-          transactionReference,
-          reason: mapBulkCreateErrorToMessage(resolvedPaymentMethod)
-        });
-        continue;
-      }
-
-      const isSingleDebit = uploadEffectiveSettings?.effectiveDebitMode === "single";
-      const batchUtr = isSingleDebit ? (upload.utr || generate16DigitUtr()) : generate16DigitUtr();
-      let batchNarration: string;
-      if (isSingleDebit) {
-        batchNarration = `CMS-${batchUtr}- ${upload.file_name}`;
-      } else {
-        const remarkSuffix = row.remark ? `-${row.remark}` : "";
-        batchNarration = `CMS-${batchUtr}-${upload.package_code || "PAYOUT"}${remarkSuffix}`.slice(0, 64);
-      }
-
-      const createResult = await this.createAndSubmitBatch({
-        batchId: crypto.randomUUID(),
-        bankTenantId: upload.bank_tenant_id,
-        corporateTenantId: upload.corporate_tenant_id,
-        corporateId: upload.corporate_id ?? "",
-        sourceUploadId: uploadId,
-        subscriptionId: upload.subscription_id ?? undefined,
-        packageCode: upload.package_code || "PAYOUT",
-        debitAccountId,
-        paymentMethodCode:
-          resolvedPaymentMethod && !("error" in resolvedPaymentMethod)
-            ? resolvedPaymentMethod.paymentMethodCode
-            : undefined,
-        createdByUserId: upload.uploaded_by_user_id,
-        title: transactionReference,
-        tag: row.tag ?? undefined,
-        remark: row.remark ?? undefined,
-        utr: batchUtr,
-        narration: batchNarration,
-        items: [
-          {
-            itemId: `${createSimpleId("ITEM")}-${index + 1}`,
-            beneficiaryId: beneficiary.beneficiaryId,
-            amount: {
-              value: row.amount,
-              currency: this.baseCurrency
-            },
-            purpose: row.remark ?? transactionReference
+          if (
+            settings?.duplicateReferencePolicy !== "disabled" &&
+            referencesSeen.has(normalizedReference)
+          ) {
+            rejected.push({
+              rowNumber,
+              transactionReference,
+              reason: "Duplicate transaction reference found inside the uploaded file"
+            });
+            continue;
           }
-        ]
+
+          if (settings?.duplicateReferencePolicy !== "disabled") {
+            referencesSeen.add(normalizedReference);
+          }
+
+          const beneficiary = beneficiaryMap.get(row.beneficiaryId.trim().toUpperCase());
+          if (!beneficiary) {
+            rejected.push({
+              rowNumber,
+              transactionReference,
+              reason: `Beneficiary not found: ${row.beneficiaryId}`
+            });
+            continue;
+          }
+
+          let debitAccountId: string | undefined;
+          if (row.debitAccountNumber) {
+            if (debitAccountCache.has(row.debitAccountNumber)) {
+              debitAccountId = debitAccountCache.get(row.debitAccountNumber) ?? undefined;
+            } else {
+              const resolvedDebitAccountId = upload.subscription_id
+                ? await this.resolveDebitAccountIdByNumber(
+                    upload.subscription_id,
+                    row.debitAccountNumber
+                  )
+                : null;
+              debitAccountId = resolvedDebitAccountId ?? undefined;
+              debitAccountCache.set(row.debitAccountNumber, resolvedDebitAccountId);
+            }
+
+            if (!debitAccountId) {
+              rejected.push({
+                rowNumber,
+                transactionReference,
+                reason: `Debit account not found for this package: ${row.debitAccountNumber}`
+              });
+              continue;
+            }
+          }
+
+          const resolvedPaymentMethod = this.resolveSelectedPaymentMethod(
+            uploadEffectiveSettings,
+            row.paymentMethodCode
+          );
+
+          if (resolvedPaymentMethod && "error" in resolvedPaymentMethod) {
+            rejected.push({
+              rowNumber,
+              transactionReference,
+              reason: mapBulkCreateErrorToMessage(resolvedPaymentMethod)
+            });
+            continue;
+          }
+
+          const isSingleDebit = uploadEffectiveSettings?.effectiveDebitMode === "single";
+          const batchUtr = isSingleDebit ? (upload.utr || generate16DigitUtr()) : generate16DigitUtr();
+          let batchNarration: string;
+          if (isSingleDebit) {
+            batchNarration = `CMS-${batchUtr}- ${upload.file_name}`;
+          } else {
+            const remarkSuffix = row.remark ? `-${row.remark}` : "";
+            batchNarration = `CMS-${batchUtr}-${upload.package_code || "PAYOUT"}${remarkSuffix}`.slice(0, 64);
+          }
+
+          const createResult = await this.createAndSubmitBatch({
+            batchId: crypto.randomUUID(),
+            bankTenantId: upload.bank_tenant_id,
+            corporateTenantId: upload.corporate_tenant_id,
+            corporateId: upload.corporate_id ?? "",
+            sourceUploadId: uploadId,
+            subscriptionId: upload.subscription_id ?? undefined,
+            packageCode: upload.package_code || "PAYOUT",
+            debitAccountId,
+            paymentMethodCode:
+              resolvedPaymentMethod && !("error" in resolvedPaymentMethod)
+                ? resolvedPaymentMethod.paymentMethodCode
+                : undefined,
+            createdByUserId: upload.uploaded_by_user_id,
+            title: transactionReference,
+            tag: row.tag ?? undefined,
+            remark: row.remark ?? undefined,
+            utr: batchUtr,
+            narration: batchNarration,
+            items: [
+              {
+                itemId: `${createSimpleId("ITEM")}-${globalIndex + 1}`,
+                beneficiaryId: beneficiary.beneficiaryId,
+                amount: {
+                  value: row.amount,
+                  currency: this.baseCurrency
+                },
+                purpose: row.remark ?? transactionReference
+              }
+            ]
+          }, client);
+
+          if (!("data" in createResult)) {
+            rejected.push({
+              rowNumber,
+              transactionReference,
+              reason: mapBulkCreateErrorToMessage(
+                createResult as Parameters<typeof mapBulkCreateErrorToMessage>[0]
+              )
+            });
+            continue;
+          }
+
+          created.push(createResult.data!);
+        }
       });
-
-      if (!("data" in createResult)) {
-        rejected.push({
-          rowNumber,
-          transactionReference,
-          reason: mapBulkCreateErrorToMessage(
-            createResult as Parameters<typeof mapBulkCreateErrorToMessage>[0]
-          )
-        });
-        continue;
-      }
-
-      created.push(createResult.data!);
     }
 
     const status =
@@ -3319,8 +3368,10 @@ export class PayoutManagementService {
   private async getCurrentDailyCumulativeAmount(
     corporateTenantId: string,
     corporateId: string,
-    excludingBatchId?: string
+    excludingBatchId?: string,
+    client?: DatabaseExecutor
   ) {
+    const executor = client || this.db;
     const params: Array<string> = [corporateTenantId, corporateId];
     let exclusionClause = "";
 
@@ -3329,7 +3380,7 @@ export class PayoutManagementService {
       exclusionClause = `and batch_id <> $${params.length}`;
     }
 
-    const result = await this.db.query<{ total_amount: string | null }>(
+    const result = await executor.query<{ total_amount: string | null }>(
       `select coalesce(sum(total_amount), 0)::text as total_amount
        from payout_batches
        where corporate_tenant_id = $1

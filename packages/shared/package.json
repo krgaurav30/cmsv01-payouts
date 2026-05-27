@@ -10,6 +10,7 @@
     "./events": "./src/events.ts",
     "./kafka": "./src/kafka.ts",
     "./outbox": "./src/outbox.ts",
-    "./tenant-context": "./src/tenant-context.ts"
+    "./tenant-context": "./src/tenant-context.ts",
+    "./audit-trail": "./src/audit-trail.ts"
   }
 }

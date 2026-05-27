@@ -67,7 +67,14 @@ export const identityAccessRoutes: FastifyPluginAsync = async (app) => {
     };
   });
 
-  app.post("/v1/auth/login", async (request, reply) => {
+  app.post("/v1/auth/login", {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: "1 minute"
+      }
+    }
+  }, async (request, reply) => {
     const parsed = loginRequestSchema.safeParse(request.body);
 
     if (!parsed.success) {

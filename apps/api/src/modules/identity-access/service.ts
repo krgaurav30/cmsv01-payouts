@@ -1,6 +1,7 @@
 import { loadConfig } from "@cmsv01/shared/config";
 import { getDatabasePool } from "@cmsv01/shared/db";
-import { hashPassword, verifyPassword, signJwt } from "@cmsv01/shared/crypto";
+import { hashPassword, verifyPassword, needsRehash, signJwt } from "@cmsv01/shared/crypto";
+import { AuditTrailService } from "@cmsv01/shared/audit-trail";
 
 import type { AppConfig } from "@cmsv01/shared/config";
 
@@ -68,6 +69,8 @@ type CorporateUserRow = {
   reviewed_at: number | null;
   reviewed_by_user_id: string | null;
   reviewed_by_role: string | null;
+  failed_login_attempts: number;
+  locked_until: number | null;
 };
 
 type CorporateRoleRow = {
@@ -103,34 +106,123 @@ export class IdentityAccessService {
 
   constructor(
     private readonly config: AppConfig,
-    private readonly notificationsService = new NotificationsService()
+    private readonly notificationsService = new NotificationsService(),
+    private readonly auditTrailService = new AuditTrailService(loadConfig())
   ) {}
 
   getSupportedRoles() {
     return supportedRoles;
   }
 
-  async login(payload: LoginRequest) {
+  /** Maximum consecutive failed login attempts before lockout */
+  private static readonly MAX_FAILED_ATTEMPTS = 5;
+  /** Lockout duration in milliseconds (30 minutes) */
+  private static readonly LOCKOUT_DURATION_MS = 30 * 60 * 1000;
+
+  async login(payload: LoginRequest, requestContext?: { ipAddress?: string; userAgent?: string }) {
     const result = await this.db.query<CorporateUserRow>(
       `select user_id, username, password, display_name, role,
               bank_tenant_id, corporate_tenant_id, corporate_id, status,
               approval_state, review_comment, created_by_user_id, created_by_role,
-              created_at, updated_at, reviewed_at, reviewed_by_user_id, reviewed_by_role
+              created_at, updated_at, reviewed_at, reviewed_by_user_id, reviewed_by_role,
+              coalesce(failed_login_attempts, 0) as failed_login_attempts,
+              locked_until
        from corporate_users
        where username = $1`,
       [payload.username]
     );
 
     const user = result.rows[0];
+
+    // Check if user exists
+    if (!user) {
+      // Log failed attempt for non-existent user (audit only, no lockout)
+      void this.auditTrailService.record({
+        entityType: "session",
+        entityId: payload.username,
+        action: "login_failed",
+        actorUserId: payload.username,
+        actorIpAddress: requestContext?.ipAddress,
+        actorUserAgent: requestContext?.userAgent,
+        metadata: { reason: "user_not_found" }
+      });
+      return { error: "invalid_credentials" as const };
+    }
+
+    // Check if account is locked
+    const now = Date.now();
+    if (user.locked_until && user.locked_until > now) {
+      const remainingMs = user.locked_until - now;
+      const remainingMinutes = Math.ceil(remainingMs / 60_000);
+      void this.auditTrailService.record({
+        entityType: "session",
+        entityId: user.user_id,
+        action: "login_failed",
+        actorUserId: user.user_id,
+        actorIpAddress: requestContext?.ipAddress,
+        actorUserAgent: requestContext?.userAgent,
+        corporateTenantId: user.corporate_tenant_id,
+        metadata: { reason: "account_locked", remainingMinutes }
+      });
+      return { error: "account_locked" as const, remainingMinutes };
+    }
+
+    // Verify password
     if (
-      !user ||
       !verifyPassword(payload.password, user.password) ||
       user.status !== "active" ||
       user.approval_state !== "approved"
     ) {
-      return {
-        error: "invalid_credentials" as const
-      };
+      // Increment failed attempts
+      const newAttempts = user.failed_login_attempts + 1;
+      const shouldLock = newAttempts >= IdentityAccessService.MAX_FAILED_ATTEMPTS;
+      const lockedUntil = shouldLock ? now + IdentityAccessService.LOCKOUT_DURATION_MS : null;
+
+      await this.db.query(
+        `UPDATE corporate_users
+         SET failed_login_attempts = $2,
+             locked_until = $3,
+             updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+         WHERE user_id = $1`,
+        [user.user_id, newAttempts, lockedUntil]
+      );
+
+      const auditAction = shouldLock ? "lockout" : "login_failed";
+      void this.auditTrailService.record({
+        entityType: "session",
+        entityId: user.user_id,
+        action: auditAction as any,
+        actorUserId: user.user_id,
+        actorIpAddress: requestContext?.ipAddress,
+        actorUserAgent: requestContext?.userAgent,
+        corporateTenantId: user.corporate_tenant_id,
+        metadata: {
+          reason: "invalid_credentials",
+          failedAttempts: newAttempts,
+          locked: shouldLock
+        }
+      });
+
+      return { error: "invalid_credentials" as const };
+    }
+
+    // Login success — reset failed attempts
+    await this.db.query(
+      `UPDATE corporate_users
+       SET failed_login_attempts = 0,
+           locked_until = NULL,
+           updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+       WHERE user_id = $1`,
+      [user.user_id]
+    );
+
+    // Re-hash password if stored with legacy algorithm
+    if (needsRehash(user.password)) {
+      const upgradedHash = hashPassword(payload.password);
+      await this.db.query(
+        `UPDATE corporate_users SET password = $2 WHERE user_id = $1`,
+        [user.user_id, upgradedHash]
+      );
     }
 
     const permissions = await this.getEffectivePermissionsForRole(
@@ -151,8 +243,20 @@ export class IdentityAccessService {
       permissions
     };
 
-    const token = signJwt(session);
+    const token = signJwt(session, this.config.jwtSecret, this.config.jwtTokenExpirySeconds);
     session.token = token;
+
+    // Audit successful login
+    void this.auditTrailService.record({
+      entityType: "session",
+      entityId: user.user_id,
+      action: "login",
+      actorUserId: user.user_id,
+      actorRole: user.role,
+      actorIpAddress: requestContext?.ipAddress,
+      actorUserAgent: requestContext?.userAgent,
+      corporateTenantId: user.corporate_tenant_id
+    });
 
     return {
       data: {

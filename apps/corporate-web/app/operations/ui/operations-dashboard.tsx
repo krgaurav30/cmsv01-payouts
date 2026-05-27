@@ -352,7 +352,8 @@ const PRIMARY_SECTION_IDS: SectionId[] = [
   "transactions",
   "file-uploads",
   "beneficiaries",
-  "approvals"
+  "approvals",
+  "reports"
 ];
 
 const OTHER_SECTION_IDS: SectionId[] = [
@@ -361,7 +362,6 @@ const OTHER_SECTION_IDS: SectionId[] = [
   "roles",
   "users",
   "devportal",
-  "reports",
   "audit",
   "settings"
 ];
@@ -644,6 +644,8 @@ export function OperationsDashboard({
   const [transactionsHasMore, setTransactionsHasMore] = useState(true);
   const [beneficiariesPage, setBeneficiariesPage] = useState(1);
   const [beneficiariesHasMore, setBeneficiariesHasMore] = useState(true);
+  const [fileUploadsPage, setFileUploadsPage] = useState(1);
+  const [fileUploadsHasMore, setFileUploadsHasMore] = useState(true);
 
   // Approval workbench pagination states
   const [pendingTransactionsPage, setPendingTransactionsPage] = useState(1);
@@ -997,10 +999,10 @@ export function OperationsDashboard({
           )
         : Promise.resolve({ ok: true as const, data: { items: pendingTransactions, pagination: { hasMore: pendingTransactionsHasMore } } }),
       shouldFetch("file-uploads")
-        ? fetchJson<{ items: PayoutFileUpload[] }>(
-            `/v1/payouts/file-uploads?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
+        ? fetchJson<{ items: PayoutFileUpload[], pagination?: { hasMore: boolean } }>(
+            `/v1/payouts/file-uploads?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}&page=1&limit=${fileUploadsPage * 25}`
           )
-        : Promise.resolve({ ok: true as const, data: { items: fileUploads } }),
+        : Promise.resolve({ ok: true as const, data: { items: fileUploads, pagination: { hasMore: fileUploadsHasMore } } }),
       shouldFetch("beneficiaries")
         ? fetchJson<{ items: Beneficiary[], pagination?: { hasMore: boolean } }>(
             `/v1/beneficiaries?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}&page=1&limit=${beneficiariesPage * 25}`
@@ -1052,6 +1054,7 @@ export function OperationsDashboard({
 
     if (shouldFetch("file-uploads") && fileUploadsResult.ok) {
       setFileUploads(fileUploadsResult.data.items ?? []);
+      setFileUploadsHasMore(fileUploadsResult.data.pagination?.hasMore ?? false);
     }
 
     if (shouldFetch("beneficiaries") && beneficiariesResult.ok) {
@@ -1267,6 +1270,39 @@ export function OperationsDashboard({
     void loadPendingBeneficiariesPage(pendingBeneficiariesPage + 1, true);
   }
 
+  async function loadFileUploadsPage(pageNum: number, append = false) {
+    if (!session || !selectedCorporateId) return;
+
+    const queryParams = new URLSearchParams({
+      corporateTenantId: session.corporateTenantId,
+      corporateId: selectedCorporateId,
+      page: String(pageNum),
+      limit: "25"
+    });
+
+    try {
+      const result = await fetchJson<{ items: PayoutFileUpload[], pagination?: { hasMore: boolean } }>(
+        `/v1/payouts/file-uploads?${queryParams.toString()}`
+      );
+      if (result.ok) {
+        const newItems = result.data.items ?? [];
+        if (append) {
+          setFileUploads((prev) => [...prev, ...newItems]);
+        } else {
+          setFileUploads(newItems);
+        }
+        setFileUploadsPage(pageNum);
+        setFileUploadsHasMore(result.data.pagination?.hasMore ?? (newItems.length === 25));
+      }
+    } catch (err) {
+      console.error("Failed to load file uploads page:", err);
+    }
+  }
+
+  function handleLoadMoreFileUploads() {
+    void loadFileUploadsPage(fileUploadsPage + 1, true);
+  }
+
   // Debouncing triggers
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -1298,6 +1334,7 @@ export function OperationsDashboard({
     void loadBeneficiariesPage(1, false);
     void loadPendingTransactionsPage(1, false);
     void loadPendingBeneficiariesPage(1, false);
+    void loadFileUploadsPage(1, false);
   }, [selectedCorporateId, session]);
 
   async function loadTransactionDetail(batchId: string) {
@@ -1462,7 +1499,9 @@ export function OperationsDashboard({
       return;
     }
 
-    const transaction = transactions.find((item) => item.batchId === activeTimelineId);
+    const transaction =
+      transactions.find((item) => item.batchId === activeTimelineId) ??
+      pendingTransactions.find((item) => item.batchId === activeTimelineId);
     if (!transaction || transaction.timeline.length > 0) {
       return;
     }
@@ -1687,9 +1726,10 @@ export function OperationsDashboard({
     return (
       transactionDetailCache[activeTimelineId] ??
       transactions.find((transaction) => transaction.batchId === activeTimelineId) ??
+      pendingTransactions.find((transaction) => transaction.batchId === activeTimelineId) ??
       null
     );
-  }, [activeTimelineId, transactionDetailCache, transactions]);
+  }, [activeTimelineId, transactionDetailCache, transactions, pendingTransactions]);
 
   const activeTransactionSubscription = useMemo(() => {
     if (!activeTimelineTransaction?.packageCode) {
@@ -1999,6 +2039,11 @@ export function OperationsDashboard({
   );
 
   const fileApprovalEntries = useMemo(() => {
+    const allTxnsMap = new Map<string, PayoutBatch>();
+    transactions.forEach((t) => allTxnsMap.set(t.batchId, t));
+    pendingTransactions.forEach((t) => allTxnsMap.set(t.batchId, t));
+    const allTxns = Array.from(allTxnsMap.values());
+
     return fileUploads
       .filter((upload) => {
         if (!upload.uploadedAt) return true;
@@ -2009,7 +2054,7 @@ export function OperationsDashboard({
         );
       })
       .map((upload) => {
-        const fileBatchesList = transactions.filter(
+        const fileBatchesList = allTxns.filter(
           (t) => t.sourceUploadId === upload.uploadId
         );
         const pendingCount = fileBatchesList.filter(
@@ -2032,7 +2077,7 @@ export function OperationsDashboard({
         };
       })
       .filter((file) => file.pendingCount > 0);
-  }, [fileUploads, transactions, approvalDateRange]);
+  }, [fileUploads, transactions, pendingTransactions, approvalDateRange]);
 
   const selectedApprovalEntry = useMemo(() => {
     if (!selectedApprovalKey) {
@@ -2054,8 +2099,11 @@ export function OperationsDashboard({
         ? transactionDetailCache[selectedApprovalEntry.id]
         : null) ??
         transactions.find(
-        (item) => item.batchId === selectedApprovalEntry.id
-      );
+          (item) => item.batchId === selectedApprovalEntry.id
+        ) ??
+        pendingTransactions.find(
+          (item) => item.batchId === selectedApprovalEntry.id
+        );
       if (!transaction) {
         return null;
       }
@@ -4383,7 +4431,7 @@ export function OperationsDashboard({
                 </label>
               </div>
 
-              <div className="ops-table-shell">
+              <div className="ops-table-shell scrollable">
                 <table className="ops-table">
                   <thead>
                     <tr>
@@ -4425,6 +4473,18 @@ export function OperationsDashboard({
                   </tbody>
                 </table>
               </div>
+              {fileUploadsHasMore && (
+                <div className="ops-load-more-container">
+                  <button
+                    className="ops-load-more-btn"
+                    onClick={handleLoadMoreFileUploads}
+                    disabled={busy}
+                    type="button"
+                  >
+                    Load More
+                  </button>
+                </div>
+              )}
             </section>
           </section>
         ) : null}
@@ -5089,7 +5149,9 @@ export function OperationsDashboard({
                       <tbody>
                         {paymentApprovalEntries.length > 0 ? (
                           paymentApprovalEntries.map((entry) => {
-                            const transaction = transactions.find((t) => t.batchId === entry.id);
+                            const transaction =
+                              pendingTransactions.find((t) => t.batchId === entry.id) ??
+                              transactions.find((t) => t.batchId === entry.id);
 
                             const beneficiaryName =
                               transaction?.primaryBeneficiaryName ??
@@ -5206,6 +5268,18 @@ export function OperationsDashboard({
                       </tbody>
                     </table>
                   </div>
+                  {fileUploadsHasMore && (
+                    <div className="ops-load-more-container">
+                      <button
+                        className="ops-load-more-btn"
+                        onClick={handleLoadMoreFileUploads}
+                        disabled={busy}
+                        type="button"
+                      >
+                        Load More
+                      </button>
+                    </div>
+                  )}
                 </div>
                 ) : null}
 
@@ -7331,6 +7405,10 @@ async function fetchJson<T>(url: string): Promise<ApiResult<T>> {
     const traceId = response.headers.get("x-correlation-id") || response.headers.get("x-trace-id") || undefined;
 
     if (!response.ok) {
+      if (response.status === 401) {
+        document.cookie = "cmsCorporateSession=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+        window.location.href = "/login?error=session_expired";
+      }
       const originalMessage = data.message ?? `Request failed with status ${response.status}`;
       const prefixedMessage = traceId ? `[Trace: ${traceId}] ${originalMessage}` : originalMessage;
       return {
@@ -7368,6 +7446,10 @@ async function postJson<T>(url: string, body: unknown, method: string = "POST"):
     const traceId = response.headers.get("x-correlation-id") || response.headers.get("x-trace-id") || undefined;
 
     if (!response.ok) {
+      if (response.status === 401) {
+        document.cookie = "cmsCorporateSession=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+        window.location.href = "/login?error=session_expired";
+      }
       const originalMessage = data.message ?? `Request failed with status ${response.status}`;
       const prefixedMessage = traceId ? `[Trace: ${traceId}] ${originalMessage}` : originalMessage;
       return {

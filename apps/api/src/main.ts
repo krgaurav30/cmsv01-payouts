@@ -14,6 +14,10 @@ import { tenantContextPlugin } from "@cmsv01/shared/tenant-context";
 import { jwtAuthPlugin } from "./modules/identity-access/jwt-auth.js";
 import { PartnerApiActivityService } from "./modules/partner-api-activity/service.js";
 
+import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
+import rateLimit from "@fastify/rate-limit";
+
 import { approvalMatrixManagementRoutes } from "./modules/approval-matrix-management/routes.js";
 import { debitAccountManagementRoutes } from "./modules/debit-account-management/routes.js";
 import { effectiveSettingsResolverRoutes } from "./modules/effective-settings-resolver/routes.js";
@@ -132,6 +136,70 @@ app.addHook("onResponse", async (request, reply) => {
 });
 
 await testDatabaseConnection(config);
+
+function isValidOrigin(origin: string | undefined): boolean {
+  if (!origin) {
+    return true;
+  }
+  if (config.nodeEnv !== "production") {
+    return true;
+  }
+  try {
+    const parsed = new URL(origin);
+    const hostname = parsed.hostname;
+
+    // Check if localhost/loopback
+    if (hostname === "localhost" || hostname === "127.0.0.1") {
+      return true;
+    }
+
+    const allowedHostnames = new Set([
+      "cmsv01-corporate.onrender.com",
+      "cmsv01-bank-ops.onrender.com"
+    ]);
+
+    if (process.env.BFF_URL) {
+      try {
+        allowedHostnames.add(new URL(process.env.BFF_URL).hostname);
+      } catch {}
+    }
+    if (process.env.CORPORATE_WEB_URL) {
+      try {
+        allowedHostnames.add(new URL(process.env.CORPORATE_WEB_URL).hostname);
+      } catch {}
+    }
+    if (process.env.BANK_OPS_WEB_URL) {
+      try {
+        allowedHostnames.add(new URL(process.env.BANK_OPS_WEB_URL).hostname);
+      } catch {}
+    }
+
+    return allowedHostnames.has(hostname);
+  } catch {
+    return false;
+  }
+}
+
+await app.register(helmet);
+await app.register(cors, {
+  origin: (origin, cb) => {
+    if (!origin) {
+      cb(null, true);
+      return;
+    }
+    if (isValidOrigin(origin)) {
+      cb(null, true);
+    } else {
+      cb(new Error("CORS policy violation"), false);
+    }
+  },
+  credentials: true
+});
+await app.register(rateLimit, {
+  max: 200,
+  timeWindow: "1 minute"
+});
+
 await app.register(tenantContextPlugin);
 await app.register(jwtAuthPlugin);
 await app.register(approvalMatrixManagementRoutes);
@@ -175,4 +243,19 @@ try {
 } catch (error) {
   app.log.error(error);
   process.exit(1);
+}
+
+const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
+for (const signal of signals) {
+  process.on(signal, async () => {
+    app.log.info(`Received ${signal}, starting graceful shutdown...`);
+    try {
+      await app.close();
+      app.log.info("Server closed successfully.");
+      process.exit(0);
+    } catch (err) {
+      app.log.error(err instanceof Error ? err : new Error(String(err)), "Error during graceful shutdown");
+      process.exit(1);
+    }
+  });
 }

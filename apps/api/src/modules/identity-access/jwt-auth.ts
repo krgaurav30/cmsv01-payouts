@@ -48,7 +48,7 @@ const jwtAuthPluginImpl: FastifyPluginAsync = async (app) => {
     }
 
     const token = parts[1];
-    const decoded = verifyJwt<AuthenticatedUser>(token);
+    const decoded = verifyJwt<AuthenticatedUser>(token, config.jwtSecret);
     if (!decoded) {
       return reply.status(401).send({ message: "Unauthorized" });
     }

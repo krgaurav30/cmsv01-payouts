@@ -81,10 +81,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const requestOrigin = request.headers.get("origin") || request.nextUrl.origin;
+
     if (parsedUpload.errors.length > 0) {
       await recordRejectedFileUpload({
         bffUrl,
         cookieHeader,
+        origin: requestOrigin,
         uploadId,
         bankTenantId: session.bankTenantId,
         corporateTenantId: session.corporateTenantId,
@@ -109,7 +112,8 @@ export async function POST(request: NextRequest) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Cookie: cookieHeader
+        Cookie: cookieHeader,
+        Origin: requestOrigin
       },
       body: JSON.stringify({
         bankTenantId: session.bankTenantId,
@@ -267,6 +271,7 @@ function parseWorkbookFromBuffer(buffer: Buffer): ParsedUpload {
 async function recordRejectedFileUpload(payload: {
   bffUrl: string;
   cookieHeader: string;
+  origin: string;
   uploadId: string;
   bankTenantId: string;
   corporateTenantId: string;
@@ -281,7 +286,8 @@ async function recordRejectedFileUpload(payload: {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Cookie: payload.cookieHeader
+      Cookie: payload.cookieHeader,
+      Origin: payload.origin
     },
     body: JSON.stringify({
       uploadId: payload.uploadId,

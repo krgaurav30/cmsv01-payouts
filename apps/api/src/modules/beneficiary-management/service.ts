@@ -159,6 +159,22 @@ export class BeneficiaryManagementService {
     return beneficiary ?? null;
   }
 
+  async getBeneficiariesByIds(beneficiaryIds: string[]) {
+    if (beneficiaryIds.length === 0) {
+      return [];
+    }
+    const result = await this.db.query<BeneficiaryRow>(
+      `select beneficiary_id, bank_tenant_id, corporate_tenant_id, corporate_id, name,
+              account_number, ifsc, phone_number, type, category, tags, status,
+              approval_state, review_comment, updated_at
+       from beneficiaries
+       where beneficiary_id = any($1::text[])`,
+      [beneficiaryIds]
+    );
+
+    return this.attachPackageAssignments(result.rows);
+  }
+
   async createBeneficiary(payload: BeneficiaryCreateRequest) {
     const actor = await this.identityAccessService.getCorporateUserById(payload.createdByUserId);
     const bankTenant = await this.tenantManagementService.getBankTenant(payload.bankTenantId);

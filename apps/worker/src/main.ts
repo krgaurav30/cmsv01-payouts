@@ -32,6 +32,7 @@ if (!apiBaseUrl) {
 
 let producerConnected = false;
 let consumerConnected = false;
+let httpServer: any = null;
 const processingSentToBank = new Set<string>();
 const processingApproved = new Set<string>();
 
@@ -121,6 +122,9 @@ async function publishPendingOutboxEvents() {
   await ensureProducerConnected();
 
   for (const event of pendingEvents) {
+    if (event.aggregate_type === "test-integration" || event.event_id.startsWith("test-event-")) {
+      continue;
+    }
     try {
       await producer.send({
         topic: config.kafkaOutboxTopic,
@@ -530,7 +534,7 @@ async function executeCbsDebitJourney(batchId: string) {
       try {
         const statusRes = await fetch(`${apiBaseUrl}/v1/cbs/transactions/status/${idempotencyKey}`, {
           headers: {
-            "Authorization": `Bearer ${signJwt({ userId: "system-worker", role: "system", tenantScope: "system" })}`
+            "Authorization": `Bearer ${signJwt({ userId: "system-worker", role: "system", tenantScope: "system" }, config.jwtSecret)}`
           }
         });
         if (statusRes.status === 200) {
@@ -692,7 +696,7 @@ async function dispatchToPaymentHub(batchId: string) {
           userId: "system-worker",
           role: "system",
           tenantScope: "system"
-        });
+        }, config.jwtSecret);
 
         const phResponse = await fetch(`${apiBaseUrl}/v1/payment-hub/transfer`, {
           method: "POST",
@@ -791,7 +795,7 @@ async function reprocessSentToBank(batchId: string) {
         userId: "system-worker",
         role: "system",
         tenantScope: "system"
-      });
+      }, config.jwtSecret);
 
       const phResponse = await fetch(`${apiBaseUrl}/v1/payment-hub/transfer`, {
         method: "POST",
@@ -872,7 +876,7 @@ async function executeCbsReversalJourney(batchId: string) {
       try {
         const statusRes = await fetch(`${apiBaseUrl}/v1/cbs/transactions/status/${reversalIdempotencyKey}`, {
           headers: {
-            "Authorization": `Bearer ${signJwt({ userId: "system-worker", role: "system", tenantScope: "system" })}`
+            "Authorization": `Bearer ${signJwt({ userId: "system-worker", role: "system", tenantScope: "system" }, config.jwtSecret)}`
           }
         });
         if (statusRes.status === 200) {
@@ -970,7 +974,7 @@ async function reconcileAmbiguousTransactions() {
       try {
         const response = await fetch(`${apiBaseUrl}/v1/cbs/transactions/status/${idempotencyKey}`, {
           headers: {
-            "Authorization": `Bearer ${signJwt({ userId: "system-worker", role: "system", tenantScope: "system" })}`
+            "Authorization": `Bearer ${signJwt({ userId: "system-worker", role: "system", tenantScope: "system" }, config.jwtSecret)}`
           }
         });
 
@@ -1001,7 +1005,7 @@ async function reconcileAmbiguousTransactions() {
       try {
         const response = await fetch(`${apiBaseUrl}/v1/cbs/transactions/status/${reversalIdempotencyKey}`, {
           headers: {
-            "Authorization": `Bearer ${signJwt({ userId: "system-worker", role: "system", tenantScope: "system" })}`
+            "Authorization": `Bearer ${signJwt({ userId: "system-worker", role: "system", tenantScope: "system" }, config.jwtSecret)}`
           }
         });
 
@@ -1171,7 +1175,7 @@ async function postToApi(path: string, body?: Record<string, unknown>, extraHead
     userId: "system-worker",
     role: "system",
     tenantScope: "system"
-  });
+  }, config.jwtSecret);
 
   const requestInit: RequestInit = {
     method: "POST",
@@ -1317,12 +1321,52 @@ async function run() {
     res.writeHead(200);
     res.end("Worker is healthy");
   });
+  httpServer = server;
   server.listen(config.port, "0.0.0.0", () => {
     console.log(`Dummy health server listening on port ${config.port}`);
   });
 
   await Promise.all([startConsumer(), runPublisherLoop(), runReconciliationLoop()]);
 }
+
+async function shutdown(signal: string) {
+  console.log(
+    JSON.stringify({
+      service: "worker",
+      status: "shutdown_initiated",
+      signal
+    })
+  );
+  try {
+    if (httpServer) {
+      await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+      console.log(JSON.stringify({ service: "worker", status: "http_server_closed" }));
+    }
+    if (consumerConnected) {
+      await consumer.disconnect();
+      console.log(JSON.stringify({ service: "worker", status: "consumer_disconnected" }));
+    }
+    if (producerConnected) {
+      await producer.disconnect();
+      console.log(JSON.stringify({ service: "worker", status: "producer_disconnected" }));
+    }
+    await db.end();
+    console.log(JSON.stringify({ service: "worker", status: "db_pool_closed" }));
+    process.exit(0);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        service: "worker",
+        status: "shutdown_error",
+        message: error instanceof Error ? error.message : "Unknown shutdown error"
+      })
+    );
+    process.exit(1);
+  }
+}
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 run().catch((error) => {
   console.error(

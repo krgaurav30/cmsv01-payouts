@@ -31,6 +31,22 @@ export const loginRequestSchema = z.object({
   password: z.string().min(4)
 });
 
+/**
+ * Strong password policy for new user creation.
+ * RBI Master Direction requires complexity rules for banking applications:
+ * - Minimum 12 characters
+ * - At least one uppercase letter
+ * - At least one lowercase letter
+ * - At least one digit
+ * - At least one special character
+ */
+export const strongPasswordSchema = z.string()
+  .min(12, "Password must be at least 12 characters")
+  .refine((val) => /[A-Z]/.test(val), "Password must contain at least one uppercase letter")
+  .refine((val) => /[a-z]/.test(val), "Password must contain at least one lowercase letter")
+  .refine((val) => /[0-9]/.test(val), "Password must contain at least one digit")
+  .refine((val) => /[^A-Za-z0-9]/.test(val), "Password must contain at least one special character");
+
 export const userStatusSchema = z.enum(["active", "inactive"]);
 export const approvalStateSchema = z.enum([
   "pending_approval",
@@ -42,7 +58,7 @@ export const corporateUserCreateSchema = z.object({
   userId: z.string().min(3),
   createdByUserId: z.string().min(3),
   username: z.string().min(3),
-  password: z.string().min(4),
+  password: strongPasswordSchema,
   displayName: z.string().min(2),
   role: corporateRoleNameSchema,
   bankTenantId: z.string().min(3),

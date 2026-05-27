@@ -36,6 +36,9 @@ export default async function OperationsLayout({ children }: OperationsLayoutPro
     );
   } catch (err: any) {
     console.error("[Layout] loadOperationsInitialData failed:", err.message);
+    if (err.message === "Unauthorized") {
+      redirect("/login?error=session_expired");
+    }
     initialData = {
       selectedCorporateId: cookieStore.get("cmsSelectedCorporateId")?.value ?? "",
       bankTenants: [],
