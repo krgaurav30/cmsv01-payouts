@@ -31,17 +31,21 @@ export const beneficiaryManagementRoutes: FastifyPluginAsync = async (app) => {
       corporateTenantId?: string;
       corporateId?: string;
       status?: "active" | "inactive";
+      approvalState?: any;
       search?: string;
+      page?: string;
+      limit?: string;
     };
 
-    return {
-      items: await beneficiaryManagementService.listBeneficiaries({
-        corporateTenantId: query.corporateTenantId,
-        corporateId: query.corporateId,
-        status: query.status,
-        search: query.search
-      })
-    };
+    return beneficiaryManagementService.listBeneficiaries({
+      corporateTenantId: query.corporateTenantId,
+      corporateId: query.corporateId,
+      status: query.status,
+      approvalState: query.approvalState,
+      search: query.search,
+      page: query.page ? parseInt(query.page, 10) : undefined,
+      limit: query.limit ? parseInt(query.limit, 10) : undefined
+    });
   });
 
   app.get("/v1/beneficiaries/:beneficiaryId", async (request, reply) => {

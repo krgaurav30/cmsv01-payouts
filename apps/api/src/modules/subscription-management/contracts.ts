@@ -58,13 +58,13 @@ export type CorporateSubscription = {
   packageCode: string;
   displayName: string;
   status: z.infer<typeof subscriptionStatusSchema>;
-  startedAt: string | null;
-  suspendedAt: string | null;
-  terminatedAt: string | null;
+  startedAt: number | null;
+  suspendedAt: number | null;
+  terminatedAt: number | null;
   createdBy: string | null;
   updatedBy: string | null;
-  createdAt: string | null;
-  updatedAt: string | null;
+  createdAt: number | null;
+  updatedAt: number | null;
   debitAccounts: SubscriptionDebitAccountAccess[];
   userAccess: SubscriptionUserAccess[];
 };

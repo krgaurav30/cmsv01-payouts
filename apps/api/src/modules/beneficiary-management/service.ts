@@ -31,7 +31,7 @@ type BeneficiaryRow = {
   status: Beneficiary["status"];
   approval_state: Beneficiary["approvalState"];
   review_comment: string | null;
-  updated_at: Date | null;
+  updated_at: number | null;
 };
 
 type BeneficiaryPackageAssignmentRow = {
@@ -62,10 +62,13 @@ export class BeneficiaryManagementService {
     corporateTenantId?: string;
     corporateId?: string;
     status?: Beneficiary["status"];
+    approvalState?: Beneficiary["approvalState"];
     search?: string;
+    page?: number;
+    limit?: number;
   }) {
     const clauses: string[] = [];
-    const values: string[] = [];
+    const values: any[] = [];
 
     if (filters?.corporateTenantId) {
       values.push(filters.corporateTenantId);
@@ -82,23 +85,59 @@ export class BeneficiaryManagementService {
       clauses.push(`status = $${values.length}`);
     }
 
+    if (filters?.approvalState) {
+      values.push(filters.approvalState);
+      clauses.push(`approval_state = $${values.length}`);
+    }
+
     if (filters?.search) {
       values.push(`%${filters.search.toLowerCase()}%`);
       clauses.push(`(lower(name) like $${values.length} or account_number like $${values.length})`);
     }
 
+    const isPaginated = typeof filters?.page === "number" && typeof filters?.limit === "number";
+    let totalCount = 0;
     const whereClause = clauses.length > 0 ? `where ${clauses.join(" and ")}` : "";
-    const result = await this.db.query<BeneficiaryRow>(
-      `select beneficiary_id, bank_tenant_id, corporate_tenant_id, corporate_id, name,
-              account_number, ifsc, phone_number, type, category, tags, status,
-              approval_state, review_comment, updated_at
-       from beneficiaries
-       ${whereClause}
-       order by updated_at desc nulls last, beneficiary_id desc`,
-      values
-    );
 
-    return this.attachPackageAssignments(result.rows);
+    if (isPaginated) {
+      const countRes = await this.db.query(`select count(*) from beneficiaries ${whereClause}`, values);
+      totalCount = parseInt(countRes.rows[0].count, 10);
+    }
+
+    let queryText = `select beneficiary_id, bank_tenant_id, corporate_tenant_id, corporate_id, name,
+                            account_number, ifsc, phone_number, type, category, tags, status,
+                            approval_state, review_comment, updated_at
+                     from beneficiaries
+                     ${whereClause}
+                     order by updated_at desc nulls last, beneficiary_id desc`;
+
+    const queryParams = [...values];
+    if (isPaginated) {
+      const page = filters!.page!;
+      const limit = filters!.limit!;
+      const offset = (page - 1) * limit;
+      queryParams.push(limit, offset);
+      queryText += ` limit $${queryParams.length - 1} offset $${queryParams.length}`;
+    }
+
+    const result = await this.db.query<BeneficiaryRow>(queryText, queryParams);
+    const items = await this.attachPackageAssignments(result.rows);
+
+    if (isPaginated) {
+      const limit = filters!.limit!;
+      const page = filters!.page!;
+      return {
+        items,
+        pagination: {
+          page,
+          limit,
+          totalCount,
+          hasMore: (page - 1) * limit + items.length < totalCount
+        }
+      };
+    }
+
+    return { items };
   }
 
   async getBeneficiary(beneficiaryId: string) {
@@ -213,7 +252,7 @@ export class BeneficiaryManagementService {
            status, approval_state, review_comment, updated_at
          )
          values ($1, $2, $3, $4, $5, $6, $7, $8, null, null, $9, $10, $11,
-                 'inactive', 'pending_approval', null, now())`,
+                 'inactive', 'pending_approval', null, (extract(epoch from now()) * 1000)::bigint)`,
         [
           beneficiaryId,
           payload.bankTenantId,
@@ -346,7 +385,7 @@ export class BeneficiaryManagementService {
        set approval_state = $2,
            status = $3,
            review_comment = $4,
-           updated_at = now()
+           updated_at = (extract(epoch from now()) * 1000)::bigint
        where beneficiary_id = $1
        returning beneficiary_id, bank_tenant_id, corporate_tenant_id, corporate_id, name,
                  account_number, ifsc, phone_number, type, category, tags, status,
@@ -407,7 +446,7 @@ export class BeneficiaryManagementService {
       `update beneficiaries
        set status = $2,
            review_comment = $3,
-           updated_at = now()
+           updated_at = (extract(epoch from now()) * 1000)::bigint
        where beneficiary_id = $1
        returning beneficiary_id, bank_tenant_id, corporate_tenant_id, corporate_id, name,
                  account_number, ifsc, phone_number, type, category, tags, status,
@@ -477,7 +516,7 @@ export class BeneficiaryManagementService {
              status = 'inactive',
              approval_state = 'pending_approval',
              review_comment = null,
-             updated_at = now()
+             updated_at = (extract(epoch from now()) * 1000)::bigint
          where beneficiary_id = $1`,
         [
           beneficiaryId,
@@ -616,7 +655,7 @@ export class BeneficiaryManagementService {
     for (const packageRow of packages) {
       await executor.query(
         `insert into beneficiary_package_assignments (beneficiary_id, package_id, created_at)
-         values ($1, $2, now())`,
+         values ($1, $2, (extract(epoch from now()) * 1000)::bigint)`,
         [beneficiaryId, packageRow.package_id]
       );
     }
@@ -643,7 +682,7 @@ function mapBeneficiaryRow(
     status: row.status,
     approvalState: row.approval_state,
     reviewComment: row.review_comment,
-    lastUpdatedAt: row.updated_at?.toISOString() ?? null
+    lastUpdatedAt: row.updated_at
   } satisfies Beneficiary;
 }
 

@@ -33,8 +33,8 @@ export type CheckoutSession = {
   redirectUrl: string | null;
   cancelUrl: string | null;
   status: "open" | "completed" | "expired";
-  createdAt: string;
-  expiresAt: string;
-  completedAt: string | null;
+  createdAt: number;
+  expiresAt: number;
+  completedAt: number | null;
   metadataJson: Record<string, any>;
 };

@@ -22,13 +22,13 @@ type CorporateSubscriptionRow = {
   package_code: string;
   display_name: string;
   status: "draft" | "active" | "suspended" | "terminated";
-  started_at: Date | null;
-  suspended_at: Date | null;
-  terminated_at: Date | null;
+  started_at: number | null;
+  suspended_at: number | null;
+  terminated_at: number | null;
   created_by: string | null;
   updated_by: string | null;
-  created_at: Date | null;
-  updated_at: Date | null;
+  created_at: number | null;
+  updated_at: number | null;
 };
 
 type SubscriptionDebitAccountRow = {
@@ -314,8 +314,8 @@ export class SubscriptionManagementService {
          )
          values (
            $1, $2, $3, $4, $5,
-           $6, $7, 'active', now(), null, null,
-           $8, $8, now(), now()
+           $6, $7, 'active', (extract(epoch from now()) * 1000)::bigint, null, null,
+           $8, $8, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint
          )`,
         [
           subscriptionId,
@@ -335,7 +335,7 @@ export class SubscriptionManagementService {
              subscription_id, debit_account_id, allowed_payment_method_codes, status, is_default,
              created_at
            )
-           values ($1, $2, $3::text[], 'active', $4, now())`,
+           values ($1, $2, $3::text[], 'active', $4, (extract(epoch from now()) * 1000)::bigint)`,
           [
             subscriptionId,
             account.debit_account_id,
@@ -350,7 +350,7 @@ export class SubscriptionManagementService {
            subscription_id, preferred_debit_mode, preferred_file_rejection_mode,
            default_debit_account_id, payment_method_preferences_json, created_at, updated_at
          )
-         values ($1, $2, $3, $4, $5::jsonb, now(), now())`,
+         values ($1, $2, $3, $4, $5::jsonb, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint)`,
         [
           subscriptionId,
           packageRow.default_debit_mode,
@@ -367,7 +367,7 @@ export class SubscriptionManagementService {
           `insert into subscription_user_access (
              access_id, subscription_id, user_id, role_name, status, created_at, updated_at
            )
-           values ($1, $2, $3, $4, 'active', now(), now())`,
+           values ($1, $2, $3, $4, 'active', (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint)`,
           [
             `sua-${subscriptionId}-${normalizeCode(user.user_id).toLowerCase()}`,
             subscriptionId,
@@ -384,7 +384,7 @@ export class SubscriptionManagementService {
           `insert into role_subscription_access (
              access_id, corporate_tenant_id, role_name, subscription_id, status, created_at, updated_at
            )
-           values ($1, $2, $3, $4, 'active', now(), now())
+           values ($1, $2, $3, $4, 'active', (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint)
            on conflict (access_id) do nothing`,
           [
             accessId,
@@ -419,18 +419,18 @@ export class SubscriptionManagementService {
     const nextStatus = payload.status;
     const suspendedAt =
       nextStatus === "suspended"
-        ? "now()"
+        ? "(extract(epoch from now()) * 1000)::bigint"
         : nextStatus === "active"
           ? "null"
           : "corporate_subscriptions.suspended_at";
     const terminatedAt =
       nextStatus === "terminated"
-        ? "now()"
+        ? "(extract(epoch from now()) * 1000)::bigint"
         : nextStatus === "active"
           ? "null"
           : "corporate_subscriptions.terminated_at";
     const startedAt =
-      nextStatus === "active" ? "coalesce(corporate_subscriptions.started_at, now())" : "corporate_subscriptions.started_at";
+      nextStatus === "active" ? "coalesce(corporate_subscriptions.started_at, (extract(epoch from now()) * 1000)::bigint)" : "corporate_subscriptions.started_at";
 
     await this.db.query(
       `update corporate_subscriptions
@@ -439,7 +439,7 @@ export class SubscriptionManagementService {
            suspended_at = ${suspendedAt},
            terminated_at = ${terminatedAt},
            updated_by = $3,
-           updated_at = now()
+           updated_at = (extract(epoch from now()) * 1000)::bigint
        where subscription_id = $1`,
       [subscriptionId, nextStatus, payload.actedByUserId]
     );
@@ -512,7 +512,7 @@ export class SubscriptionManagementService {
           `insert into role_subscription_access (
              access_id, corporate_tenant_id, role_name, subscription_id, status, created_at, updated_at
            )
-           values ($1, $2, $3, $4, 'active', now(), now())`,
+           values ($1, $2, $3, $4, 'active', (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint)`,
           [
             accessId,
             payload.corporateTenantId,
@@ -538,7 +538,7 @@ export class SubscriptionManagementService {
             `insert into subscription_user_access (
                access_id, subscription_id, user_id, role_name, status, created_at, updated_at
              )
-             values ($1, $2, $3, $4, 'active', now(), now())`,
+             values ($1, $2, $3, $4, 'active', (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint)`,
             [
               `sua-${subscriptionId}-${normalizeCode(userId).toLowerCase()}`,
               subscriptionId,
@@ -643,13 +643,13 @@ export class SubscriptionManagementService {
       packageCode: row.package_code,
       displayName: row.display_name,
       status: row.status,
-      startedAt: row.started_at?.toISOString() ?? null,
-      suspendedAt: row.suspended_at?.toISOString() ?? null,
-      terminatedAt: row.terminated_at?.toISOString() ?? null,
+      startedAt: row.started_at,
+      suspendedAt: row.suspended_at,
+      terminatedAt: row.terminated_at,
       createdBy: row.created_by,
       updatedBy: row.updated_by,
-      createdAt: row.created_at?.toISOString() ?? null,
-      updatedAt: row.updated_at?.toISOString() ?? null,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
       debitAccounts: debitAccountsBySubscription.get(row.subscription_id) ?? [],
       userAccess: userAccessBySubscription.get(row.subscription_id) ?? []
     }));

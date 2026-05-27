@@ -272,7 +272,7 @@ app.get("/bff/corporate/operations/initial-data", async (request, reply) => {
     fetchJson<{ items?: unknown[] }>(
       `/v1/payouts/batches?corporateTenantId=${encodeURIComponent(
         query.corporateTenantId
-      )}&corporateId=${encodeURIComponent(selectedCorporateId)}`,
+      )}&corporateId=${encodeURIComponent(selectedCorporateId)}&page=1&limit=25`,
       {
         fallback: { items: [] },
         headers: secureHeaders
@@ -281,7 +281,7 @@ app.get("/bff/corporate/operations/initial-data", async (request, reply) => {
     fetchJson<{ items?: unknown[] }>(
       `/v1/payouts/file-uploads?corporateTenantId=${encodeURIComponent(
         query.corporateTenantId
-      )}&corporateId=${encodeURIComponent(selectedCorporateId)}`,
+      )}&corporateId=${encodeURIComponent(selectedCorporateId)}&page=1&limit=25`,
       {
         fallback: { items: [] },
         headers: secureHeaders
@@ -290,7 +290,7 @@ app.get("/bff/corporate/operations/initial-data", async (request, reply) => {
     fetchJson<{ items?: unknown[] }>(
       `/v1/beneficiaries?corporateTenantId=${encodeURIComponent(
         query.corporateTenantId
-      )}&corporateId=${encodeURIComponent(selectedCorporateId)}`,
+      )}&corporateId=${encodeURIComponent(selectedCorporateId)}&page=1&limit=25`,
       {
         fallback: { items: [] },
         headers: secureHeaders

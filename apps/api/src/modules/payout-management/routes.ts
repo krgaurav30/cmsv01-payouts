@@ -40,19 +40,25 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
       packageCode?: string;
       state?: string;
       search?: string;
+      startDate?: string;
+      endDate?: string;
+      page?: string;
+      limit?: string;
     };
 
-    return {
-      items: await payoutManagementService.listBatches({
-        corporateTenantId: query.corporateTenantId,
-        bankTenantId: query.bankTenantId,
-        corporateId: query.corporateId,
-        subscriptionId: query.subscriptionId,
-        packageCode: query.packageCode,
-        state: query.state,
-        search: query.search
-      })
-    };
+    return payoutManagementService.listBatches({
+      corporateTenantId: query.corporateTenantId,
+      bankTenantId: query.bankTenantId,
+      corporateId: query.corporateId,
+      subscriptionId: query.subscriptionId,
+      packageCode: query.packageCode,
+      state: query.state,
+      search: query.search,
+      startDate: query.startDate ? parseInt(query.startDate, 10) : undefined,
+      endDate: query.endDate ? parseInt(query.endDate, 10) : undefined,
+      page: query.page ? parseInt(query.page, 10) : undefined,
+      limit: query.limit ? parseInt(query.limit, 10) : undefined
+    });
   });
 
   app.get("/v1/payouts/batches/:batchId", async (request, reply) => {
@@ -458,17 +464,19 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
       bankTenantId?: string;
       subscriptionId?: string;
       packageCode?: string;
+      page?: string;
+      limit?: string;
     };
 
-    return {
-      items: await payoutManagementService.listFileUploads({
-        corporateTenantId: query.corporateTenantId,
-        corporateId: query.corporateId,
-        bankTenantId: query.bankTenantId,
-        subscriptionId: query.subscriptionId,
-        packageCode: query.packageCode
-      })
-    };
+    return payoutManagementService.listFileUploads({
+      corporateTenantId: query.corporateTenantId,
+      corporateId: query.corporateId,
+      bankTenantId: query.bankTenantId,
+      subscriptionId: query.subscriptionId,
+      packageCode: query.packageCode,
+      page: query.page ? parseInt(query.page, 10) : undefined,
+      limit: query.limit ? parseInt(query.limit, 10) : undefined
+    });
   });
 
   app.get("/v1/payouts/file-uploads/:uploadId/batches", async (request, reply) => {

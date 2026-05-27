@@ -40,8 +40,8 @@ export type ApprovalMatrix = {
   status: ApprovalMatrixStatus;
   createdByUserId: string | null;
   createdByRole: string | null;
-  createdAt: string | null;
-  updatedAt: string | null;
+  createdAt: number | null;
+  updatedAt: number | null;
 };
 
 export type ApprovalPlanSnapshot = {

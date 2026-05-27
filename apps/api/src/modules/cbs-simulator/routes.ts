@@ -16,7 +16,7 @@ export const cbsSimulatorRoutes: FastifyPluginAsync = async (app) => {
       status text not null,
       error_code text,
       error_message text,
-      created_at timestamptz not null default now(),
+      created_at bigint not null default (extract(epoch from now()) * 1000)::bigint,
       transaction_type text,
       narration text
     );
@@ -69,16 +69,14 @@ export const cbsSimulatorRoutes: FastifyPluginAsync = async (app) => {
           cbsReferenceId: tx.cbs_reference_id,
           cachedResponse: true,
           narration: tx.narration || body.narration || "CMS Payout",
-          processedAt: new Date().toISOString()
-        });
+          processedAt: Date.now()});
       } else {
         return reply.status(422).send({
           status: "FAILED",
           errorCode: tx.error_code,
           errorMessage: tx.error_message,
           cachedResponse: true,
-          processedAt: new Date().toISOString()
-        });
+          processedAt: Date.now()});
       }
     }
 
@@ -121,8 +119,7 @@ export const cbsSimulatorRoutes: FastifyPluginAsync = async (app) => {
         status: "FAILED",
         errorCode,
         errorMessage,
-        processedAt: new Date().toISOString()
-      });
+        processedAt: Date.now()});
     }
 
     // 3. Process debit atomically
@@ -158,8 +155,7 @@ export const cbsSimulatorRoutes: FastifyPluginAsync = async (app) => {
         cbsReferenceId: cbsRef,
         availableBalance: String(newBalance),
         narration: body.narration || "CMS Payout",
-        processedAt: new Date().toISOString()
-      });
+        processedAt: Date.now()});
     } catch (err) {
       await db.query("rollback");
       return reply.status(500).send({
@@ -201,8 +197,7 @@ export const cbsSimulatorRoutes: FastifyPluginAsync = async (app) => {
         status: "SUCCESS",
         reversalReferenceId: tx.cbs_reference_id,
         cachedResponse: true,
-        processedAt: new Date().toISOString()
-      });
+        processedAt: Date.now()});
     }
 
     // Locate original transaction to find account number
@@ -250,8 +245,7 @@ export const cbsSimulatorRoutes: FastifyPluginAsync = async (app) => {
         status: "SUCCESS",
         reversalReferenceId: revRef,
         availableBalance: String(newBalance),
-        processedAt: new Date().toISOString()
-      });
+        processedAt: Date.now()});
     } catch (err) {
       await db.query("rollback");
       return reply.status(500).send({
@@ -287,8 +281,7 @@ export const cbsSimulatorRoutes: FastifyPluginAsync = async (app) => {
       amount: String(row.amount),
       errorCode: row.error_code || null,
       errorMessage: row.error_message || null,
-      processedAt: row.created_at.toISOString()
-    };
+      processedAt: row.created_at};
   });
 
   app.post("/v1/cbs/accounts/:accountNumber/deposit", async (request, reply) => {
@@ -346,8 +339,7 @@ export const cbsSimulatorRoutes: FastifyPluginAsync = async (app) => {
         status: "SUCCESS",
         cbsReferenceId: cbsRef,
         availableBalance: String(newBalance),
-        processedAt: new Date().toISOString()
-      });
+        processedAt: Date.now()});
     } catch (err) {
       await db.query("rollback");
       return reply.status(500).send({
@@ -431,8 +423,7 @@ export const cbsSimulatorRoutes: FastifyPluginAsync = async (app) => {
         status: "SUCCESS",
         cbsReferenceId: cbsRef,
         availableBalance: String(newBalance),
-        processedAt: new Date().toISOString()
-      });
+        processedAt: Date.now()});
     } catch (err) {
       await db.query("rollback");
       return reply.status(500).send({
@@ -461,7 +452,7 @@ export const cbsSimulatorRoutes: FastifyPluginAsync = async (app) => {
       amount: String(row.amount),
       cbsReferenceId: row.cbs_reference_id,
       status: row.status,
-      createdAt: row.created_at.toISOString(),
+      createdAt: row.created_at,
       transactionType: row.transaction_type,
       narration: row.narration
     }));
@@ -497,8 +488,7 @@ export const cbsSimulatorRoutes: FastifyPluginAsync = async (app) => {
         clearingReferenceId: null,
         errorCode: "ERR_CLEARING_REJECTED",
         errorMessage: "Clearing rail rejected the transfer request.",
-        processedAt: new Date().toISOString()
-      });
+        processedAt: Date.now()});
     }
 
     const clearingRef = `PH${randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`;
@@ -507,7 +497,6 @@ export const cbsSimulatorRoutes: FastifyPluginAsync = async (app) => {
       status: "SUCCESS",
       clearingReferenceId: clearingRef,
       narration: narration || `CMS Payout ${batchId}`,
-      processedAt: new Date().toISOString()
-    });
+      processedAt: Date.now()});
   });
 };

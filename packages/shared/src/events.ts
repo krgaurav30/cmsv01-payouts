@@ -22,7 +22,7 @@ export type DomainEventEnvelope<TPayload = Record<string, unknown>> = {
   eventType: DomainEventType;
   eventKey: string;
   version: number;
-  occurredAt: string;
+  occurredAt: number;
   payload: TPayload;
 };
 
@@ -32,10 +32,11 @@ export function createDomainEvent<TPayload>(input: {
   eventType: DomainEventType;
   eventKey?: string;
   payload: TPayload;
-  occurredAt?: Date;
+  occurredAt?: Date | number;
   version?: number;
 }) {
-  const occurredAt = input.occurredAt ?? new Date();
+  const occurredAtInput = input.occurredAt ?? Date.now();
+  const occurredTime = typeof occurredAtInput === "number" ? occurredAtInput : occurredAtInput.getTime();
 
   return {
     eventId: randomUUID(),
@@ -44,7 +45,7 @@ export function createDomainEvent<TPayload>(input: {
     eventType: input.eventType,
     eventKey: input.eventKey ?? input.aggregateId,
     version: input.version ?? 1,
-    occurredAt: occurredAt.toISOString(),
+    occurredAt: occurredTime,
     payload: input.payload
   } satisfies DomainEventEnvelope<TPayload>;
 }

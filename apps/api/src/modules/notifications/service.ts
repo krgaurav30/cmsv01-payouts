@@ -20,8 +20,8 @@ type NotificationRow = {
   target_section: NotificationTargetSection;
   entity_type: string | null;
   entity_id: string | null;
-  read_at: Date | null;
-  created_at: Date | null;
+  read_at: number | null;
+  created_at: number | null;
 };
 
 export class NotificationsService {
@@ -44,7 +44,7 @@ export class NotificationsService {
   async markNotificationRead(notificationId: string, payload: MarkNotificationReadRequest) {
     const result = await this.db.query<NotificationRow>(
       `update notifications
-       set read_at = coalesce(read_at, now())
+       set read_at = coalesce(read_at, (extract(epoch from now()) * 1000)::bigint)
        where notification_id = $1
          and recipient_user_id = $2
        returning notification_id, corporate_tenant_id, corporate_id, recipient_user_id, title,
@@ -58,7 +58,7 @@ export class NotificationsService {
   async markAllRead(actedByUserId: string) {
     await this.db.query(
       `update notifications
-       set read_at = coalesce(read_at, now())
+       set read_at = coalesce(read_at, (extract(epoch from now()) * 1000)::bigint)
        where recipient_user_id = $1
          and read_at is null`,
       [actedByUserId]
@@ -86,7 +86,7 @@ export class NotificationsService {
            notification_id, corporate_tenant_id, corporate_id, recipient_user_id, title,
            message, target_section, entity_type, entity_id, read_at, created_at
          )
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, null, now())`,
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, null, (extract(epoch from now()) * 1000)::bigint)`,
         [
           randomUUID(),
           payload.corporateTenantId,
@@ -175,7 +175,7 @@ function mapNotificationRow(row: NotificationRow) {
     targetSection: row.target_section,
     entityType: row.entity_type,
     entityId: row.entity_id,
-    readAt: row.read_at?.toISOString() ?? null,
-    createdAt: row.created_at?.toISOString() ?? null
+    readAt: row.read_at,
+    createdAt: row.created_at
   } satisfies Notification;
 }

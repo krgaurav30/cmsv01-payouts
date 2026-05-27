@@ -637,6 +637,24 @@ export function OperationsDashboard({
   );
 
   const [transactionSearch, setTransactionSearch] = useState("");
+  const [debouncedTransactionSearch, setDebouncedTransactionSearch] = useState("");
+  const [debouncedBeneficiarySearch, setDebouncedBeneficiarySearch] = useState("");
+
+  const [transactionsPage, setTransactionsPage] = useState(1);
+  const [transactionsHasMore, setTransactionsHasMore] = useState(true);
+  const [beneficiariesPage, setBeneficiariesPage] = useState(1);
+  const [beneficiariesHasMore, setBeneficiariesHasMore] = useState(true);
+
+  // Approval workbench pagination states
+  const [pendingTransactionsPage, setPendingTransactionsPage] = useState(1);
+  const [pendingTransactionsHasMore, setPendingTransactionsHasMore] = useState(true);
+  const [pendingBeneficiariesPage, setPendingBeneficiariesPage] = useState(1);
+  const [pendingBeneficiariesHasMore, setPendingBeneficiariesHasMore] = useState(true);
+
+  // Approval workbench lists
+  const [pendingTransactions, setPendingTransactions] = useState<PayoutBatch[]>([]);
+  const [pendingBeneficiaries, setPendingBeneficiaries] = useState<Beneficiary[]>([]);
+
   const [transactionStateFilter, setTransactionStateFilter] = useState("");
   const [dashboardDateRange, setDashboardDateRange] = useState("all");
   const [transactionDatePreset, setTransactionDatePreset] = useState("all");
@@ -741,6 +759,71 @@ export function OperationsDashboard({
       setRoleSubscriptionIds([]);
     }
   }, [editingRole, subscriptions]);
+
+  const buildDateRange = (preset: string, customStart: string, customEnd: string) => {
+    const today = new Date();
+    const startOfDay = (date: Date) => {
+      const value = new Date(date);
+      value.setHours(0, 0, 0, 0);
+      return value;
+    };
+    const endOfDay = (date: Date) => {
+      const value = new Date(date);
+      value.setHours(23, 59, 59, 999);
+      return value;
+    };
+
+    if (preset === "custom") {
+      return {
+        start: customStart ? startOfDay(new Date(customStart)) : null,
+        end: customEnd ? endOfDay(new Date(customEnd)) : null
+      };
+    }
+
+    if (preset === "today") {
+      return { start: startOfDay(today), end: endOfDay(today) };
+    }
+
+    if (preset === "yesterday") {
+      const yesterday = new Date(today);
+      yesterday.setDate(today.getDate() - 1);
+      return { start: startOfDay(yesterday), end: endOfDay(yesterday) };
+    }
+
+    if (preset === "week") {
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - 6);
+      return { start: startOfDay(weekStart), end: endOfDay(today) };
+    }
+
+    if (preset === "month") {
+      const monthStart = new Date(today);
+      monthStart.setDate(1);
+      return { start: startOfDay(monthStart), end: endOfDay(today) };
+    }
+
+    return { start: null, end: null };
+  };
+
+  const transactionDateRange = useMemo(
+    () => buildDateRange(transactionDatePreset, transactionCustomStart, transactionCustomEnd),
+    [transactionCustomEnd, transactionCustomStart, transactionDatePreset]
+  );
+
+  const approvalDateRange = useMemo(
+    () => buildDateRange(approvalDatePreset, approvalCustomStart, approvalCustomEnd),
+    [approvalCustomEnd, approvalCustomStart, approvalDatePreset]
+  );
+
+  const fileUploadDateRange = useMemo(
+    () => buildDateRange(fileUploadDatePreset, fileUploadCustomStart, fileUploadCustomEnd),
+    [fileUploadCustomEnd, fileUploadCustomStart, fileUploadDatePreset]
+  );
+
+  const reportDateRange = useMemo(
+    () => buildDateRange(reportDatePreset, reportCustomStart, reportCustomEnd),
+    [reportCustomEnd, reportCustomStart, reportDatePreset]
+  );
 
   async function copyText(text: string) {
     try {
@@ -891,8 +974,10 @@ export function OperationsDashboard({
 
     const [
       transactionsResult,
+      pendingTransactionsResult,
       fileUploadsResult,
       beneficiariesResult,
+      pendingBeneficiariesResult,
       approvalMatricesResult,
       rolesResult,
       usersResult,
@@ -902,20 +987,30 @@ export function OperationsDashboard({
       packagesResult
     ] = await Promise.all([
       shouldFetch("transactions")
-        ? fetchJson<{ items: PayoutBatch[] }>(
-            `/v1/payouts/batches?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
+        ? fetchJson<{ items: PayoutBatch[], pagination?: { hasMore: boolean } }>(
+            `/v1/payouts/batches?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}&page=1&limit=${transactionsPage * 25}`
           )
-        : Promise.resolve({ ok: true as const, data: { items: transactions } }),
+        : Promise.resolve({ ok: true as const, data: { items: transactions, pagination: { hasMore: transactionsHasMore } } }),
+      shouldFetch("transactions")
+        ? fetchJson<{ items: PayoutBatch[], pagination?: { hasMore: boolean } }>(
+            `/v1/payouts/batches?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}&state=pending_approvals&page=1&limit=${pendingTransactionsPage * 25}`
+          )
+        : Promise.resolve({ ok: true as const, data: { items: pendingTransactions, pagination: { hasMore: pendingTransactionsHasMore } } }),
       shouldFetch("file-uploads")
         ? fetchJson<{ items: PayoutFileUpload[] }>(
             `/v1/payouts/file-uploads?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
           )
         : Promise.resolve({ ok: true as const, data: { items: fileUploads } }),
       shouldFetch("beneficiaries")
-        ? fetchJson<{ items: Beneficiary[] }>(
-            `/v1/beneficiaries?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}`
+        ? fetchJson<{ items: Beneficiary[], pagination?: { hasMore: boolean } }>(
+            `/v1/beneficiaries?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}&page=1&limit=${beneficiariesPage * 25}`
           )
-        : Promise.resolve({ ok: true as const, data: { items: beneficiaries } }),
+        : Promise.resolve({ ok: true as const, data: { items: beneficiaries, pagination: { hasMore: beneficiariesHasMore } } }),
+      shouldFetch("beneficiaries")
+        ? fetchJson<{ items: Beneficiary[], pagination?: { hasMore: boolean } }>(
+            `/v1/beneficiaries?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}&approvalState=pending_approval&page=1&limit=${pendingBeneficiariesPage * 25}`
+          )
+        : Promise.resolve({ ok: true as const, data: { items: pendingBeneficiaries, pagination: { hasMore: pendingBeneficiariesHasMore } } }),
       shouldFetch("approval-matrices")
         ? fetchJson<{ items: ApprovalMatrix[] }>(
             `/v1/approval-matrices?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&_t=${Date.now()}`
@@ -947,6 +1042,12 @@ export function OperationsDashboard({
 
     if (shouldFetch("transactions") && transactionsResult.ok) {
       setTransactions(transactionsResult.data.items ?? []);
+      setTransactionsHasMore(transactionsResult.data.pagination?.hasMore ?? false);
+    }
+
+    if (shouldFetch("transactions") && pendingTransactionsResult.ok) {
+      setPendingTransactions(pendingTransactionsResult.data.items ?? []);
+      setPendingTransactionsHasMore(pendingTransactionsResult.data.pagination?.hasMore ?? false);
     }
 
     if (shouldFetch("file-uploads") && fileUploadsResult.ok) {
@@ -955,6 +1056,12 @@ export function OperationsDashboard({
 
     if (shouldFetch("beneficiaries") && beneficiariesResult.ok) {
       setBeneficiaries(beneficiariesResult.data.items ?? []);
+      setBeneficiariesHasMore(beneficiariesResult.data.pagination?.hasMore ?? false);
+    }
+
+    if (shouldFetch("beneficiaries") && pendingBeneficiariesResult.ok) {
+      setPendingBeneficiaries(pendingBeneficiariesResult.data.items ?? []);
+      setPendingBeneficiariesHasMore(pendingBeneficiariesResult.data.pagination?.hasMore ?? false);
     }
 
     if (shouldFetch("approval-matrices") && approvalMatricesResult.ok) {
@@ -1004,6 +1111,194 @@ export function OperationsDashboard({
       setBusy(false);
     }
   }
+
+  // Paginated load helpers
+  async function loadTransactionsPage(pageNum: number, append = false) {
+    if (!session || !selectedCorporateId) return;
+
+    const queryParams = new URLSearchParams({
+      corporateTenantId: session.corporateTenantId,
+      corporateId: selectedCorporateId,
+      page: String(pageNum),
+      limit: "25"
+    });
+
+    if (debouncedTransactionSearch) {
+      queryParams.set("search", debouncedTransactionSearch);
+    }
+    if (transactionStateFilter) {
+      queryParams.set("state", transactionStateFilter);
+    }
+    if (transactionDateRange.start) {
+      queryParams.set("startDate", String(new Date(transactionDateRange.start).getTime()));
+    }
+    if (transactionDateRange.end) {
+      queryParams.set("endDate", String(new Date(transactionDateRange.end).getTime()));
+    }
+
+    try {
+      const result = await fetchJson<{ items: PayoutBatch[], pagination?: { hasMore: boolean } }>(
+        `/v1/payouts/batches?${queryParams.toString()}`
+      );
+      if (result.ok) {
+        const newItems = result.data.items ?? [];
+        if (append) {
+          setTransactions((prev) => [...prev, ...newItems]);
+        } else {
+          setTransactions(newItems);
+        }
+        setTransactionsPage(pageNum);
+        setTransactionsHasMore(result.data.pagination?.hasMore ?? (newItems.length === 25));
+      }
+    } catch (err) {
+      console.error("Failed to load transactions page:", err);
+    }
+  }
+
+  async function loadBeneficiariesPage(pageNum: number, append = false) {
+    if (!session || !selectedCorporateId) return;
+
+    const queryParams = new URLSearchParams({
+      corporateTenantId: session.corporateTenantId,
+      corporateId: selectedCorporateId,
+      page: String(pageNum),
+      limit: "25"
+    });
+
+    if (debouncedBeneficiarySearch) {
+      queryParams.set("search", debouncedBeneficiarySearch);
+    }
+    if (beneficiaryStatusFilter) {
+      queryParams.set("status", beneficiaryStatusFilter);
+    }
+
+    try {
+      const result = await fetchJson<{ items: Beneficiary[], pagination?: { hasMore: boolean } }>(
+        `/v1/beneficiaries?${queryParams.toString()}`
+      );
+      if (result.ok) {
+        const newItems = result.data.items ?? [];
+        if (append) {
+          setBeneficiaries((prev) => [...prev, ...newItems]);
+        } else {
+          setBeneficiaries(newItems);
+        }
+        setBeneficiariesPage(pageNum);
+        setBeneficiariesHasMore(result.data.pagination?.hasMore ?? (newItems.length === 25));
+      }
+    } catch (err) {
+      console.error("Failed to load beneficiaries page:", err);
+    }
+  }
+
+  async function loadPendingTransactionsPage(pageNum: number, append = false) {
+    if (!session || !selectedCorporateId) return;
+
+    const queryParams = new URLSearchParams({
+      corporateTenantId: session.corporateTenantId,
+      corporateId: selectedCorporateId,
+      state: "pending_approvals",
+      page: String(pageNum),
+      limit: "25"
+    });
+
+    try {
+      const result = await fetchJson<{ items: PayoutBatch[], pagination?: { hasMore: boolean } }>(
+        `/v1/payouts/batches?${queryParams.toString()}`
+      );
+      if (result.ok) {
+        const newItems = result.data.items ?? [];
+        if (append) {
+          setPendingTransactions((prev) => [...prev, ...newItems]);
+        } else {
+          setPendingTransactions(newItems);
+        }
+        setPendingTransactionsPage(pageNum);
+        setPendingTransactionsHasMore(result.data.pagination?.hasMore ?? (newItems.length === 25));
+      }
+    } catch (err) {
+      console.error("Failed to load pending transactions:", err);
+    }
+  }
+
+  async function loadPendingBeneficiariesPage(pageNum: number, append = false) {
+    if (!session || !selectedCorporateId) return;
+
+    const queryParams = new URLSearchParams({
+      corporateTenantId: session.corporateTenantId,
+      corporateId: selectedCorporateId,
+      approvalState: "pending_approval",
+      page: String(pageNum),
+      limit: "25"
+    });
+
+    try {
+      const result = await fetchJson<{ items: Beneficiary[], pagination?: { hasMore: boolean } }>(
+        `/v1/beneficiaries?${queryParams.toString()}`
+      );
+      if (result.ok) {
+        const newItems = result.data.items ?? [];
+        if (append) {
+          setPendingBeneficiaries((prev) => [...prev, ...newItems]);
+        } else {
+          setPendingBeneficiaries(newItems);
+        }
+        setPendingBeneficiariesPage(pageNum);
+        setPendingBeneficiariesHasMore(result.data.pagination?.hasMore ?? (newItems.length === 25));
+      }
+    } catch (err) {
+      console.error("Failed to load pending beneficiaries:", err);
+    }
+  }
+
+  function handleLoadMoreTransactions() {
+    void loadTransactionsPage(transactionsPage + 1, true);
+  }
+
+  function handleLoadMoreBeneficiaries() {
+    void loadBeneficiariesPage(beneficiariesPage + 1, true);
+  }
+
+  function handleLoadMorePendingTransactions() {
+    void loadPendingTransactionsPage(pendingTransactionsPage + 1, true);
+  }
+
+  function handleLoadMorePendingBeneficiaries() {
+    void loadPendingBeneficiariesPage(pendingBeneficiariesPage + 1, true);
+  }
+
+  // Debouncing triggers
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedTransactionSearch(transactionSearch);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [transactionSearch]);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedBeneficiarySearch(beneficiarySearch);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [beneficiarySearch]);
+
+  // Query triggers when filters change
+  useEffect(() => {
+    void loadTransactionsPage(1, false);
+  }, [debouncedTransactionSearch, transactionStateFilter, transactionDateRange]);
+
+  useEffect(() => {
+    void loadBeneficiariesPage(1, false);
+  }, [debouncedBeneficiarySearch, beneficiaryStatusFilter]);
+
+  // Load first pages on corporate select change
+  useEffect(() => {
+    if (!session || !selectedCorporateId) return;
+    void loadTransactionsPage(1, false);
+    void loadBeneficiariesPage(1, false);
+    void loadPendingTransactionsPage(1, false);
+    void loadPendingBeneficiariesPage(1, false);
+  }, [selectedCorporateId, session]);
 
   async function loadTransactionDetail(batchId: string) {
     if (transactionDetailCache[batchId]?.timeline.length) {
@@ -1373,71 +1668,6 @@ export function OperationsDashboard({
       .reduce((sum, t) => sum + t.totalAmount.value, 0);
   }, [dashboardTransactions]);
 
-  const buildDateRange = (preset: string, customStart: string, customEnd: string) => {
-    const today = new Date();
-    const startOfDay = (date: Date) => {
-      const value = new Date(date);
-      value.setHours(0, 0, 0, 0);
-      return value;
-    };
-    const endOfDay = (date: Date) => {
-      const value = new Date(date);
-      value.setHours(23, 59, 59, 999);
-      return value;
-    };
-
-    if (preset === "custom") {
-      return {
-        start: customStart ? startOfDay(new Date(customStart)) : null,
-        end: customEnd ? endOfDay(new Date(customEnd)) : null
-      };
-    }
-
-    if (preset === "today") {
-      return { start: startOfDay(today), end: endOfDay(today) };
-    }
-
-    if (preset === "yesterday") {
-      const yesterday = new Date(today);
-      yesterday.setDate(today.getDate() - 1);
-      return { start: startOfDay(yesterday), end: endOfDay(yesterday) };
-    }
-
-    if (preset === "week") {
-      const weekStart = new Date(today);
-      weekStart.setDate(today.getDate() - 6);
-      return { start: startOfDay(weekStart), end: endOfDay(today) };
-    }
-
-    if (preset === "month") {
-      const monthStart = new Date(today);
-      monthStart.setDate(1);
-      return { start: startOfDay(monthStart), end: endOfDay(today) };
-    }
-
-    return { start: null, end: null };
-  };
-
-  const transactionDateRange = useMemo(
-    () => buildDateRange(transactionDatePreset, transactionCustomStart, transactionCustomEnd),
-    [transactionCustomEnd, transactionCustomStart, transactionDatePreset]
-  );
-
-  const approvalDateRange = useMemo(
-    () => buildDateRange(approvalDatePreset, approvalCustomStart, approvalCustomEnd),
-    [approvalCustomEnd, approvalCustomStart, approvalDatePreset]
-  );
-
-  const fileUploadDateRange = useMemo(
-    () => buildDateRange(fileUploadDatePreset, fileUploadCustomStart, fileUploadCustomEnd),
-    [fileUploadCustomEnd, fileUploadCustomStart, fileUploadDatePreset]
-  );
-
-  const reportDateRange = useMemo(
-    () => buildDateRange(reportDatePreset, reportCustomStart, reportCustomEnd),
-    [reportCustomEnd, reportCustomStart, reportDatePreset]
-  );
-
   const filteredReportTransactions = useMemo(() => {
     return transactions.filter((t) => {
       if (!t.createdAt) return false;
@@ -1656,7 +1886,7 @@ export function OperationsDashboard({
 
   const approvalEntries = useMemo<ApprovalEntry[]>(() => {
     return [
-      ...transactions
+      ...pendingTransactions
         .filter((item) => item.state === "pending_approval" || item.state === "partially_approved")
         .filter((item) => {
           if (!item.createdAt) {
@@ -1677,7 +1907,7 @@ export function OperationsDashboard({
           createdAt: item.createdAt ?? undefined,
           packageCode: item.packageCode
         })),
-      ...beneficiaries
+      ...pendingBeneficiaries
         .filter((item) => item.approvalState === "pending_approval")
         .filter((item) => {
           if (!item.createdAt) {
@@ -1738,7 +1968,7 @@ export function OperationsDashboard({
           createdAt: item.createdAt ?? undefined
         }))
     ];
-  }, [approvalDateRange.end, approvalDateRange.start, beneficiaries, roles, transactions, users]);
+  }, [approvalDateRange.end, approvalDateRange.start, pendingBeneficiaries, roles, pendingTransactions, users]);
 
   const hasNewApprovals = useMemo(() => {
     if (activeSection === "approvals") {
@@ -3885,7 +4115,7 @@ export function OperationsDashboard({
                 </label>
               </div>
 
-              <div className="ops-table-shell">
+              <div className="ops-table-shell scrollable">
                 <table className="ops-table">
                   <thead>
                     <tr>
@@ -3946,6 +4176,18 @@ export function OperationsDashboard({
                   </tbody>
                 </table>
               </div>
+              {transactionsHasMore && (
+                <div className="ops-load-more-container">
+                  <button
+                    className="ops-load-more-btn"
+                    onClick={handleLoadMoreTransactions}
+                    disabled={busy}
+                    type="button"
+                  >
+                    Load More
+                  </button>
+                </div>
+              )}
             </section>
           </section>
         ) : null}
@@ -4410,7 +4652,7 @@ export function OperationsDashboard({
                 </label>
               </div>
 
-              <div className="ops-table-shell">
+              <div className="ops-table-shell scrollable">
                 <table className="ops-table">
                   <thead>
                     <tr>
@@ -4571,6 +4813,18 @@ export function OperationsDashboard({
                   </tbody>
                 </table>
               </div>
+              {beneficiariesHasMore && (
+                <div className="ops-load-more-container">
+                  <button
+                    className="ops-load-more-btn"
+                    onClick={handleLoadMoreBeneficiaries}
+                    disabled={busy}
+                    type="button"
+                  >
+                    Load More
+                  </button>
+                </div>
+              )}
             </section>
           </section>
         ) : null}
@@ -4818,7 +5072,7 @@ export function OperationsDashboard({
                     </div>
                   )}
 
-                  <div className="ops-table-shell">
+                  <div className="ops-table-shell scrollable">
                     <table className="ops-table">
                       <thead>
                         <tr>
@@ -4886,6 +5140,18 @@ export function OperationsDashboard({
                       </tbody>
                     </table>
                   </div>
+                  {pendingTransactionsHasMore && (
+                    <div className="ops-load-more-container">
+                      <button
+                        className="ops-load-more-btn"
+                        onClick={handleLoadMorePendingTransactions}
+                        disabled={busy}
+                        type="button"
+                      >
+                        Load More
+                      </button>
+                    </div>
+                  )}
                 </div>
                 ) : null}
 
@@ -4954,7 +5220,7 @@ export function OperationsDashboard({
                       {beneficiaryApprovalEntries.length} pending
                     </span>
                   </div>
-                  <div className="ops-table-shell">
+                  <div className="ops-table-shell scrollable">
                     <table className="ops-table">
                       <thead>
                         <tr>
@@ -4995,6 +5261,18 @@ export function OperationsDashboard({
                       </tbody>
                     </table>
                   </div>
+                  {pendingBeneficiariesHasMore && (
+                    <div className="ops-load-more-container">
+                      <button
+                        className="ops-load-more-btn"
+                        onClick={handleLoadMorePendingBeneficiaries}
+                        disabled={busy}
+                        type="button"
+                      >
+                        Load More
+                      </button>
+                    </div>
+                  )}
                 </div>
                 ) : null}
 

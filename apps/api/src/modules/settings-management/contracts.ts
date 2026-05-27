@@ -30,7 +30,7 @@ export type CorporateTenantSettings = {
   maxDailyCumulativeTransactionAmount: number;
   maxBulkUploadRows: number;
   duplicateReferencePolicy: DuplicateReferencePolicy;
-  updatedAt: string | null;
+  updatedAt: number | null;
   updatedByUserId: string | null;
   updatedByRole: string | null;
 };

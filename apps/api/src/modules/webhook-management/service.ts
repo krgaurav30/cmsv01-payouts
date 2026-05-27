@@ -12,9 +12,9 @@ type PartnerWebhookRow = {
   status: "active" | "inactive";
   signing_secret: string;
   created_by: string | null;
-  created_at: Date | null;
-  updated_at: Date | null;
-  last_delivery_at: Date | null;
+  created_at: number | null;
+  updated_at: number | null;
+  last_delivery_at: number | null;
   last_delivery_status: string | null;
   last_delivery_http_status: number | null;
 };
@@ -27,7 +27,7 @@ type PartnerWebhookDeliveryRow = {
   response_status: number | null;
   response_body: string | null;
   status: string;
-  attempted_at: Date | null;
+  attempted_at: number | null;
 };
 
 export const PARTNER_WEBHOOK_EVENTS = [
@@ -110,7 +110,7 @@ export class WebhookManagementService {
          webhook_id, label, webhook_url, description, event_types, status, signing_secret,
          created_by, created_at, updated_at, last_delivery_at, last_delivery_status, last_delivery_http_status
        )
-       values ($1, $2, $3, $4, $5, $6, $7, $8, now(), now(), null, null, null)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint, null, null, null)
        returning webhook_id, label, webhook_url, description, event_types, status, signing_secret,
                  created_by, created_at, updated_at, last_delivery_at, last_delivery_status,
                  last_delivery_http_status`,
@@ -126,7 +126,7 @@ export class WebhookManagementService {
     const result = await this.db.query<PartnerWebhookRow>(
       `update partner_webhooks
        set status = $2,
-           updated_at = now()
+           updated_at = (extract(epoch from now()) * 1000)::bigint
        where webhook_id = $1
        returning webhook_id, label, webhook_url, description, event_types, status, signing_secret,
                  created_by, created_at, updated_at, last_delivery_at, last_delivery_status,
@@ -164,7 +164,7 @@ export class WebhookManagementService {
       responseStatus: row.response_status,
       responseBody: row.response_body,
       status: row.status,
-      attemptedAt: row.attempted_at?.toISOString() ?? null
+      attemptedAt: row.attempted_at
     }));
   }
 }
@@ -180,9 +180,9 @@ function mapWebhookRow(row: PartnerWebhookRow) {
     signingSecret: row.signing_secret,
     maskedSigningSecret: maskSecret(row.signing_secret),
     createdBy: row.created_by,
-    createdAt: row.created_at?.toISOString() ?? null,
-    updatedAt: row.updated_at?.toISOString() ?? null,
-    lastDeliveryAt: row.last_delivery_at?.toISOString() ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastDeliveryAt: row.last_delivery_at,
     lastDeliveryStatus: row.last_delivery_status,
     lastDeliveryHttpStatus: row.last_delivery_http_status
   };

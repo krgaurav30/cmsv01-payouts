@@ -51,18 +51,18 @@ type ProjectionBatchRow = {
   total_amount: string;
   approval_comment: string | null;
   bank_reference: string | null;
-  created_at: Date | null;
-  submitted_at: Date | null;
+  created_at: number | null;
+  submitted_at: number | null;
   submitted_by_user_id: string | null;
   submitted_by_role: string | null;
-  approved_at: Date | null;
+  approved_at: number | null;
   approved_by_user_id: string | null;
   approved_by_role: string | null;
-  rejected_at: Date | null;
+  rejected_at: number | null;
   rejected_by_user_id: string | null;
   rejected_by_role: string | null;
-  dispatched_at: Date | null;
-  completed_at: Date | null;
+  dispatched_at: number | null;
+  completed_at: number | null;
   failure_reason: string | null;
   approval_levels_required?: number | null;
   current_approval_level?: number | null;
@@ -84,7 +84,7 @@ type ApprovalActionRow = {
   action: "approve" | "reject";
   actor_user_id: string;
   actor_role: string;
-  created_at: Date | null;
+  created_at: number | null;
 };
 
 async function ensureProducerConnected() {
@@ -134,7 +134,7 @@ async function publishPendingOutboxEvents() {
               eventType: event.event_type,
               eventKey: event.event_key,
               version: event.version,
-              occurredAt: event.occurred_at?.toISOString() ?? new Date().toISOString(),
+              occurredAt: event.occurred_at ?? Date.now(),
               payload: event.payload_json
             })
           }
@@ -205,7 +205,7 @@ async function syncTransactionProjection(batchId: string) {
      values (
        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
        $17, $18, $19, $20, $21::jsonb, $22, $23, $24, $25, $26, $27, $28, $29,
-       $30, $31, $32, now()
+       $30, $31, $32, (extract(epoch from now()) * 1000)::bigint
      )
      on conflict (batch_id) do update
      set bank_tenant_id = excluded.bank_tenant_id,
@@ -239,7 +239,7 @@ async function syncTransactionProjection(batchId: string) {
          approved_by_role = excluded.approved_by_role,
          rejected_by_user_id = excluded.rejected_by_user_id,
          rejected_by_role = excluded.rejected_by_role,
-         updated_at = now()`,
+         updated_at = (extract(epoch from now()) * 1000)::bigint`,
     [
       row.batch_id,
       row.bank_tenant_id,
@@ -286,7 +286,7 @@ async function syncTransactionProjection(batchId: string) {
          approval_level, approval_levels_required, approval_roles, total_amount,
          created_at, updated_at
        )
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, now())
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, (extract(epoch from now()) * 1000)::bigint)
        on conflict (batch_id) do update
        set corporate_tenant_id = excluded.corporate_tenant_id,
            corporate_id = excluded.corporate_id,
@@ -297,7 +297,7 @@ async function syncTransactionProjection(batchId: string) {
            approval_roles = excluded.approval_roles,
            total_amount = excluded.total_amount,
            created_at = excluded.created_at,
-           updated_at = now()`,
+           updated_at = (extract(epoch from now()) * 1000)::bigint`,
       [
         `queue-${batchId}`,
         batchId,
@@ -364,7 +364,7 @@ async function syncApprovalAssignments(batchId: string) {
   for (const roleRow of roleRows) {
     let status = "pending";
     let actedByUserId: string | null = null;
-    let actedAt: Date | null = null;
+    let actedAt: number | null = null;
 
     const levelActions = actions.filter((action) => action.approval_level === roleRow.level);
     const actedHere = levelActions.find((action) => action.actor_role === roleRow.role);
@@ -398,7 +398,7 @@ async function syncApprovalAssignments(batchId: string) {
          assignment_id, batch_id, corporate_tenant_id, corporate_id, approval_level,
          role_name, status, acted_by_user_id, acted_at, created_at
        )
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, (extract(epoch from now()) * 1000)::bigint)
        on conflict (batch_id, approval_level, role_name) do update
        set status = excluded.status,
            acted_by_user_id = excluded.acted_by_user_id,
@@ -959,8 +959,8 @@ async function reconcileAmbiguousTransactions() {
   const ambiguousTx = await db.query<{ batch_id: string, state: string }>(
     `select batch_id, state from payout_batches
      where state in ('cbs_debit_ambiguous', 'reversal_ambiguous')
-        or (state = 'sent_to_bank' and dispatched_at is not null and dispatched_at < now() - interval '10 seconds')
-        or (state = 'approved' and approved_at is not null and approved_at < now() - interval '10 seconds')`
+         or (state = 'sent_to_bank' and dispatched_at is not null and dispatched_at < (extract(epoch from now() - interval '10 seconds') * 1000)::bigint)
+         or (state = 'approved' and approved_at is not null and approved_at < (extract(epoch from now() - interval '10 seconds') * 1000)::bigint)`
   );
 
   for (const row of ambiguousTx.rows) {
@@ -1101,7 +1101,7 @@ async function dispatchWebhookForEvent(event: DomainEventEnvelope) {
         await db.query(
           `insert into partner_webhook_deliveries (
              delivery_id, webhook_id, event_type, target_url, payload, status, attempted_at, activity_id
-           ) values ($1, $2, $3, $4, $5::jsonb, 'pending', now(), $6)`,
+           ) values ($1, $2, $3, $4, $5::jsonb, 'pending', (extract(epoch from now()) * 1000)::bigint, $6)`,
           [deliveryId, wh.webhook_id, event.eventType, wh.webhook_url, payloadString, activityId]
         );
 
@@ -1147,7 +1147,7 @@ async function dispatchWebhookForEvent(event: DomainEventEnvelope) {
         // Update delivery status
         await db.query(
           `update partner_webhook_deliveries
-           set response_status = $2, response_body = $3, status = $4, attempted_at = now()
+           set response_status = $2, response_body = $3, status = $4, attempted_at = (extract(epoch from now()) * 1000)::bigint
            where delivery_id = $1`,
           [deliveryId, responseStatus, responseBody, deliveryStatus]
         );
@@ -1155,7 +1155,7 @@ async function dispatchWebhookForEvent(event: DomainEventEnvelope) {
         // Update webhook metadata
         await db.query(
           `update partner_webhooks
-           set last_delivery_at = now(), last_delivery_status = $2, last_delivery_http_status = $3, updated_at = now()
+           set last_delivery_at = (extract(epoch from now()) * 1000)::bigint, last_delivery_status = $2, last_delivery_http_status = $3, updated_at = (extract(epoch from now()) * 1000)::bigint
            where webhook_id = $1`,
           [wh.webhook_id, deliveryStatus, responseStatus]
         );

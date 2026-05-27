@@ -19,9 +19,9 @@ type CheckoutSessionRow = {
   redirect_url: string | null;
   cancel_url: string | null;
   status: "open" | "completed" | "expired";
-  created_at: Date;
-  expires_at: Date;
-  completed_at: Date | null;
+  created_at: number;
+  expires_at: number;
+  completed_at: number | null;
   metadata_json: any;
 };
 
@@ -31,7 +31,7 @@ export class CheckoutSessionService {
 
   async createCheckoutSession(payload: CheckoutSessionCreateRequest) {
     const checkoutSessionId = `cs_live_${randomUUID().replace(/-/g, "")}`;
-    const expiresAt = new Date(Date.now() + 20 * 60 * 1000); // 20 minutes expiry
+    const expiresAt = Date.now() + 20 * 60 * 1000; // 20 minutes expiry
 
     // We can define base URL based on config, or use a default
     const config = loadConfig();
@@ -45,7 +45,7 @@ export class CheckoutSessionService {
          beneficiary_id, payment_method_code, redirect_url, cancel_url,
          status, created_at, expires_at, metadata_json
        )
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'open', now(), $13, $14)`,
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'open', (extract(epoch from now()) * 1000)::bigint, $13, $14)`,
       [
         checkoutSessionId,
         payload.bankTenantId,
@@ -67,8 +67,7 @@ export class CheckoutSessionService {
     return {
       checkoutSessionId,
       checkoutUrl,
-      expiresAt: expiresAt.toISOString()
-    };
+      expiresAt: expiresAt};
   }
 
   async getCheckoutSession(sessionId: string): Promise<CheckoutSession | null> {
@@ -81,7 +80,7 @@ export class CheckoutSessionService {
     if (!row) return null;
 
     // Check if expired and open
-    if (row.status === "open" && new Date() > new Date(row.expires_at)) {
+    if (row.status === "open" && Date.now() > row.expires_at) {
       await this.db.query(
         `update checkout_sessions set status = 'expired' where checkout_session_id = $1`,
         [sessionId]
@@ -103,9 +102,9 @@ export class CheckoutSessionService {
       redirectUrl: row.redirect_url,
       cancelUrl: row.cancel_url,
       status: row.status,
-      createdAt: row.created_at.toISOString(),
-      expiresAt: row.expires_at.toISOString(),
-      completedAt: row.completed_at ? row.completed_at.toISOString() : null,
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+      completedAt: row.completed_at ? row.completed_at: null,
       metadataJson: row.metadata_json || {}
     };
   }
@@ -169,7 +168,7 @@ export class CheckoutSessionService {
     // Update session status to completed
     await this.db.query(
       `update checkout_sessions 
-       set status = 'completed', completed_at = now() 
+       set status = 'completed', completed_at = (extract(epoch from now()) * 1000)::bigint 
        where checkout_session_id = $1`,
       [sessionId]
     );

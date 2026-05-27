@@ -247,11 +247,11 @@ export const bankAppRoutes: FastifyPluginAsync = async (app) => {
   const partnerApiActivityService = new PartnerApiActivityService();
 
   app.get("/bank/dev-portal/activities", async (request) => {
-    const query = request.query as { category?: string; limit?: string };
+    const query = request.query as { category?: string; limit?: string; page?: string };
     const category = query.category === "beneficiary" ? "beneficiary" : "payment";
     const limit = query.limit ? parseInt(query.limit, 10) : 50;
-    const items = await partnerApiActivityService.listActivities(category, limit);
-    return { items };
+    const page = query.page ? parseInt(query.page, 10) : undefined;
+    return partnerApiActivityService.listActivities(category, limit, page);
   });
 
   app.get("/bank/dev-portal/activities/:activityId", async (request, reply) => {

@@ -63,18 +63,18 @@ type PayoutBatchRow = {
   total_amount: string;
   approval_comment: string | null;
   bank_reference: string | null;
-  created_at: Date | null;
-  submitted_at: Date | null;
+  created_at: number | null;
+  submitted_at: number | null;
   submitted_by_user_id: string | null;
   submitted_by_role: string | null;
-  approved_at: Date | null;
+  approved_at: number | null;
   approved_by_user_id: string | null;
   approved_by_role: string | null;
-  rejected_at: Date | null;
+  rejected_at: number | null;
   rejected_by_user_id: string | null;
   rejected_by_role: string | null;
-  dispatched_at: Date | null;
-  completed_at: Date | null;
+  dispatched_at: number | null;
+  completed_at: number | null;
   failure_reason: string | null;
   utr: string | null;
   narration: string | null;
@@ -95,7 +95,7 @@ type PayoutItemRow = {
   state: PayoutItem["state"];
   bank_reference: string | null;
   failure_reason: string | null;
-  processed_at: Date | null;
+  processed_at: number | null;
 };
 
 type PayoutRefundRow = {
@@ -110,8 +110,8 @@ type PayoutRefundRow = {
   amount: string;
   reason: string;
   state: PayoutRefund["state"];
-  created_at: Date | null;
-  processed_at: Date | null;
+  created_at: number | null;
+  processed_at: number | null;
 };
 
 type PayoutFileUploadRow = {
@@ -130,7 +130,7 @@ type PayoutFileUploadRow = {
   total_rows: number;
   created_count: number;
   rejected_count: number;
-  uploaded_at: Date | null;
+  uploaded_at: number | null;
   utr: string | null;
   payload_json?: Array<{
     paymentMethodCode: string;
@@ -141,8 +141,8 @@ type PayoutFileUploadRow = {
     tag?: string | null;
     remark?: string | null;
   }> | null;
-  processing_started_at?: Date | null;
-  processed_at?: Date | null;
+  processing_started_at?: number | null;
+  processed_at?: number | null;
 };
 
 type PayoutBatchApprovalContextRow = {
@@ -154,8 +154,8 @@ type PayoutBatchApprovalContextRow = {
   roles_by_level: Array<{ level: number; roles: string[] }> | null;
   matched_matrix_ids: string[] | null;
   status: string;
-  created_at: Date | null;
-  updated_at: Date | null;
+  created_at: number | null;
+  updated_at: number | null;
 };
 
 type TransactionListProjectionRow = PayoutBatchRow;
@@ -175,8 +175,8 @@ type TransactionCommandRow = {
   status: "accepted" | "processing" | "processed" | "failed";
   batch_id: string | null;
   error_message: string | null;
-  received_at: Date | null;
-  processed_at: Date | null;
+  received_at: number | null;
+  processed_at: number | null;
 };
 
 type ResolvedSubscriptionContext = {
@@ -218,9 +218,13 @@ export class PayoutManagementService {
     packageCode?: string;
     state?: string;
     search?: string;
+    startDate?: string | number;
+    endDate?: string | number;
+    page?: number;
+    limit?: number;
   }) {
     const clauses: string[] = [];
-    const params: string[] = [];
+    const params: any[] = [];
 
     if (filters?.corporateTenantId) {
       params.push(filters.corporateTenantId);
@@ -237,6 +241,16 @@ export class PayoutManagementService {
       clauses.push(`corporate_id = $${params.length}`);
     }
 
+    if (filters?.startDate) {
+      params.push(filters.startDate);
+      clauses.push(`created_at >= $${params.length}`);
+    }
+
+    if (filters?.endDate) {
+      params.push(filters.endDate);
+      clauses.push(`created_at <= $${params.length}`);
+    }
+
     if (filters?.subscriptionId) {
       params.push(filters.subscriptionId);
       clauses.push(`subscription_id = $${params.length}`);
@@ -248,8 +262,12 @@ export class PayoutManagementService {
     }
 
     if (filters?.state) {
-      params.push(filters.state);
-      clauses.push(`state = $${params.length}`);
+      if (filters.state === "pending_approvals") {
+        clauses.push(`state in ('pending_approval', 'partially_approved')`);
+      } else {
+        params.push(filters.state);
+        clauses.push(`state = $${params.length}`);
+      }
     }
 
     if (filters?.search) {
@@ -280,32 +298,62 @@ export class PayoutManagementService {
                          limit 1
                        ) first_item on true`;
 
-    const result =
-      params.length > 0
-        ? await this.db.query<PayoutBatchRow>(
-            `${baseQuery}
-             where ${clauses
-               .map((clause) =>
-                 clause
-                   .replaceAll("corporate_tenant_id", "pb.corporate_tenant_id")
-                   .replaceAll("bank_tenant_id", "pb.bank_tenant_id")
-                   .replaceAll("corporate_id", "pb.corporate_id")
-                   .replaceAll("subscription_id", "pb.subscription_id")
-                   .replaceAll("package_code", "pb.package_code")
-                   .replaceAll("state", "pb.state")
-                   .replaceAll("title", "pb.title")
-                   .replaceAll("batch_id", "pb.batch_id")
-               )
-               .join(" and ")}
-             order by pb.created_at desc nulls last, pb.batch_id desc`,
-            params
-          )
-        : await this.db.query<PayoutBatchRow>(
-            `${baseQuery}
-             order by pb.created_at desc nulls last, pb.batch_id desc`
-          );
+    let totalCount = 0;
+    const isPaginated = typeof filters?.page === "number" && typeof filters?.limit === "number";
 
-    return result.rows.map((row) => this.mapBatchListRow(row));
+    const whereClause = clauses.length > 0
+      ? "where " + clauses
+          .map((clause) =>
+            clause
+              .replaceAll("corporate_tenant_id", "pb.corporate_tenant_id")
+              .replaceAll("bank_tenant_id", "pb.bank_tenant_id")
+              .replaceAll("corporate_id", "pb.corporate_id")
+              .replaceAll("subscription_id", "pb.subscription_id")
+              .replaceAll("package_code", "pb.package_code")
+              .replaceAll("state", "pb.state")
+              .replaceAll("title", "pb.title")
+              .replaceAll("batch_id", "pb.batch_id")
+          )
+          .join(" and ")
+      : "";
+
+    if (isPaginated) {
+      const countRes = await this.db.query(
+        `select count(*) from payout_batches pb ${whereClause}`,
+        params
+      );
+      totalCount = parseInt(countRes.rows[0].count, 10);
+    }
+
+    let queryText = `${baseQuery} ${whereClause} order by pb.created_at desc nulls last, pb.batch_id desc`;
+    const queryParams = [...params];
+
+    if (isPaginated) {
+      const page = filters!.page!;
+      const limit = filters!.limit!;
+      const offset = (page - 1) * limit;
+      queryParams.push(limit, offset);
+      queryText += ` limit $${queryParams.length - 1} offset $${queryParams.length}`;
+    }
+
+    const result = await this.db.query<PayoutBatchRow>(queryText, queryParams);
+    const items = result.rows.map((row) => this.mapBatchListRow(row));
+
+    if (isPaginated) {
+      const limit = filters!.limit!;
+      const page = filters!.page!;
+      return {
+        items,
+        pagination: {
+          page,
+          limit,
+          totalCount,
+          hasMore: (page - 1) * limit + items.length < totalCount
+        }
+      };
+    }
+
+    return { items };
   }
 
   async getBatch(batchId: string) {
@@ -573,7 +621,7 @@ export class PayoutManagementService {
            rejected_by_user_id, rejected_by_role, dispatched_at, completed_at,
            failure_reason, utr, narration, api_ref_number
          )
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'draft', $15, null, null, now(),
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'draft', $15, null, null, (extract(epoch from now()) * 1000)::bigint,
                  null, null, null, null, null, null, null, null, null, null, null, null, $16, $17, $18)
          on conflict (batch_id) do update
          set bank_tenant_id = excluded.bank_tenant_id,
@@ -656,8 +704,7 @@ export class PayoutManagementService {
         utr: batchUtr,
         narration: batchNarration,
         initiationChannel: payload.initiationChannel,
-        occurredAt: new Date().toISOString()
-      });
+        occurredAt: Date.now()});
     });
 
     return {
@@ -756,7 +803,7 @@ export class PayoutManagementService {
     });
 
     const beneficiaryMap = new Map(
-      beneficiaries.map((beneficiary) => [
+      beneficiaries.items.map((beneficiary) => [
         beneficiary.beneficiaryId.trim().toUpperCase(),
         beneficiary
       ])
@@ -1063,8 +1110,7 @@ export class PayoutManagementService {
             fileName: payload.fileName,
             uploadedByUserId: payload.createdByUserId,
             rowCount: payload.rows.length,
-            occurredAt: new Date().toISOString()
-          }
+            occurredAt: Date.now()}
         })
       );
     });
@@ -1088,7 +1134,7 @@ export class PayoutManagementService {
           commandId: string;
           status: "accepted";
           transactionReference: string;
-          acceptedAt: string;
+          acceptedAt: number;
         };
       }
     | { error: "actor_not_found" }
@@ -1176,7 +1222,7 @@ export class PayoutManagementService {
         commandId,
         status: "accepted" as const,
         transactionReference: createResult.data.title,
-        acceptedAt: createResult.data.createdAt ?? new Date().toISOString()
+        acceptedAt: createResult.data.createdAt ?? Date.now()
       }
     };
   }
@@ -1188,7 +1234,7 @@ export class PayoutManagementService {
             commandId: string;
             status: "accepted";
             transactionReference: string;
-            acceptedAt: string;
+            acceptedAt: number;
           }
         >;
       }
@@ -1301,7 +1347,7 @@ export class PayoutManagementService {
         commandId,
         status: "accepted" as const,
         transactionReference: createResult.data.title,
-        acceptedAt: createResult.data.createdAt ?? new Date().toISOString()
+        acceptedAt: createResult.data.createdAt ?? Date.now()
       });
     }
 
@@ -1394,7 +1440,7 @@ export class PayoutManagementService {
            subscription_id, package_code, debit_account_id, payment_method_code, actor_user_id, transaction_reference, payload_json,
            status, batch_id, error_message, received_at, processed_at
          )
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, 'accepted', null, null, now(), null)`,
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, 'accepted', null, null, (extract(epoch from now()) * 1000)::bigint, null)`,
         [
           commandId,
           channel,
@@ -1429,8 +1475,7 @@ export class PayoutManagementService {
             debitAccountId: payload.debitAccountId ?? null,
             actorUserId: payload.createdByUserId,
             transactionReference: payload.title,
-            occurredAt: new Date().toISOString()
-          }
+            occurredAt: Date.now()}
         })
       );
     });
@@ -1443,8 +1488,7 @@ export class PayoutManagementService {
         transactionReference: payload.title,
         subscriptionId: resolvedSubscription.subscriptionId,
         packageCode: resolvedSubscription.packageCode,
-        acceptedAt: new Date().toISOString()
-      }
+        acceptedAt: Date.now()}
     };
   }
 
@@ -1479,7 +1523,7 @@ export class PayoutManagementService {
         `update transaction_commands
          set status = 'failed',
              error_message = $2,
-             processed_at = now()
+             processed_at = (extract(epoch from now()) * 1000)::bigint
          where command_id = $1`,
         [commandId, message]
       );
@@ -1494,7 +1538,7 @@ export class PayoutManagementService {
       `update transaction_commands
        set status = 'processed',
            batch_id = $2,
-           processed_at = now(),
+           processed_at = (extract(epoch from now()) * 1000)::bigint,
            error_message = null
        where command_id = $1`,
       [commandId, processResult.data?.batchId ?? null]
@@ -1732,7 +1776,7 @@ export class PayoutManagementService {
       };
     }
 
-    const now = new Date();
+    const now = Date.now();
     if (payload.action === "submit") {
       await withDatabaseTransaction(this.config, async (client) => {
         await client.query(
@@ -1766,8 +1810,7 @@ export class PayoutManagementService {
           actedByRole: actor.role,
           comment: payload.comment ?? batch.approvalComment,
           state: nextState,
-          occurredAt: now.toISOString()
-        });
+          occurredAt: now});
       });
     } else {
       const actionResult = await withDatabaseTransaction(this.config, async (client) => {
@@ -1813,7 +1856,7 @@ export class PayoutManagementService {
           `insert into payout_batch_approval_actions (
              action_id, batch_id, approval_level, action, actor_user_id, actor_role, comment, created_at
            )
-           values ($1, $2, $3, $4, $5, $6, $7, now())`,
+           values ($1, $2, $3, $4, $5, $6, $7, (extract(epoch from now()) * 1000)::bigint)`,
           [
             `${batchId}-${currentLevel}-${payload.action}-${Date.now()}`,
             batchId,
@@ -1831,7 +1874,7 @@ export class PayoutManagementService {
             await client.query(
               `update payout_batch_approval_contexts
                set current_approval_level = $2,
-                   updated_at = now()
+                   updated_at = (extract(epoch from now()) * 1000)::bigint
                where batch_id = $1`,
               [batchId, currentLevel + 1]
             );
@@ -1867,15 +1910,14 @@ export class PayoutManagementService {
                 approvalLevel: currentLevel,
                 approvalLevelsRequired: requiredLevels,
                 nextApprovalLevel: currentLevel + 1,
-                occurredAt: now.toISOString()
-              }
+                occurredAt: now}
             );
           } else {
             if (context) {
               await client.query(
                 `update payout_batch_approval_contexts
                  set status = 'approved',
-                     updated_at = now()
+                     updated_at = (extract(epoch from now()) * 1000)::bigint
                  where batch_id = $1`,
                 [batchId]
               );
@@ -1933,8 +1975,7 @@ export class PayoutManagementService {
                 state: nextState,
                 approvalLevel: currentLevel,
                 approvalLevelsRequired: requiredLevels,
-                occurredAt: now.toISOString()
-              }
+                occurredAt: now}
             );
           }
         } else {
@@ -1942,7 +1983,7 @@ export class PayoutManagementService {
             await client.query(
               `update payout_batch_approval_contexts
                set status = 'rejected',
-                   updated_at = now()
+                   updated_at = (extract(epoch from now()) * 1000)::bigint
                where batch_id = $1`,
               [batchId]
             );
@@ -1978,8 +2019,7 @@ export class PayoutManagementService {
             comment: payload.comment ?? lockedBatch.approval_comment,
             state: nextState,
             approvalLevel: currentLevel,
-            occurredAt: now.toISOString()
-          });
+            occurredAt: now});
         }
       });
 
@@ -2039,7 +2079,7 @@ export class PayoutManagementService {
       };
     }
 
-    const dispatchedAt = new Date();
+    const dispatchedAt = Date.now();
     const batchReference = this.generateBankReference(batch.bankTenantId, batchId);
 
     await withDatabaseTransaction(this.config, async (client) => {
@@ -2083,8 +2123,7 @@ export class PayoutManagementService {
         actedByUserId: payload.actedByUserId,
         comment: payload.comment ?? `Dispatched by ${payload.actedByUserId}`,
         state: "sent_to_bank",
-        occurredAt: dispatchedAt.toISOString()
-      });
+        occurredAt: dispatchedAt});
     });
 
     return {
@@ -2155,9 +2194,11 @@ export class PayoutManagementService {
     bankTenantId?: string;
     subscriptionId?: string;
     packageCode?: string;
+    page?: number;
+    limit?: number;
   }) {
     const clauses: string[] = [];
-    const params: string[] = [];
+    const params: any[] = [];
 
     if (filters?.corporateTenantId) {
       params.push(filters.corporateTenantId);
@@ -2184,48 +2225,44 @@ export class PayoutManagementService {
       clauses.push(`bank_tenant_id = $${params.length}`);
     }
 
-    const projectionResult =
-      params.length > 0
-        ? await this.db.query<PayoutFileUploadRow>(
-            `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id,
-                    subscription_id, package_code, file_name, uploaded_by_user_id,
-                    uploaded_by_role, status, remark, total_rows, created_count,
-                    rejected_count, uploaded_at
-             from file_upload_projection
-             where ${clauses.join(" and ")}
-             order by uploaded_at desc nulls last, upload_id desc`,
-            params
-          )
-        : await this.db.query<PayoutFileUploadRow>(
-            `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id,
-                    subscription_id, package_code, file_name, uploaded_by_user_id,
-                    uploaded_by_role, status, remark, total_rows, created_count,
-                    rejected_count, uploaded_at
-             from file_upload_projection
-             order by uploaded_at desc nulls last, upload_id desc`
-          );
+    const isPaginated = typeof filters?.page === "number" && typeof filters?.limit === "number";
+    let totalCount = 0;
+    const whereClause = clauses.length > 0 ? `where ${clauses.join(" and ")}` : "";
 
+    if (isPaginated) {
+      const projCountRes = await this.db.query(`select count(*) from file_upload_projection ${whereClause}`, params);
+      const projCount = parseInt(projCountRes.rows[0].count, 10);
+      if (projCount > 0) {
+        totalCount = projCount;
+      } else {
+        const countRes = await this.db.query(`select count(*) from payout_file_uploads ${whereClause}`, params);
+        totalCount = parseInt(countRes.rows[0].count, 10);
+      }
+    }
+
+    const selectFields = `upload_id, bank_tenant_id, corporate_tenant_id, corporate_id,
+                          subscription_id, package_code, file_name, uploaded_by_user_id,
+                          uploaded_by_role, status, remark, total_rows, created_count,
+                          rejected_count, uploaded_at`;
+
+    let projectionQuery = `select ${selectFields} from file_upload_projection ${whereClause} order by uploaded_at desc nulls last, upload_id desc`;
+    let mainQuery = `select ${selectFields} from payout_file_uploads ${whereClause} order by uploaded_at desc nulls last, upload_id desc`;
+
+    const queryParams = [...params];
+    if (isPaginated) {
+      const page = filters!.page!;
+      const limit = filters!.limit!;
+      const offset = (page - 1) * limit;
+      queryParams.push(limit, offset);
+      const pagingSuffix = ` limit $${queryParams.length - 1} offset $${queryParams.length}`;
+      projectionQuery += pagingSuffix;
+      mainQuery += pagingSuffix;
+    }
+
+    const projectionResult = await this.db.query<PayoutFileUploadRow>(projectionQuery, queryParams);
     const result = projectionResult.rows.length
       ? projectionResult
-      : params.length > 0
-        ? await this.db.query<PayoutFileUploadRow>(
-            `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id,
-                    subscription_id, package_code, file_name, uploaded_by_user_id,
-                    uploaded_by_role, status, remark, total_rows, created_count,
-                    rejected_count, uploaded_at
-             from payout_file_uploads
-             where ${clauses.join(" and ")}
-             order by uploaded_at desc nulls last, upload_id desc`,
-            params
-          )
-        : await this.db.query<PayoutFileUploadRow>(
-            `select upload_id, bank_tenant_id, corporate_tenant_id, corporate_id,
-                    subscription_id, package_code, file_name, uploaded_by_user_id,
-                    uploaded_by_role, status, remark, total_rows, created_count,
-                    rejected_count, uploaded_at
-             from payout_file_uploads
-             order by uploaded_at desc nulls last, upload_id desc`
-          );
+      : await this.db.query<PayoutFileUploadRow>(mainQuery, queryParams);
 
     const userIds = [...new Set(result.rows.map((r) => r.uploaded_by_user_id).filter(Boolean))];
     const userMap = new Map<string, string>();
@@ -2241,7 +2278,7 @@ export class PayoutManagementService {
       }
     }
 
-    return result.rows.map((row) => ({
+    const items = result.rows.map((row) => ({
       uploadId: row.upload_id,
       bankTenantId: row.bank_tenant_id,
       corporateTenantId: row.corporate_tenant_id,
@@ -2258,8 +2295,24 @@ export class PayoutManagementService {
       totalRows: row.total_rows,
       createdCount: row.created_count,
       rejectedCount: row.rejected_count,
-      uploadedAt: row.uploaded_at?.toISOString() ?? null
+      uploadedAt: row.uploaded_at
     }));
+
+    if (isPaginated) {
+      const limit = filters!.limit!;
+      const page = filters!.page!;
+      return {
+        items,
+        pagination: {
+          page,
+          limit,
+          totalCount,
+          hasMore: (page - 1) * limit + items.length < totalCount
+        }
+      };
+    }
+
+    return { items };
   }
 
   async getFileUpload(uploadId: string) {
@@ -2395,7 +2448,7 @@ export class PayoutManagementService {
          package_code, debit_account_id, file_name, uploaded_by_user_id, uploaded_by_role, status, remark,
          total_rows, created_count, rejected_count, uploaded_at, payload_json, utr
        )
-       values ($1, $2, $3, $4, $5, $6, null, $7, $8, $9, $10, $11, $12, $13, $14, now(), $15::jsonb, $16)
+       values ($1, $2, $3, $4, $5, $6, null, $7, $8, $9, $10, $11, $12, $13, $14, (extract(epoch from now()) * 1000)::bigint, $15::jsonb, $16)
        on conflict (upload_id) do update
        set bank_tenant_id = excluded.bank_tenant_id,
            corporate_tenant_id = excluded.corporate_tenant_id,
@@ -2443,7 +2496,7 @@ export class PayoutManagementService {
          package_code, debit_account_id, file_name, uploaded_by_user_id, uploaded_by_role, status, remark,
          total_rows, created_count, rejected_count, uploaded_at, updated_at
        )
-       values ($1, $2, $3, $4, $5, $6, null, $7, $8, $9, $10, $11, $12, $13, $14, now(), now())
+       values ($1, $2, $3, $4, $5, $6, null, $7, $8, $9, $10, $11, $12, $13, $14, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint)
        on conflict (upload_id) do update
        set bank_tenant_id = excluded.bank_tenant_id,
            corporate_tenant_id = excluded.corporate_tenant_id,
@@ -2459,8 +2512,8 @@ export class PayoutManagementService {
            total_rows = excluded.total_rows,
            created_count = excluded.created_count,
            rejected_count = excluded.rejected_count,
-           uploaded_at = now(),
-           updated_at = now()`,
+           uploaded_at = (extract(epoch from now()) * 1000)::bigint,
+           updated_at = (extract(epoch from now()) * 1000)::bigint`,
       [
         payload.uploadId,
         payload.bankTenantId,
@@ -2503,7 +2556,7 @@ export class PayoutManagementService {
 
     await this.db.query(
       `update payout_file_uploads
-       set processing_started_at = coalesce(processing_started_at, now())
+       set processing_started_at = coalesce(processing_started_at, (extract(epoch from now()) * 1000)::bigint)
        where upload_id = $1`,
       [uploadId]
     );
@@ -2529,7 +2582,7 @@ export class PayoutManagementService {
         ? (uploadEffectiveSettingsResult.data ?? null)
         : null;
     const beneficiaryMap = new Map(
-      beneficiaries.map((beneficiary) => [
+      beneficiaries.items.map((beneficiary) => [
         beneficiary.beneficiaryId.trim().toUpperCase(),
         beneficiary
       ])
@@ -2683,7 +2736,7 @@ export class PayoutManagementService {
            created_count = $4,
            rejected_count = $5,
            payload_json = null,
-           processed_at = now()
+           processed_at = (extract(epoch from now()) * 1000)::bigint
        where upload_id = $1`,
       [uploadId, status, remark, created.length, rejected.length]
     );
@@ -2694,7 +2747,7 @@ export class PayoutManagementService {
            remark = $3,
            created_count = $4,
            rejected_count = $5,
-           updated_at = now()
+           updated_at = (extract(epoch from now()) * 1000)::bigint
        where upload_id = $1`,
       [uploadId, status, remark, created.length, rejected.length]
     );
@@ -2712,8 +2765,7 @@ export class PayoutManagementService {
           status,
           createdCount: created.length,
           rejectedCount: rejected.length,
-          occurredAt: new Date().toISOString()
-        }
+          occurredAt: Date.now()}
       })
     );
 
@@ -2788,7 +2840,7 @@ export class PayoutManagementService {
          refund_id, batch_id, bank_tenant_id, corporate_tenant_id, corporate_id, subscription_id,
          package_code, requested_by_user_id, amount, reason, state, created_at, processed_at
        )
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'requested', now(), null)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'requested', (extract(epoch from now()) * 1000)::bigint, null)
        on conflict (refund_id) do update
        set batch_id = excluded.batch_id,
            bank_tenant_id = excluded.bank_tenant_id,
@@ -2837,7 +2889,7 @@ export class PayoutManagementService {
       };
     }
 
-    const processedAt = new Date();
+    const processedAt = Date.now();
     
     // Determine item-level outcomes
     let itemOutcomes;
@@ -2922,8 +2974,7 @@ export class PayoutManagementService {
           successfulItemCount: successfulCount,
           failedItemCount: failedCount,
           failureReason,
-          occurredAt: processedAt.toISOString()
-        }
+          occurredAt: processedAt}
       );
     });
 
@@ -2992,8 +3043,8 @@ export class PayoutManagementService {
       bankReference: row.bank_reference,
       utr: row.utr,
       narration: row.narration,
-      dispatchedAt: row.dispatched_at?.toISOString() ?? null,
-      completedAt: row.completed_at?.toISOString() ?? null,
+      dispatchedAt: row.dispatched_at,
+      completedAt: row.completed_at,
       apiRefNumber: row.api_ref_number ?? null,
       initiationMode: row.source_upload_id ? "bulk" : "single",
       failureReason: row.failure_reason,
@@ -3001,10 +3052,10 @@ export class PayoutManagementService {
       currentApprovalLevel,
       approvalRoles,
       matchedApprovalMatrixIds: row.matched_matrix_ids ?? [],
-      createdAt: row.created_at?.toISOString() ?? null,
-      submittedAt: row.submitted_at?.toISOString() ?? null,
-      approvedAt: row.approved_at?.toISOString() ?? null,
-      rejectedAt: row.rejected_at?.toISOString() ?? null,
+      createdAt: row.created_at,
+      submittedAt: row.submitted_at,
+      approvedAt: row.approved_at,
+      rejectedAt: row.rejected_at,
       submittedByUserId: row.submitted_by_user_id,
       submittedByRole: row.submitted_by_role,
       approvedByUserId: row.approved_by_user_id,
@@ -3063,18 +3114,18 @@ export class PayoutManagementService {
       bankReference: row.bank_reference,
       utr: row.utr,
       narration: row.narration,
-      createdAt: row.created_at?.toISOString() ?? null,
-      submittedAt: row.submitted_at?.toISOString() ?? null,
-      approvedAt: row.approved_at?.toISOString() ?? null,
-      rejectedAt: row.rejected_at?.toISOString() ?? null,
+      createdAt: row.created_at,
+      submittedAt: row.submitted_at,
+      approvedAt: row.approved_at,
+      rejectedAt: row.rejected_at,
       submittedByUserId: row.submitted_by_user_id,
       submittedByRole: row.submitted_by_role,
       approvedByUserId: row.approved_by_user_id,
       approvedByRole: row.approved_by_role,
       rejectedByUserId: row.rejected_by_user_id,
       rejectedByRole: row.rejected_by_role,
-      dispatchedAt: row.dispatched_at?.toISOString() ?? null,
-      completedAt: row.completed_at?.toISOString() ?? null,
+      dispatchedAt: row.dispatched_at,
+      completedAt: row.completed_at,
       failureReason: row.failure_reason,
       approvalLevelsRequired,
       currentApprovalLevel,
@@ -3090,7 +3141,7 @@ export class PayoutManagementService {
       event: string;
       role: string | null;
       userId: string | null;
-      at: Date | null;
+      at: number | null;
     }> = [
       {
         event: "created",
@@ -3112,7 +3163,7 @@ export class PayoutManagementService {
       actor_user_id: string;
       actor_role: string;
       comment: string | null;
-      created_at: Date;
+      created_at: number;
     }>(
       `select approval_level, action, actor_user_id, actor_role, comment, created_at
        from payout_batch_approval_actions
@@ -3184,7 +3235,7 @@ export class PayoutManagementService {
       role: entry.role,
       userId: entry.userId,
       userName: entry.userId ? userMap.get(entry.userId) ?? null : null,
-      at: entry.at?.toISOString() ?? null
+      at: entry.at
     })) satisfies PayoutTimelineEvent[];
   }
 
@@ -3208,7 +3259,7 @@ export class PayoutManagementService {
       totalRows: row.total_rows,
       createdCount: row.created_count,
       rejectedCount: row.rejected_count,
-      uploadedAt: row.uploaded_at?.toISOString() ?? null
+      uploadedAt: row.uploaded_at
     } satisfies PayoutFileUpload;
   }
 
@@ -3284,8 +3335,8 @@ export class PayoutManagementService {
        where corporate_tenant_id = $1
          and corporate_id = $2
          and state <> 'rejected'
-         and created_at >= date_trunc('day', now())
-         and created_at < date_trunc('day', now()) + interval '1 day'
+         and created_at >= (extract(epoch from date_trunc('day', now())) * 1000)::bigint
+         and created_at < (extract(epoch from date_trunc('day', now()) + interval '1 day') * 1000)::bigint
          ${exclusionClause}`,
       params
     );
@@ -3416,7 +3467,7 @@ export class PayoutManagementService {
          batch_id, corporate_tenant_id, entity_type, approval_levels_required,
          current_approval_level, roles_by_level, matched_matrix_ids, status, created_at, updated_at
        )
-       values ($1, $2, 'transaction', $3, $4, $5::jsonb, $6, 'open', now(), now())
+       values ($1, $2, 'transaction', $3, $4, $5::jsonb, $6, 'open', (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint)
        on conflict (batch_id) do update
        set corporate_tenant_id = excluded.corporate_tenant_id,
            approval_levels_required = excluded.approval_levels_required,
@@ -3424,7 +3475,7 @@ export class PayoutManagementService {
            roles_by_level = excluded.roles_by_level,
            matched_matrix_ids = excluded.matched_matrix_ids,
            status = 'open',
-           updated_at = now()`,
+           updated_at = (extract(epoch from now()) * 1000)::bigint`,
       [
         batchId,
         corporateTenantId,
@@ -3769,7 +3820,7 @@ function mapPayoutItemRow(row: PayoutItemRow) {
     state: row.state,
     bankReference: row.bank_reference,
     failureReason: row.failure_reason,
-    processedAt: row.processed_at?.toISOString() ?? null
+    processedAt: row.processed_at
   } satisfies PayoutItem;
 }
 
@@ -3786,8 +3837,8 @@ function mapRefundRow(row: PayoutRefundRow) {
     amount: Number(Decimal.fromString(row.amount).toCents()),
     reason: row.reason,
     state: row.state,
-    createdAt: row.created_at?.toISOString() ?? null,
-    processedAt: row.processed_at?.toISOString() ?? null
+    createdAt: row.created_at,
+    processedAt: row.processed_at
   } satisfies PayoutRefund;
 }
 

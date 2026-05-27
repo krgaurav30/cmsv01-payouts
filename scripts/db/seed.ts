@@ -205,7 +205,7 @@ async function main() {
          'active',
          'approved',
          'Seeded approved beneficiary',
-         now()
+         (extract(epoch from now()) * 1000)::bigint
        ),
        (
          'ben-zen-001',
@@ -224,7 +224,7 @@ async function main() {
          'active',
          'approved',
          'Seeded approved beneficiary',
-         now()
+         (extract(epoch from now()) * 1000)::bigint
        )
      on conflict (beneficiary_id) do update
      set bank_tenant_id = excluded.bank_tenant_id,
@@ -267,11 +267,11 @@ async function main() {
          125000.00,
          'Approved by bank checker',
          null,
-         now() - interval '1 day',
-         now() - interval '23 hour',
+         (extract(epoch from now() - interval '1 day') * 1000)::bigint,
+         (extract(epoch from now() - interval '23 hour') * 1000)::bigint,
          'user-maker-001',
          'maker',
-         now() - interval '22 hour',
+         (extract(epoch from now() - interval '22 hour') * 1000)::bigint,
          'user-maya-checker-001',
          'checker',
          null,
@@ -292,15 +292,15 @@ async function main() {
          48000.00,
          'Processed successfully',
          'BANKALPHA-DISP-BATCHACME002',
-         now() - interval '3 day',
-         now() - interval '3 day',
+         (extract(epoch from now() - interval '3 day') * 1000)::bigint,
+         (extract(epoch from now() - interval '3 day') * 1000)::bigint,
          'user-maker-002',
          'maker',
-         now() - interval '2 day 23 hour',
+         (extract(epoch from now() - interval '2 day 23 hour') * 1000)::bigint,
          'user-maya-checker-001',
          'checker',
-         now() - interval '2 day',
-         now() - interval '2 day',
+         (extract(epoch from now() - interval '2 day') * 1000)::bigint,
+         (extract(epoch from now() - interval '2 day') * 1000)::bigint,
          null
        )
      on conflict (batch_id) do update
@@ -356,7 +356,7 @@ async function main() {
          'processed',
          'BANKALPHA-DISP-BATCHACME002-ITEM-ACME-002',
          null,
-         now() - interval '2 day'
+         (extract(epoch from now() - interval '2 day') * 1000)::bigint
        )
      on conflict (item_id) do update
      set batch_id = excluded.batch_id,
@@ -428,11 +428,11 @@ async function main() {
        min_amount, max_amount, status, created_at, updated_at
      )
      values
-       ('NEFT', 'National Electronic Funds Transfer', 'bank_transfer', 'batch', true, 1, 500000000, 'active', now(), now()),
-       ('RTGS', 'Real Time Gross Settlement', 'bank_transfer', 'real_time', false, 200000, 500000000, 'active', now(), now()),
-       ('IMPS', 'Immediate Payment Service', 'real_time_transfer', 'real_time', true, 1, 500000, 'active', now(), now()),
-       ('UPI', 'Unified Payments Interface', 'real_time_transfer', 'real_time', true, 1, 100000, 'active', now(), now()),
-       ('NACH', 'National Automated Clearing House', 'batch_debit', 'batch', false, 1, 10000000, 'active', now(), now())
+       ('NEFT', 'National Electronic Funds Transfer', 'bank_transfer', 'batch', true, 1, 500000000, 'active', (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint),
+       ('RTGS', 'Real Time Gross Settlement', 'bank_transfer', 'real_time', false, 200000, 500000000, 'active', (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint),
+       ('IMPS', 'Immediate Payment Service', 'real_time_transfer', 'real_time', true, 1, 500000, 'active', (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint),
+       ('UPI', 'Unified Payments Interface', 'real_time_transfer', 'real_time', true, 1, 100000, 'active', (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint),
+       ('NACH', 'National Automated Clearing House', 'batch_debit', 'batch', false, 1, 10000000, 'active', (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint)
      on conflict (payment_method_code) do update
      set name = excluded.name,
          rail_family = excluded.rail_family,
@@ -441,7 +441,7 @@ async function main() {
          min_amount = excluded.min_amount,
          max_amount = excluded.max_amount,
          status = excluded.status,
-         updated_at = now()`
+         updated_at = (extract(epoch from now()) * 1000)::bigint`
   );
 
   await db.query(
@@ -474,8 +474,8 @@ async function main() {
          1000,
          '{"platformFee":"0","transactionFees":{"NEFT":"2.5","RTGS":"15","IMPS":"5"}}'::jsonb,
          'active',
-         now(),
-         now()
+         (extract(epoch from now()) * 1000)::bigint,
+         (extract(epoch from now()) * 1000)::bigint
        )
      on conflict (package_id) do update
      set owner_type = excluded.owner_type,
@@ -496,7 +496,7 @@ async function main() {
          max_payments_per_batch = excluded.max_payments_per_batch,
          pricing_defaults_json = excluded.pricing_defaults_json,
          status = excluded.status,
-         updated_at = now()`
+         updated_at = (extract(epoch from now()) * 1000)::bigint`
   );
 
   await db.query(
@@ -505,10 +505,10 @@ async function main() {
        pricing_overrides_json, created_at
      )
      values
-       ('pkg-bank-alpha-venpay', 'NEFT', 1, 500000000, '{"priority":"standard"}'::jsonb, now()),
-       ('pkg-bank-alpha-venpay', 'RTGS', 200000, 500000000, '{"priority":"high_value"}'::jsonb, now()),
-       ('pkg-bank-alpha-venpay', 'IMPS', 1, 500000, '{"priority":"instant"}'::jsonb, now()),
-       ('pkg-bank-alpha-venpay', 'UPI', 1, 100000, '{"priority":"low_value"}'::jsonb, now())
+       ('pkg-bank-alpha-venpay', 'NEFT', 1, 500000000, '{"priority":"standard"}'::jsonb, (extract(epoch from now()) * 1000)::bigint),
+       ('pkg-bank-alpha-venpay', 'RTGS', 200000, 500000000, '{"priority":"high_value"}'::jsonb, (extract(epoch from now()) * 1000)::bigint),
+       ('pkg-bank-alpha-venpay', 'IMPS', 1, 500000, '{"priority":"instant"}'::jsonb, (extract(epoch from now()) * 1000)::bigint),
+       ('pkg-bank-alpha-venpay', 'UPI', 1, 100000, '{"priority":"low_value"}'::jsonb, (extract(epoch from now()) * 1000)::bigint)
      on conflict (package_id, payment_method_code) do update
      set min_amount_override = excluded.min_amount_override,
          max_amount_override = excluded.max_amount_override,
@@ -582,13 +582,13 @@ async function main() {
          'VENPAY',
          'Maya Pharma Venpay',
          'active',
-         now(),
+         (extract(epoch from now()) * 1000)::bigint,
          null,
          null,
          'system',
          'system',
-         now(),
-         now()
+         (extract(epoch from now()) * 1000)::bigint,
+         (extract(epoch from now()) * 1000)::bigint
        )
      on conflict (subscription_id) do update
      set bank_tenant_id = excluded.bank_tenant_id,
@@ -602,7 +602,7 @@ async function main() {
          suspended_at = excluded.suspended_at,
          terminated_at = excluded.terminated_at,
          updated_by = excluded.updated_by,
-         updated_at = now()`,
+         updated_at = (extract(epoch from now()) * 1000)::bigint`,
     [mayaBankTenantId, mayaCorporateTenantId, mayaCorporateId]
   );
 
@@ -630,8 +630,8 @@ async function main() {
          'HDFC0001234',
          'active',
          true,
-         now(),
-         now()
+         (extract(epoch from now()) * 1000)::bigint,
+         (extract(epoch from now()) * 1000)::bigint
        )
      on conflict (debit_account_id) do update
      set bank_tenant_id = excluded.bank_tenant_id,
@@ -642,7 +642,7 @@ async function main() {
          ifsc = excluded.ifsc,
          status = excluded.status,
          is_default = excluded.is_default,
-         updated_at = now()`,
+         updated_at = (extract(epoch from now()) * 1000)::bigint`,
     [mayaBankTenantId, mayaCorporateTenantId, mayaCorporateId]
   );
 
@@ -657,7 +657,7 @@ async function main() {
          array['NEFT','RTGS','IMPS','UPI'],
          'active',
          true,
-         now()
+         (extract(epoch from now()) * 1000)::bigint
        )
      on conflict (subscription_id, debit_account_id) do update
      set allowed_payment_method_codes = excluded.allowed_payment_method_codes,
@@ -677,15 +677,15 @@ async function main() {
          'fail_full_file',
          'debit-maya-main-001',
          '{"preferredOrder":["IMPS","NEFT","RTGS","UPI"]}'::jsonb,
-         now(),
-         now()
+         (extract(epoch from now()) * 1000)::bigint,
+         (extract(epoch from now()) * 1000)::bigint
        )
      on conflict (subscription_id) do update
      set preferred_debit_mode = excluded.preferred_debit_mode,
          preferred_file_rejection_mode = excluded.preferred_file_rejection_mode,
          default_debit_account_id = excluded.default_debit_account_id,
          payment_method_preferences_json = excluded.payment_method_preferences_json,
-         updated_at = now()`
+         updated_at = (extract(epoch from now()) * 1000)::bigint`
   );
 
   // Deactivate any existing active subscription user access records for these users to avoid constraint violation
@@ -706,8 +706,8 @@ async function main() {
          'user-maya-maker-001',
          'maker',
          'active',
-         now(),
-         now()
+         (extract(epoch from now()) * 1000)::bigint,
+         (extract(epoch from now()) * 1000)::bigint
        ),
        (
          'sub-maya-venpay-checker-001',
@@ -715,15 +715,15 @@ async function main() {
          'user-maya-checker-001',
          'checker',
          'active',
-         now(),
-         now()
+         (extract(epoch from now()) * 1000)::bigint,
+         (extract(epoch from now()) * 1000)::bigint
        )
      on conflict (access_id) do update
      set subscription_id = excluded.subscription_id,
          user_id = excluded.user_id,
          role_name = excluded.role_name,
          status = excluded.status,
-         updated_at = now()`
+         updated_at = (extract(epoch from now()) * 1000)::bigint`
   );
 
   await db.query(
@@ -738,7 +738,7 @@ async function main() {
          $1,
          'active',
          'system',
-         now(),
+         (extract(epoch from now()) * 1000)::bigint,
          null
        )
      on conflict (key_id) do update

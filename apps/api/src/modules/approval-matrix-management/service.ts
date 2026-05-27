@@ -27,8 +27,8 @@ type ApprovalMatrixRow = {
   status: "active" | "inactive";
   created_by_user_id: string | null;
   created_by_role: string | null;
-  created_at: Date | null;
-  updated_at: Date | null;
+  created_at: number | null;
+  updated_at: number | null;
 };
 
 export class ApprovalMatrixManagementService {
@@ -187,7 +187,7 @@ export class ApprovalMatrixManagementService {
              amount_from, amount_to, approval_levels, roles, status, created_by_user_id, created_by_role,
              created_at, updated_at
            )
-           values ($1, $2, $3, array[$4]::text[], $5::text[], 'transaction', $6, $7, $8, $9, $10, $11, $12, now(), now())
+           values ($1, $2, $3, array[$4]::text[], $5::text[], 'transaction', $6, $7, $8, $9, $10, $11, $12, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint)
            returning matrix_id, name, corporate_tenant_id, subscription_ids, null::text as package_code,
                      null::text as package_display_name, debit_account_ids, entity_type, amount_from, amount_to,
                      approval_levels, roles, status, created_by_user_id, created_by_role,
@@ -213,7 +213,7 @@ export class ApprovalMatrixManagementService {
              amount_from, amount_to, approval_levels, roles, status, created_by_user_id, created_by_role,
              created_at, updated_at
            )
-           values ($1, $2, $3, array[$4]::text[], $5::text[], 'transaction', $6, $7, $8, $9, $10, $11, now(), now())
+           values ($1, $2, $3, array[$4]::text[], $5::text[], 'transaction', $6, $7, $8, $9, $10, $11, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint)
            returning matrix_id, matrix_id as name, corporate_tenant_id, subscription_ids, null::text as package_code,
                      null::text as package_display_name, debit_account_ids, entity_type, amount_from, amount_to,
                      approval_levels, roles, status, created_by_user_id, created_by_role,
@@ -432,7 +432,7 @@ export class ApprovalMatrixManagementService {
                status = $10,
                created_by_user_id = $11,
                created_by_role = $12,
-               updated_at = now()
+               updated_at = (extract(epoch from now()) * 1000)::bigint
            where matrix_id = $1
            returning matrix_id, name, corporate_tenant_id, subscription_ids, null::text as package_code,
                      null::text as package_display_name, debit_account_ids, entity_type, amount_from, amount_to,
@@ -465,7 +465,7 @@ export class ApprovalMatrixManagementService {
                status = $9,
                created_by_user_id = $10,
                created_by_role = $11,
-               updated_at = now()
+               updated_at = (extract(epoch from now()) * 1000)::bigint
            where matrix_id = $1
            returning matrix_id, matrix_id as name, corporate_tenant_id, subscription_ids, null::text as package_code,
                      null::text as package_display_name, debit_account_ids, entity_type, amount_from, amount_to,
@@ -509,7 +509,7 @@ function mapApprovalMatrixRow(row: ApprovalMatrixRow) {
     status: row.status,
     createdByUserId: row.created_by_user_id,
     createdByRole: row.created_by_role,
-    createdAt: row.created_at?.toISOString() ?? null,
-    updatedAt: row.updated_at?.toISOString() ?? null
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
   } satisfies ApprovalMatrix;
 }

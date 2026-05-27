@@ -25,7 +25,7 @@ export class PartnerApiActivityService {
           activity_id, category, api_name, method, path,
           request_headers, request_body, response_status, response_headers, response_body,
           ip_address, created_at
-        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())`,
+        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, (extract(epoch from now()) * 1000)::bigint)`,
         [
           input.activityId,
           input.category,
@@ -45,28 +45,63 @@ export class PartnerApiActivityService {
     }
   }
 
-  async listActivities(category: "beneficiary" | "payment", limit = 50) {
-    const result = await this.db.query(
-      `select activity_id, category, api_name, method, path, response_status, created_at, request_headers, request_body, response_body
-       from partner_api_activities
-       where category = $1
-       order by created_at desc
-       limit $2`,
-      [category, limit]
-    );
+  async listActivities(category: "beneficiary" | "payment", limit = 50, page?: number) {
+    const isPaginated = typeof page === "number";
+    let totalCount = 0;
 
-    return result.rows.map((row: any) => ({
+    if (isPaginated) {
+      const countRes = await this.db.query(
+        `select count(*) from partner_api_activities where category = $1`,
+        [category]
+      );
+      totalCount = parseInt(countRes.rows[0].count, 10);
+    }
+
+    let queryText = `
+      select activity_id, category, api_name, method, path, response_status, created_at, request_headers, request_body, response_body
+      from partner_api_activities
+      where category = $1
+      order by created_at desc
+    `;
+
+    const queryParams: any[] = [category];
+    if (isPaginated) {
+      const offset = (page! - 1) * limit;
+      queryParams.push(limit, offset);
+      queryText += ` limit $2 offset $3`;
+    } else {
+      queryParams.push(limit);
+      queryText += ` limit $2`;
+    }
+
+    const result = await this.db.query(queryText, queryParams);
+
+    const items = result.rows.map((row: any) => ({
       activityId: row.activity_id,
       category: row.category,
       apiName: row.api_name,
       method: row.method,
       path: row.path,
       responseStatus: row.response_status,
-      createdAt: row.created_at.toISOString(),
+      createdAt: row.created_at,
       maskedKey: maskApiKeyHeader(row.request_headers),
       requestBody: row.request_body,
       responseBody: row.response_body
     }));
+
+    if (isPaginated) {
+      return {
+        items,
+        pagination: {
+          page: page!,
+          limit,
+          totalCount,
+          hasMore: (page! - 1) * limit + items.length < totalCount
+        }
+      };
+    }
+
+    return { items };
   }
 
   async getActivityDetails(activityId: string) {
@@ -107,8 +142,7 @@ export class PartnerApiActivityService {
         responseHeaders: row.response_headers,
         responseBody: row.response_body,
         ipAddress: row.ip_address,
-        createdAt: row.created_at.toISOString()
-      },
+        createdAt: row.created_at},
       webhookDeliveries: webhooksResult.rows.map((d: any) => ({
         deliveryId: d.delivery_id,
         webhookId: d.webhook_id,
@@ -117,7 +151,7 @@ export class PartnerApiActivityService {
         responseStatus: d.response_status,
         responseBody: d.response_body,
         status: d.status,
-        attemptedAt: d.attempted_at ? d.attempted_at.toISOString() : null
+        attemptedAt: d.attempted_at ? d.attempted_at: null
       }))
     };
   }

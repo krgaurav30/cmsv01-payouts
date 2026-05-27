@@ -23,8 +23,8 @@ type CorporateDebitAccountRow = {
   is_default: boolean;
   status: "active" | "inactive";
   balance: string;
-  created_at: Date | null;
-  updated_at: Date | null;
+  created_at: number | null;
+  updated_at: number | null;
 };
 
 type SubscriptionScopeRow = {
@@ -132,7 +132,7 @@ export class DebitAccountManagementService {
         await client.query(
           `update corporate_debit_accounts
            set is_default = false,
-               updated_at = now()
+               updated_at = (extract(epoch from now()) * 1000)::bigint
            where bank_tenant_id = $1
              and corporate_tenant_id = $2
              and corporate_id = $3`,
@@ -147,7 +147,7 @@ export class DebitAccountManagementService {
            debit_account_id, bank_tenant_id, corporate_tenant_id, corporate_id, account_name,
            account_number, ifsc, status, is_default, balance, created_at, updated_at
          )
-         values ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $9, now(), now())`,
+         values ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $9, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint)`,
         [
           debitAccountId,
           payload.bankTenantId,
@@ -210,7 +210,7 @@ export class DebitAccountManagementService {
         await client.query(
           `update corporate_debit_accounts
            set is_default = false,
-               updated_at = now()
+               updated_at = (extract(epoch from now()) * 1000)::bigint
            where bank_tenant_id = $1
              and corporate_tenant_id = $2
              and corporate_id = $3`,
@@ -225,7 +225,7 @@ export class DebitAccountManagementService {
              ifsc = $4,
              status = $5,
              is_default = $6,
-             updated_at = now()
+             updated_at = (extract(epoch from now()) * 1000)::bigint
          where debit_account_id = $1`,
         [
           debitAccountId,
@@ -329,7 +329,7 @@ export class DebitAccountManagementService {
           `insert into subscription_debit_accounts (
              subscription_id, debit_account_id, allowed_payment_method_codes, status, is_default, created_at
            )
-           values ($1, $2, $3::text[], 'active', $4, now())`,
+           values ($1, $2, $3::text[], 'active', $4, (extract(epoch from now()) * 1000)::bigint)`,
           [
             subscriptionId,
             debitAccountId,
@@ -344,10 +344,10 @@ export class DebitAccountManagementService {
            subscription_id, preferred_debit_mode, preferred_file_rejection_mode,
            default_debit_account_id, payment_method_preferences_json, created_at, updated_at
          )
-         values ($1, null, null, $2, '{}'::jsonb, now(), now())
+         values ($1, null, null, $2, '{}'::jsonb, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint)
          on conflict (subscription_id) do update
          set default_debit_account_id = excluded.default_debit_account_id,
-             updated_at = now()`,
+             updated_at = (extract(epoch from now()) * 1000)::bigint`,
         [subscriptionId, payload.defaultDebitAccountId]
       );
 
@@ -402,7 +402,7 @@ export class DebitAccountManagementService {
     await executor.query(
       `update corporate_debit_accounts
        set is_default = true,
-           updated_at = now()
+           updated_at = (extract(epoch from now()) * 1000)::bigint
        where debit_account_id = $1`,
       [fallback.debit_account_id]
     );
@@ -421,8 +421,8 @@ function mapCorporateDebitAccountRow(row: CorporateDebitAccountRow) {
     isDefault: row.is_default,
     status: row.status,
     balance: String(row.balance),
-    createdAt: row.created_at?.toISOString() ?? null,
-    updatedAt: row.updated_at?.toISOString() ?? null
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
   } satisfies CorporateDebitAccount;
 }
 

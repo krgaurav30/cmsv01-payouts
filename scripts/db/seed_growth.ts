@@ -138,7 +138,7 @@ async function main() {
             subscriptionId,
             packageCode,
             debitAccountId,
-            targetDate
+            targetDate.getTime()
           ]
         );
 
@@ -155,7 +155,7 @@ async function main() {
             batchId,
             ctx.beneficiaryId,
             batchAmount,
-            targetDate
+            targetDate.getTime()
           ]
         );
 

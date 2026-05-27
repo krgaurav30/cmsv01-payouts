@@ -25,8 +25,8 @@ export const notificationSchema = z.object({
   targetSection: notificationTargetSectionSchema,
   entityType: z.string().min(1).nullable(),
   entityId: z.string().min(1).nullable(),
-  readAt: z.string().nullable(),
-  createdAt: z.string().nullable()
+  readAt: z.number().nullable(),
+  createdAt: z.number().nullable()
 });
 
 export const markNotificationReadSchema = z.object({

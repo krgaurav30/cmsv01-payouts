@@ -11,13 +11,13 @@ export type OutboxEventRow = {
   event_type: string;
   event_key: string;
   version: number;
-  occurred_at: Date | null;
+  occurred_at: number | null;
   payload_json: DomainEventEnvelope["payload"];
   status: OutboxEventStatus;
   attempt_count: number;
   last_error: string | null;
-  published_at: Date | null;
-  created_at: Date | null;
+  published_at: number | null;
+  created_at: number | null;
 };
 
 export async function appendOutboxEvent(
@@ -29,7 +29,7 @@ export async function appendOutboxEvent(
        event_id, aggregate_type, aggregate_id, event_type, event_key, version,
        occurred_at, payload_json, status, attempt_count, last_error, published_at, created_at
      )
-     values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, 'pending', 0, null, null, now())`,
+     values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, 'pending', 0, null, null, (extract(epoch from now()) * 1000)::bigint) `,
     [
       event.eventId,
       event.aggregateType,
@@ -72,7 +72,7 @@ export async function markOutboxEventPublished(config: AppConfig, eventId: strin
   await db.query(
     `update outbox_events
      set status = 'published',
-         published_at = now(),
+         published_at = (extract(epoch from now()) * 1000)::bigint,
          last_error = null
      where event_id = $1`,
     [eventId]

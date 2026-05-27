@@ -174,8 +174,8 @@ export type PaymentMethod = {
   maxAmount: number | null;
   cutoffTime: string;
   status: z.infer<typeof paymentMethodStatusSchema>;
-  createdAt: string | null;
-  updatedAt: string | null;
+  createdAt: number | null;
+  updatedAt: number | null;
 };
 
 export type PackagePaymentMethod = {
@@ -209,8 +209,8 @@ export type PackageCatalogEntry = {
   pricingDefaults: Record<string, unknown>;
   status: z.infer<typeof packageStatusSchema>;
   paymentMethods: PackagePaymentMethod[];
-  createdAt: string | null;
-  updatedAt: string | null;
+  createdAt: number | null;
+  updatedAt: number | null;
 };
 
 export type PaymentMethodCreateRequest = z.infer<typeof paymentMethodCreateSchema>;

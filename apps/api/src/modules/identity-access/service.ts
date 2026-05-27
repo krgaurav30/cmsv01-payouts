@@ -63,9 +63,9 @@ type CorporateUserRow = {
   review_comment: string | null;
   created_by_user_id: string | null;
   created_by_role: string | null;
-  created_at: Date | null;
-  updated_at: Date | null;
-  reviewed_at: Date | null;
+  created_at: number | null;
+  updated_at: number | null;
+  reviewed_at: number | null;
   reviewed_by_user_id: string | null;
   reviewed_by_role: string | null;
 };
@@ -81,9 +81,9 @@ type CorporateRoleRow = {
   review_comment: string | null;
   created_by_user_id: string | null;
   created_by_role: string | null;
-  created_at: Date | null;
-  updated_at: Date | null;
-  reviewed_at: Date | null;
+  created_at: number | null;
+  updated_at: number | null;
+  reviewed_at: number | null;
   reviewed_by_user_id: string | null;
   reviewed_by_role: string | null;
 };
@@ -94,8 +94,8 @@ type RoleDebitAccountAccessRow = {
   role_name: string;
   debit_account_id: string;
   status: "active" | "inactive";
-  created_at: Date | null;
-  updated_at: Date | null;
+  created_at: number | null;
+  updated_at: number | null;
 };
 
 export class IdentityAccessService {
@@ -338,7 +338,7 @@ export class IdentityAccessService {
           `insert into role_debit_account_access (
              access_id, corporate_tenant_id, role_name, debit_account_id, status, created_at, updated_at
            )
-           values ($1, $2, $3, $4, 'active', now(), now())`,
+           values ($1, $2, $3, $4, 'active', (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint)`,
           [
             `rdaa-${payload.corporateTenantId}-${payload.roleName}-${debitAccountId}`,
             payload.corporateTenantId,
@@ -482,7 +482,7 @@ export class IdentityAccessService {
          reviewed_at, reviewed_by_user_id, reviewed_by_role
        )
        values ($1, $2, $3, $4, $5, $6, $7, $8, 'inactive', 'pending_approval', null,
-               $9, $10, now(), now(), null, null, null)
+               $9, $10, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint, null, null, null)
        on conflict (username) do update
        set password = excluded.password,
            display_name = excluded.display_name,
@@ -495,7 +495,7 @@ export class IdentityAccessService {
            review_comment = excluded.review_comment,
            created_by_user_id = excluded.created_by_user_id,
            created_by_role = excluded.created_by_role,
-           updated_at = now(),
+           updated_at = (extract(epoch from now()) * 1000)::bigint,
            reviewed_at = null,
            reviewed_by_user_id = null,
            reviewed_by_role = null
@@ -586,7 +586,7 @@ export class IdentityAccessService {
          created_at, updated_at, reviewed_at, reviewed_by_user_id, reviewed_by_role
        )
        values ($1, $2, $3, $4, 'inactive', $5, 'pending_approval', null,
-               $6, $7, now(), now(), null, null, null)
+               $6, $7, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint, null, null, null)
        on conflict (role_id) do update
        set corporate_tenant_id = excluded.corporate_tenant_id,
            name = excluded.name,
@@ -597,7 +597,7 @@ export class IdentityAccessService {
            review_comment = excluded.review_comment,
            created_by_user_id = excluded.created_by_user_id,
            created_by_role = excluded.created_by_role,
-           updated_at = now(),
+           updated_at = (extract(epoch from now()) * 1000)::bigint,
            reviewed_at = null,
            reviewed_by_user_id = null,
            reviewed_by_role = null
@@ -689,7 +689,7 @@ export class IdentityAccessService {
            reviewed_at = null,
            reviewed_by_user_id = null,
            reviewed_by_role = null,
-           updated_at = now()
+           updated_at = (extract(epoch from now()) * 1000)::bigint
        where role_id = $1
        returning role_id, corporate_tenant_id, name, description, status, permissions,
                  approval_state, review_comment, created_by_user_id, created_by_role,
@@ -748,10 +748,10 @@ export class IdentityAccessService {
        set approval_state = $2,
            status = $3,
            review_comment = $4,
-           reviewed_at = now(),
+           reviewed_at = (extract(epoch from now()) * 1000)::bigint,
            reviewed_by_user_id = $5,
            reviewed_by_role = $6,
-           updated_at = now()
+           updated_at = (extract(epoch from now()) * 1000)::bigint
        where user_id = $1
        returning user_id, username, password, display_name, role, bank_tenant_id,
                  corporate_tenant_id, corporate_id, status, approval_state, review_comment,
@@ -816,10 +816,10 @@ export class IdentityAccessService {
        set approval_state = $2,
            status = $3,
            review_comment = $4,
-           reviewed_at = now(),
+           reviewed_at = (extract(epoch from now()) * 1000)::bigint,
            reviewed_by_user_id = $5,
            reviewed_by_role = $6,
-           updated_at = now()
+           updated_at = (extract(epoch from now()) * 1000)::bigint
        where role_id = $1
        returning role_id, corporate_tenant_id, name, description, status, permissions,
                  approval_state, review_comment, created_by_user_id, created_by_role,
@@ -865,7 +865,7 @@ export class IdentityAccessService {
     const result = await this.db.query<CorporateUserRow>(
       `update corporate_users
        set status = $2,
-           updated_at = now()
+           updated_at = (extract(epoch from now()) * 1000)::bigint
        where user_id = $1
        returning user_id, username, password, display_name, role, bank_tenant_id,
                  corporate_tenant_id, corporate_id, status, approval_state, review_comment,
@@ -887,8 +887,8 @@ function mapRoleDebitAccountAccessRow(row: RoleDebitAccountAccessRow) {
     roleName: row.role_name,
     debitAccountId: row.debit_account_id,
     status: row.status,
-    createdAt: row.created_at?.toISOString() ?? null,
-    updatedAt: row.updated_at?.toISOString() ?? null
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
   } satisfies RoleDebitAccountAccess;
 }
 
@@ -906,9 +906,9 @@ function mapCorporateUserRow(row: CorporateUserRow) {
     reviewComment: row.review_comment,
     createdByUserId: row.created_by_user_id,
     createdByRole: row.created_by_role,
-    createdAt: row.created_at?.toISOString() ?? null,
-    updatedAt: row.updated_at?.toISOString() ?? null,
-    reviewedAt: row.reviewed_at?.toISOString() ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    reviewedAt: row.reviewed_at,
     reviewedByUserId: row.reviewed_by_user_id,
     reviewedByRole: row.reviewed_by_role
   } satisfies CorporateUser;
@@ -926,9 +926,9 @@ function mapCorporateRoleRow(row: CorporateRoleRow) {
     reviewComment: row.review_comment,
     createdByUserId: row.created_by_user_id,
     createdByRole: row.created_by_role,
-    createdAt: row.created_at?.toISOString() ?? null,
-    updatedAt: row.updated_at?.toISOString() ?? null,
-    reviewedAt: row.reviewed_at?.toISOString() ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    reviewedAt: row.reviewed_at,
     reviewedByUserId: row.reviewed_by_user_id,
     reviewedByRole: row.reviewed_by_role
   } satisfies CorporateRole;

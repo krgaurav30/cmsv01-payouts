@@ -101,8 +101,8 @@ export type RoleDebitAccountAccess = {
   roleName: string;
   debitAccountId: string;
   status: string;
-  createdAt: string | null;
-  updatedAt: string | null;
+  createdAt: number | null;
+  updatedAt: number | null;
 };
 
 export type AuthenticatedUser = {
@@ -132,9 +132,9 @@ export type CorporateUser = {
   reviewComment: string | null;
   createdByUserId: string | null;
   createdByRole: string | null;
-  createdAt: string | null;
-  updatedAt: string | null;
-  reviewedAt: string | null;
+  createdAt: number | null;
+  updatedAt: number | null;
+  reviewedAt: number | null;
   reviewedByUserId: string | null;
   reviewedByRole: string | null;
 };
@@ -150,9 +150,9 @@ export type CorporateRole = {
   reviewComment: string | null;
   createdByUserId: string | null;
   createdByRole: string | null;
-  createdAt: string | null;
-  updatedAt: string | null;
-  reviewedAt: string | null;
+  createdAt: number | null;
+  updatedAt: number | null;
+  reviewedAt: number | null;
   reviewedByUserId: string | null;
   reviewedByRole: string | null;
 };

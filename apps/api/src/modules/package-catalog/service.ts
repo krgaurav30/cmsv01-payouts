@@ -22,8 +22,8 @@ type PaymentMethodRow = {
   max_amount: string | null;
   cutoff_time: string;
   status: "active" | "inactive";
-  created_at: Date | null;
-  updated_at: Date | null;
+  created_at: number | null;
+  updated_at: number | null;
 };
 
 type PackageRow = {
@@ -48,8 +48,8 @@ type PackageRow = {
   max_payments_per_batch: number;
   pricing_defaults_json: Record<string, unknown> | null;
   status: "active" | "inactive";
-  created_at: Date | null;
-  updated_at: Date | null;
+  created_at: number | null;
+  updated_at: number | null;
 };
 
 type PackagePaymentMethodRow = {
@@ -113,7 +113,7 @@ export class PackageCatalogService {
          payment_method_code, name, rail_family, settlement_mode, weekend_support,
          min_amount, max_amount, cutoff_time, status, created_at, updated_at
        )
-       values ($1, $2, $3, 'batch', false, $4, $5, $6, 'active', now(), now())
+       values ($1, $2, $3, 'batch', false, $4, $5, $6, 'active', (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint)
        returning payment_method_code, name, rail_family, settlement_mode, weekend_support,
                  min_amount, max_amount, cutoff_time, status, created_at, updated_at`,
       [
@@ -143,7 +143,7 @@ export class PackageCatalogService {
            max_amount = $4,
            cutoff_time = $5,
            status = $6,
-           updated_at = now()
+           updated_at = (extract(epoch from now()) * 1000)::bigint
        where payment_method_code = $1
        returning payment_method_code, name, rail_family, settlement_mode, weekend_support,
                  min_amount, max_amount, cutoff_time, status, created_at, updated_at`,
@@ -308,7 +308,7 @@ export class PackageCatalogService {
          )
          values (
            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::text[], $12, $13::text[], $14, $15::text[], $16,
-           $17, $18, $19, $20::jsonb, $21, now(), now()
+           $17, $18, $19, $20::jsonb, $21, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint
          )`,
         [
           packageId,
@@ -341,7 +341,7 @@ export class PackageCatalogService {
              package_id, payment_method_code, min_amount_override, max_amount_override,
              pricing_overrides_json, created_at
            )
-           values ($1, $2, null, null, '{}'::jsonb, now())`,
+           values ($1, $2, null, null, '{}'::jsonb, (extract(epoch from now()) * 1000)::bigint)`,
           [packageId, paymentMethodCode]
         );
       }
@@ -351,7 +351,7 @@ export class PackageCatalogService {
           `insert into package_debit_accounts (
              package_id, debit_account_id, status, is_default, created_at, updated_at
            )
-           values ($1, $2, 'active', $3, now(), now())`,
+           values ($1, $2, 'active', $3, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint)`,
           [packageId, debitAccountId, debitAccountId === payload.defaultDebitAccountId]
         );
       }
@@ -452,7 +452,7 @@ export class PackageCatalogService {
              max_payments_per_batch = $17,
              pricing_defaults_json = $18::jsonb,
              status = $19,
-             updated_at = now()
+             updated_at = (extract(epoch from now()) * 1000)::bigint
          where package_id = $1`,
         [
           existingPackageId,
@@ -486,7 +486,7 @@ export class PackageCatalogService {
              package_id, payment_method_code, min_amount_override, max_amount_override,
              pricing_overrides_json, created_at
            )
-           values ($1, $2, null, null, '{}'::jsonb, now())`,
+           values ($1, $2, null, null, '{}'::jsonb, (extract(epoch from now()) * 1000)::bigint)`,
           [existingPackageId, paymentMethodCode]
         );
       }
@@ -496,7 +496,7 @@ export class PackageCatalogService {
           `insert into package_debit_accounts (
              package_id, debit_account_id, status, is_default, created_at, updated_at
            )
-           values ($1, $2, 'active', $3, now(), now())`,
+           values ($1, $2, 'active', $3, (extract(epoch from now()) * 1000)::bigint, (extract(epoch from now()) * 1000)::bigint)`,
           [existingPackageId, debitAccountId, debitAccountId === payload.defaultDebitAccountId]
         );
       }
@@ -655,8 +655,8 @@ export class PackageCatalogService {
       pricingDefaults: row.pricing_defaults_json ?? {},
       status: row.status,
       paymentMethods: paymentMethodsByPackage.get(row.package_id) ?? [],
-      createdAt: row.created_at?.toISOString() ?? null,
-      updatedAt: row.updated_at?.toISOString() ?? null
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
     }));
   }
 }
@@ -673,8 +673,8 @@ function mapPaymentMethodRow(row: PaymentMethodRow) {
     maxAmount: row.max_amount ? Number(Decimal.fromString(row.max_amount).toCents()) : null,
     cutoffTime: row.cutoff_time,
     status: row.status,
-    createdAt: row.created_at?.toISOString() ?? null,
-    updatedAt: row.updated_at?.toISOString() ?? null
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
   } satisfies PaymentMethod;
 }
 

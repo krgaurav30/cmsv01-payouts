@@ -20,7 +20,7 @@ type CorporateTenantSettingsRow = {
   max_daily_cumulative_transaction_amount: string;
   max_bulk_upload_rows: number;
   duplicate_reference_policy: string;
-  updated_at: Date | null;
+  updated_at: number | null;
   updated_by_user_id: string | null;
   updated_by_role: string | null;
 };
@@ -126,7 +126,7 @@ export class SettingsManagementService {
          max_bulk_upload_rows, duplicate_reference_policy, updated_at,
          updated_by_user_id, updated_by_role
        )
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), $11, $12)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, (extract(epoch from now()) * 1000)::bigint, $11, $12)
        on conflict (corporate_tenant_id) do update
        set company_display_name = excluded.company_display_name,
            support_email = excluded.support_email,
@@ -137,7 +137,7 @@ export class SettingsManagementService {
            max_daily_cumulative_transaction_amount = excluded.max_daily_cumulative_transaction_amount,
            max_bulk_upload_rows = excluded.max_bulk_upload_rows,
            duplicate_reference_policy = excluded.duplicate_reference_policy,
-           updated_at = now(),
+           updated_at = (extract(epoch from now()) * 1000)::bigint,
            updated_by_user_id = excluded.updated_by_user_id,
            updated_by_role = excluded.updated_by_role
        returning corporate_tenant_id, company_display_name, support_email, support_phone,
@@ -180,7 +180,7 @@ function mapSettingsRow(row: CorporateTenantSettingsRow) {
     maxBulkUploadRows: row.max_bulk_upload_rows,
     duplicateReferencePolicy:
       row.duplicate_reference_policy === "disabled" ? "disabled" : "enabled",
-    updatedAt: row.updated_at?.toISOString() ?? null,
+    updatedAt: row.updated_at,
     updatedByUserId: row.updated_by_user_id,
     updatedByRole: row.updated_by_role
   } satisfies CorporateTenantSettings;

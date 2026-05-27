@@ -17,7 +17,7 @@ async function run() {
     eventType: "transaction.submitted",
     eventKey: "test-batch-123",
     version: 1,
-    occurredAt: new Date().toISOString(),
+    occurredAt: Date.now(),
     payload: { title: "Test Payout Batch", totalAmount: "100.00" }
   };
 

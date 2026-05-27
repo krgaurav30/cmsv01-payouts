@@ -40,8 +40,8 @@ export type CorporateDebitAccount = {
   isDefault: boolean;
   status: z.infer<typeof debitAccountStatusSchema>;
   balance: string;
-  createdAt: string | null;
-  updatedAt: string | null;
+  createdAt: number | null;
+  updatedAt: number | null;
 };
 
 export type DebitAccountCreateRequest = z.infer<typeof debitAccountCreateSchema>;

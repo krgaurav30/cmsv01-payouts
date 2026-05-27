@@ -110,5 +110,5 @@ export type Beneficiary = {
   status: BeneficiaryStatus;
   approvalState: BeneficiaryApprovalState;
   reviewComment: string | null;
-  lastUpdatedAt: string | null;
+  lastUpdatedAt: number | null;
 };

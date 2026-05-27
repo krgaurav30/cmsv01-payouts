@@ -11,7 +11,7 @@ type PartnerApiKeyRow = {
   api_key: string;
   status: string;
   created_by: string | null;
-  created_at: Date | null;
+  created_at: number | null;
 };
 
 export class PartnerApiKeyService {
@@ -52,7 +52,7 @@ export class PartnerApiKeyService {
       productScope: row.product_scope,
       status: row.status,
       createdBy: row.created_by,
-      createdAt: row.created_at?.toISOString() ?? null,
+      createdAt: row.created_at,
       maskedKey: maskKey(row.api_key)
     }));
 
@@ -86,7 +86,7 @@ export class PartnerApiKeyService {
       `insert into partner_api_keys (
          key_id, label, product_scope, api_key, status, created_by, created_at, revoked_at
        )
-       values ($1, $2, $3, $4, 'active', $5, now(), null)`,
+       values ($1, $2, $3, $4, 'active', $5, (extract(epoch from now()) * 1000)::bigint, null)`,
       [keyId, label, productScope, apiKey, createdBy]
     );
 
@@ -96,7 +96,7 @@ export class PartnerApiKeyService {
       productScope,
       status: "active",
       createdBy,
-      createdAt: new Date().toISOString(),
+      createdAt: Date.now(),
       apiKey,
       maskedKey: maskKey(apiKey)
     };

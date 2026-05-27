@@ -424,6 +424,8 @@ export function DeveloperPortalPageClient({ isEmbedded = false }: { isEmbedded?:
   // Activity log states
   const [activities, setActivities] = useState<any[]>([]);
   const [activitiesIsLoading, setActivitiesIsLoading] = useState(false);
+  const [activitiesPage, setActivitiesPage] = useState(1);
+  const [activitiesHasMore, setActivitiesHasMore] = useState(false);
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [selectedActivityDetails, setSelectedActivityDetails] = useState<any | null>(null);
   const [selectedActivityIsLoading, setSelectedActivityIsLoading] = useState(false);
@@ -454,18 +456,29 @@ export function DeveloperPortalPageClient({ isEmbedded = false }: { isEmbedded?:
     setExpandedSteps((prev) => ({ ...prev, [stepKey]: !prev[stepKey] }));
   };
 
-  async function loadActivities(category: "beneficiary" | "payment") {
+  async function loadActivities(category: "beneficiary" | "payment", pageNum = 1, append = false) {
     setActivitiesIsLoading(true);
     try {
-      const response = await fetchJson<{ items: any[] }>(
-        `/bank/dev-portal/activities?category=${category}&limit=50`
+      const response = await fetchJson<{ items: any[]; pagination?: { hasMore: boolean } }>(
+        `/bank/dev-portal/activities?category=${category}&limit=25&page=${pageNum}`
       );
-      setActivities(response.items ?? []);
+      if (append) {
+        setActivities((prev) => [...prev, ...(response.items ?? [])]);
+      } else {
+        setActivities(response.items ?? []);
+      }
+      setActivitiesPage(pageNum);
+      setActivitiesHasMore(response.pagination?.hasMore ?? false);
     } catch (err) {
       console.error("Failed to load developer portal activities:", err);
     } finally {
       setActivitiesIsLoading(false);
     }
+  }
+
+  function handleLoadMoreActivities() {
+    const category = selectedSection === "activity-beneficiary" ? "beneficiary" : "payment";
+    void loadActivities(category, activitiesPage + 1, true);
   }
 
   async function loadActivityDetails(activityId: string) {
@@ -484,13 +497,13 @@ export function DeveloperPortalPageClient({ isEmbedded = false }: { isEmbedded?:
 
   useEffect(() => {
     if (selectedSection === "activity-beneficiary") {
-      void loadActivities("beneficiary");
+      void loadActivities("beneficiary", 1, false);
       setSelectedActivityId(null);
       setSelectedActivityDetails(null);
       setSelectedGroup(null);
       setTimelineData([]);
     } else if (selectedSection === "activity-payment") {
-      void loadActivities("payment");
+      void loadActivities("payment", 1, false);
       setSelectedActivityId(null);
       setSelectedActivityDetails(null);
       setSelectedGroup(null);
@@ -1476,8 +1489,8 @@ export function DeveloperPortalPageClient({ isEmbedded = false }: { isEmbedded?:
               <div style={{ padding: "12px 16px", background: "#1E293B", borderBottom: "1px solid #334155", fontWeight: 600, color: "#94A3B8", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 API Requests Log History
               </div>
-              <div style={{ overflowX: "auto" }}>
-                {activitiesIsLoading ? (
+              <div style={{ overflowX: "auto", position: "relative" }}>
+                {activitiesIsLoading && activities.length === 0 ? (
                   <div style={{ padding: "32px", textAlign: "center", color: "#64748B" }}>
                     <div className="spinner" style={{ width: "20px", height: "20px", border: "2px solid #10B981", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", marginRight: "8px", verticalAlign: "middle" }}></div>
                     Loading activities...
@@ -1487,13 +1500,13 @@ export function DeveloperPortalPageClient({ isEmbedded = false }: { isEmbedded?:
                 ) : (
                   <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
                     <thead>
-                      <tr style={{ borderBottom: "1px solid #334155", background: "#111827" }}>
-                        <th style={{ padding: "12px 16px", fontWeight: 600, color: "#94A3B8", width: "120px" }}>Status</th>
-                        <th style={{ padding: "12px 16px", fontWeight: 600, color: "#94A3B8", width: "180px" }}>Time</th>
-                        <th style={{ padding: "12px 16px", fontWeight: 600, color: "#94A3B8", width: "80px" }}>Method</th>
-                        <th style={{ padding: "12px 16px", fontWeight: 600, color: "#94A3B8" }}>Path</th>
-                        <th style={{ padding: "12px 16px", fontWeight: 600, color: "#94A3B8", width: "150px" }}>API Key</th>
-                        <th style={{ padding: "12px 16px", fontWeight: 600, color: "#94A3B8", width: "220px" }}>Request ID</th>
+                      <tr style={{ borderBottom: "1px solid #334155", background: "#111827", position: "sticky", top: 0, zIndex: 10 }}>
+                        <th style={{ padding: "12px 16px", fontWeight: 600, color: "#94A3B8", width: "120px", position: "sticky", top: 0, background: "#111827", zIndex: 10 }}>Status</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 600, color: "#94A3B8", width: "180px", position: "sticky", top: 0, background: "#111827", zIndex: 10 }}>Time</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 600, color: "#94A3B8", width: "80px", position: "sticky", top: 0, background: "#111827", zIndex: 10 }}>Method</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 600, color: "#94A3B8", position: "sticky", top: 0, background: "#111827", zIndex: 10 }}>Path</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 600, color: "#94A3B8", width: "150px", position: "sticky", top: 0, background: "#111827", zIndex: 10 }}>API Key</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 600, color: "#94A3B8", width: "220px", position: "sticky", top: 0, background: "#111827", zIndex: 10 }}>Request ID</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1560,6 +1573,47 @@ export function DeveloperPortalPageClient({ isEmbedded = false }: { isEmbedded?:
                   </table>
                 )}
               </div>
+              {activitiesHasMore && (
+                <div style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  alignItems: "center",
+                  padding: "12px 16px",
+                  borderTop: "1px solid #1E293B",
+                  background: "#0F172A"
+                }}>
+                  <button
+                    type="button"
+                    onClick={handleLoadMoreActivities}
+                    disabled={activitiesIsLoading}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                      minHeight: "32px",
+                      padding: "0 16px",
+                      fontSize: "12px",
+                      fontWeight: 500,
+                      color: "#94A3B8",
+                      background: "#1E293B",
+                      border: "1px solid #334155",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      transition: "all 150ms ease"
+                    }}
+                  >
+                    {activitiesIsLoading ? (
+                      <>
+                        <span className="spinner" style={{ border: "2px solid #fff", borderTopColor: "transparent", width: "12px", height: "12px", borderRadius: "50%", display: "inline-block" }}></span>
+                        Loading...
+                      </>
+                    ) : (
+                      "Load More"
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Backdrop Overlay */}

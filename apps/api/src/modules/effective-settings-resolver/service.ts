@@ -58,7 +58,7 @@ export class EffectiveSettingsResolverService {
            and status = 'active'
            and (
              effective_until is null
-             or effective_until > now()
+             or effective_until > (extract(epoch from now()) * 1000)::bigint
            )
          order by created_at desc`,
         [subscriptionId]

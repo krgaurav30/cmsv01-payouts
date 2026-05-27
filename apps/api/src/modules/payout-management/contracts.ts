@@ -204,7 +204,7 @@ export type PayoutTimelineEvent = {
   role: string | null;
   userId: string | null;
   userName: string | null;
-  at: string | null;
+  at: number | null;
 };
 
 export type PayoutBatch = {
@@ -233,17 +233,17 @@ export type PayoutBatch = {
   bankReference: string | null;
   utr: string | null;
   narration: string | null;
-  dispatchedAt: string | null;
-  completedAt: string | null;
+  dispatchedAt: number | null;
+  completedAt: number | null;
   failureReason: string | null;
   approvalLevelsRequired: number | null;
   currentApprovalLevel: number | null;
   approvalRoles: string[];
   matchedApprovalMatrixIds: string[];
-  createdAt: string | null;
-  submittedAt: string | null;
-  approvedAt: string | null;
-  rejectedAt: string | null;
+  createdAt: number | null;
+  submittedAt: number | null;
+  approvedAt: number | null;
+  rejectedAt: number | null;
   submittedByUserId: string | null;
   submittedByRole: string | null;
   approvedByUserId: string | null;
@@ -258,7 +258,7 @@ export type PayoutItem = PayoutItemInput & {
   state: PayoutItemState;
   bankReference: string | null;
   failureReason: string | null;
-  processedAt: string | null;
+  processedAt: number | null;
 };
 
 export type PayoutRefund = Omit<
@@ -269,8 +269,8 @@ export type PayoutRefund = Omit<
   subscriptionId: string | null;
   packageCode: string | null;
   state: PayoutRefundState;
-  createdAt: string | null;
-  processedAt: string | null;
+  createdAt: number | null;
+  processedAt: number | null;
 };
 
 export type PayoutFileUpload = {
@@ -290,5 +290,5 @@ export type PayoutFileUpload = {
   totalRows: number;
   createdCount: number;
   rejectedCount: number;
-  uploadedAt: string | null;
+  uploadedAt: number | null;
 };
