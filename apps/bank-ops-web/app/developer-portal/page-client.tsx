@@ -219,6 +219,88 @@ Content-Type: application/json
 }`,
     notes: ["Header: x-api-key", "Checker only", "Uses the same approval logic as the product UI"]
   },
+  "auth-file-upload": {
+    title: "Auth File Upload",
+    method: "POST",
+    path: "/v1/partner/payments/file-uploads/:uploadId/authorize",
+    summary:
+      "Checker approves or rejects all transaction batches associated with a file upload in one step.",
+    fields: [
+      ["actorUsername", "Yes", "Approved checker username authorizing the file upload."],
+      ["action", "Yes", "approve or reject."],
+      ["comment", "No", "Optional checker note stored on the approval trail."]
+    ],
+    example: `POST /v1/partner/payments/file-uploads/upload-867129/authorize
+x-api-key: bank-alpha-dev-key
+Content-Type: application/json
+
+{
+  "actorUsername": "grvchecker",
+  "action": "approve",
+  "comment": "Bulk approved the entire file via Partner API"
+}`,
+    successResponse: `{
+  "message": "File authorization applied successfully",
+  "summary": {
+    "total": 4,
+    "processed": 4,
+    "skipped": 0
+  },
+  "results": [
+    {
+      "batchId": "bffca1a0-3ca5-49d6-a8fa-7073fb332657",
+      "status": "approved",
+      "state": "approved"
+    }
+  ]
+}`,
+    errorResponse: `{
+  "message": "No transactions in this file are waiting for approval"
+}`,
+    notes: ["Header: x-api-key", "Checker only", "Approves/rejects all actionable transaction batches in a single bulk operation"]
+  },
+  "auth-bulk-ref": {
+    title: "Auth Bulk Payouts",
+    method: "POST",
+    path: "/v1/partner/payments/batches/:apiRefNumber/authorize",
+    summary:
+      "Checker approves or rejects all transaction batches associated with a Bulk API reference number in one step.",
+    fields: [
+      ["corporateTenantId", "Yes", "Corporate tenant identifier."],
+      ["actorUsername", "Yes", "Approved checker username authorizing the bulk payouts."],
+      ["action", "Yes", "approve or reject."],
+      ["comment", "No", "Optional checker note stored on the approval trail."]
+    ],
+    example: `POST /v1/partner/payments/batches/API-BATCH-REF-ZELPAY-01/authorize
+x-api-key: bank-alpha-dev-key
+Content-Type: application/json
+
+{
+  "corporateTenantId": "corp-maya-pharama-028616",
+  "actorUsername": "grvchecker",
+  "action": "approve",
+  "comment": "Bulk approved the batches via Partner API"
+}`,
+    successResponse: `{
+  "message": "Bulk API reference authorization applied successfully",
+  "summary": {
+    "total": 2,
+    "processed": 2,
+    "skipped": 0
+  },
+  "results": [
+    {
+      "batchId": "txn-1779887541934-0-366",
+      "status": "approved",
+      "state": "approved"
+    }
+  ]
+}`,
+    errorResponse: `{
+  "message": "No transactions matching this API reference number are waiting for approval"
+}`,
+    notes: ["Header: x-api-key", "Checker only", "Approves/rejects all transaction batches created under a single API reference number"]
+  },
   "get-transaction-status": {
     title: "Get Transaction Status",
     method: "GET",
@@ -239,6 +321,59 @@ x-api-key: bank-alpha-dev-key`,
   "message": "Transaction not found"
 }`,
     notes: ["Header: x-api-key", "Read-only transaction tracking API", "Useful for partner systems polling payment state after creation"]
+  },
+  "create-bulk-transaction": {
+    title: "Create Bulk Transaction",
+    method: "POST",
+    path: "/v1/partner/payments/batches",
+    summary:
+      "Creates a bulk transaction batch from an array of payouts and auto-submits it into pending approval for checker review.",
+    fields: [
+      ["bankTenantId", "Yes", "Bank tenant identifier."],
+      ["corporateTenantId", "Yes", "Parent corporate tenant identifier."],
+      ["corporateId", "Yes", "Child corporate identifier raising the bulk payouts."],
+      ["packageCode", "Yes", "Workspace package code (e.g., ZELPAY)."],
+      ["actorUsername", "Yes", "Approved maker username submitting the bulk payouts."],
+      ["apiRefNumber", "No", "Optional API reference identifier."],
+      ["payments", "Yes", "Array of payout items, each containing beneficiaryId, amount (in paise), and transactionReference."]
+    ],
+    example: `POST /v1/partner/payments/batches
+x-api-key: bank-alpha-dev-key
+Content-Type: application/json
+
+{
+  "bankTenantId": "bank-alpha",
+  "corporateTenantId": "corp-maya-pharama-028616",
+  "corporateId": "co-maya-pharama-106925",
+  "packageCode": "ZELPAY",
+  "actorUsername": "grvmaker",
+  "payments": [
+    {
+      "beneficiaryId": "SILLU",
+      "amount": 1000,
+      "transactionReference": "ref-bulk-1"
+    },
+    {
+      "beneficiaryId": "SILLU",
+      "amount": 2000,
+      "transactionReference": "ref-bulk-2"
+    }
+  ]
+}`,
+    successResponse: `{
+  "message": "Bulk transaction created successfully in draft state",
+  "command": {
+    "commandId": "cmd-api-1779858273901-54310",
+    "batchId": "txn-1779858271390-506",
+    "status": "accepted",
+    "transactionReference": "Bulk API Transaction 1779858271390",
+    "acceptedAt": "2026-05-27T05:04:31.000Z"
+  }
+}`,
+    errorResponse: `{
+  "message": "Daily cumulative limit exceeded"
+}`,
+    notes: ["Header: x-api-key", "Maker only", "Accepts amount in paise subunit", "Batch is created and automatically queued for checker approval"]
   }
 };
 
@@ -638,7 +773,10 @@ export function DeveloperPortalPageClient({ isEmbedded = false }: { isEmbedded?:
             <section className="api-group">
               <h3>Payments</h3>
               <button className={selectedSection === "create-transaction" ? "api-link api-link-active" : "api-link"} onClick={() => setSelectedSection("create-transaction")} type="button">Make Payment</button>
+              <button className={selectedSection === "create-bulk-transaction" ? "api-link api-link-active" : "api-link"} onClick={() => setSelectedSection("create-bulk-transaction")} type="button">Make Bulk Payment</button>
               <button className={selectedSection === "auth-transaction" ? "api-link api-link-active" : "api-link"} onClick={() => setSelectedSection("auth-transaction")} type="button">Auth Payment</button>
+              <button className={selectedSection === "auth-file-upload" ? "api-link api-link-active" : "api-link"} onClick={() => setSelectedSection("auth-file-upload")} type="button">Auth File Upload</button>
+              <button className={selectedSection === "auth-bulk-ref" ? "api-link api-link-active" : "api-link"} onClick={() => setSelectedSection("auth-bulk-ref")} type="button">Auth Bulk Payouts</button>
               <button className={selectedSection === "get-transaction-status" ? "api-link api-link-active" : "api-link"} onClick={() => setSelectedSection("get-transaction-status")} type="button">Get Transaction Status</button>
             </section>
 

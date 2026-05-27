@@ -450,7 +450,10 @@ async function handleDomainEvent(event: DomainEventEnvelope) {
       );
       tag = batchRes.rows[0]?.tag || "";
     }
-    const isAutoSubmit = ["partner_api", "checkout_sdk", "api"].includes(tag);
+    const isAutoSubmit =
+      ["partner_api", "checkout_sdk", "api", "partner_bulk_api"].includes(tag) ||
+      payload.initiationChannel === "api" ||
+      payload.initiationChannel === "bulk_upload";
     if (isAutoSubmit) {
       console.log(`[Worker] Auto-submitting partner/checkout transaction ${batchId}...`);
       try {

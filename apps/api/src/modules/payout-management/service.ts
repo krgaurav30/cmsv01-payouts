@@ -25,13 +25,16 @@ import type {
   PayoutApprovalActionRequest,
   PayoutBatch,
   PayoutBatchCreateRequest,
+  PayoutBatchState,
   PayoutBulkCreateRequest,
   PayoutFileUpload,
   PayoutFileUploadCreateRequest,
   PayoutDispatchRequest,
   PayoutItem,
   PublishedPayoutApprovalRequest,
+  PublishedBulkPayoutApprovalRequest,
   PublishedPayoutCreateRequest,
+  PublishedBulkPayoutCreateRequest,
   PayoutRefund,
   PayoutRefundCreateRequest,
   PayoutSimulationRequest,
@@ -75,6 +78,7 @@ type PayoutBatchRow = {
   failure_reason: string | null;
   utr: string | null;
   narration: string | null;
+  api_ref_number?: string | null;
   approval_levels_required?: number | null;
   current_approval_level?: number | null;
   roles_by_level?: Array<{ level: number; roles: string[] }> | null;
@@ -263,7 +267,7 @@ export class PayoutManagementService {
                               pb.created_at, pb.submitted_at, pb.submitted_by_user_id, pb.submitted_by_role,
                               pb.approved_at, pb.approved_by_user_id, pb.approved_by_role, pb.rejected_at,
                               pb.rejected_by_user_id, pb.rejected_by_role, pb.dispatched_at, pb.completed_at,
-                              pb.failure_reason, pb.utr, pb.narration, pac.approval_levels_required, pac.current_approval_level,
+                              pb.failure_reason, pb.utr, pb.narration, pb.api_ref_number, pac.approval_levels_required, pac.current_approval_level,
                               pac.roles_by_level, pac.matched_matrix_ids
                        from payout_batches pb
                        left join payout_batch_approval_contexts pac on pac.batch_id = pb.batch_id
@@ -316,7 +320,7 @@ export class PayoutManagementService {
               pb.created_at, pb.submitted_at, pb.submitted_by_user_id, pb.submitted_by_role,
               pb.approved_at, pb.approved_by_user_id, pb.approved_by_role, pb.rejected_at,
               pb.rejected_by_user_id, pb.rejected_by_role, pb.dispatched_at, pb.completed_at,
-              pb.failure_reason, pb.utr, pb.narration, pac.approval_levels_required, pac.current_approval_level,
+              pb.failure_reason, pb.utr, pb.narration, pb.api_ref_number, pac.approval_levels_required, pac.current_approval_level,
               pac.roles_by_level, pac.matched_matrix_ids
        from payout_batches pb
        left join payout_batch_approval_contexts pac on pac.batch_id = pb.batch_id
@@ -567,10 +571,10 @@ export class PayoutManagementService {
            bank_reference, created_at, submitted_at, submitted_by_user_id, submitted_by_role,
            approved_at, approved_by_user_id, approved_by_role, rejected_at,
            rejected_by_user_id, rejected_by_role, dispatched_at, completed_at,
-           failure_reason, utr, narration
+           failure_reason, utr, narration, api_ref_number
          )
          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'draft', $15, null, null, now(),
-                 null, null, null, null, null, null, null, null, null, null, null, null, $16, $17)
+                 null, null, null, null, null, null, null, null, null, null, null, null, $16, $17, $18)
          on conflict (batch_id) do update
          set bank_tenant_id = excluded.bank_tenant_id,
              corporate_tenant_id = excluded.corporate_tenant_id,
@@ -587,7 +591,8 @@ export class PayoutManagementService {
              remark = excluded.remark,
              total_amount = excluded.total_amount,
              utr = coalesce(payout_batches.utr, excluded.utr),
-             narration = coalesce(payout_batches.narration, excluded.narration)`,
+             narration = coalesce(payout_batches.narration, excluded.narration),
+             api_ref_number = coalesce(payout_batches.api_ref_number, excluded.api_ref_number)`,
         [
           payload.batchId,
           payload.bankTenantId,
@@ -605,7 +610,8 @@ export class PayoutManagementService {
           payload.remark ?? null,
           totalAmountDecimal.toString(),
           batchUtr,
-          batchNarration
+          batchNarration,
+          payload.apiRefNumber ?? null
         ]
       );
 
@@ -649,6 +655,7 @@ export class PayoutManagementService {
         tag: payload.tag,
         utr: batchUtr,
         narration: batchNarration,
+        initiationChannel: payload.initiationChannel,
         occurredAt: new Date().toISOString()
       });
     });
@@ -1094,6 +1101,7 @@ export class PayoutManagementService {
     | { error: "beneficiary_type_not_allowed"; beneficiaryId: string; beneficiaryType: string; packageCode?: string }
     | { error: "child_corporate_not_found" }
     | { error: "duplicate_transaction_reference"; transactionReference: string; existingState: string }
+    | { error: "duplicate_api_ref_number"; apiRefNumber: string; existingState: string }
     | { error: "subscription_not_found" }
     | { error: "subscription_scope_mismatch" }
     | { error: "single_transaction_limit_exceeded"; limit: number }
@@ -1113,6 +1121,20 @@ export class PayoutManagementService {
       };
     }
 
+    if (payload.apiRefNumber) {
+      const existing = await this.findBatchByApiRefNumber(
+        payload.corporateTenantId,
+        payload.apiRefNumber
+      );
+      if (existing) {
+        return {
+          error: "duplicate_api_ref_number" as const,
+          apiRefNumber: payload.apiRefNumber,
+          existingState: existing.state
+        };
+      }
+    }
+
     const generatedBatchId = `txn-${Date.now()}-${Math.floor(Math.random() * 1000)
       .toString()
       .padStart(3, "0")}`;
@@ -1130,6 +1152,8 @@ export class PayoutManagementService {
       title: payload.txnTitle,
       tag: payload.tag || "partner_api",
       remark: payload.remark,
+      apiRefNumber: payload.apiRefNumber,
+      initiationChannel: "api",
       items: [
         {
           itemId: generatedItemId,
@@ -1154,6 +1178,135 @@ export class PayoutManagementService {
         transactionReference: createResult.data.title,
         acceptedAt: createResult.data.createdAt ?? new Date().toISOString()
       }
+    };
+  }
+
+  async createPublishedBulkTransactions(payload: PublishedBulkPayoutCreateRequest): Promise<
+    | {
+        data: Array<
+          PayoutBatch & {
+            commandId: string;
+            status: "accepted";
+            transactionReference: string;
+            acceptedAt: string;
+          }
+        >;
+      }
+    | { error: "actor_not_found" }
+    | { error: "forbidden" }
+    | { error: "beneficiary_not_found"; beneficiaryId: string }
+    | { error: "beneficiary_not_approved"; beneficiaryId: string }
+    | { error: "beneficiary_inactive"; beneficiaryId: string }
+    | { error: "beneficiary_package_not_assigned"; beneficiaryId: string; packageCode: string }
+    | { error: "beneficiary_corporate_mismatch"; beneficiaryId: string }
+    | { error: "beneficiary_type_not_allowed"; beneficiaryId: string; beneficiaryType: string; packageCode?: string }
+    | { error: "child_corporate_not_found" }
+    | { error: "duplicate_transaction_reference"; transactionReference: string; existingState: string }
+    | { error: "subscription_not_found" }
+    | { error: "subscription_scope_mismatch" }
+    | { error: "single_transaction_limit_exceeded"; limit: number }
+    | { error: "daily_cumulative_limit_exceeded"; limit: number; currentTotal: number }
+    | { error: "payment_method_required"; allowedPaymentMethodCodes: string[] }
+    | { error: "payment_method_not_allowed"; paymentMethodCode: string }
+    | { error: "payment_method_amount_out_of_range"; paymentMethodCode: string; minAmount: number; maxAmount: number; amount: number }
+    | { error: "bank_not_found" }
+    | { error: "duplicate_api_ref_number"; apiRefNumber: string; existingState: string }
+  > {
+    const actor = await this.identityAccessService.getCorporateUserByUsername(
+      payload.actorUsername
+    );
+
+    if (!actor) {
+      return {
+        error: "actor_not_found" as const
+      };
+    }
+
+    if (payload.apiRefNumber) {
+      const existing = await this.findBatchByApiRefNumber(
+        payload.corporateTenantId,
+        payload.apiRefNumber
+      );
+      if (existing) {
+        return {
+          error: "duplicate_api_ref_number" as const,
+          apiRefNumber: payload.apiRefNumber,
+          existingState: existing.state
+        };
+      }
+    }
+
+    const resolvedSubscription = await this.resolveSubscriptionContext({
+      bankTenantId: payload.bankTenantId,
+      corporateTenantId: payload.corporateTenantId,
+      corporateId: payload.corporateId,
+      packageCode: payload.packageCode
+    });
+
+    if ("error" in resolvedSubscription) {
+      return resolvedSubscription;
+    }
+
+    const createdResults = [];
+    let idx = 0;
+
+    for (const p of payload.payments) {
+      const generatedBatchId = `txn-${Date.now()}-${idx}-${Math.floor(Math.random() * 1000)
+        .toString()
+        .padStart(3, "0")}`;
+      idx++;
+
+      let debitAccountId: string | undefined;
+      if (p.debitAccountNumber) {
+        const resolvedDebitAccountId = await this.resolveDebitAccountIdByNumber(
+          resolvedSubscription.subscriptionId,
+          p.debitAccountNumber
+        );
+        debitAccountId = resolvedDebitAccountId ?? undefined;
+      }
+
+      const createResult = await this.createBatch({
+        batchId: generatedBatchId,
+        bankTenantId: payload.bankTenantId,
+        corporateTenantId: payload.corporateTenantId,
+        corporateId: payload.corporateId,
+        subscriptionId: resolvedSubscription.subscriptionId,
+        packageCode: payload.packageCode,
+        debitAccountId,
+        paymentMethodCode: p.paymentMethodCode ?? undefined,
+        createdByUserId: actor.userId,
+        title: p.transactionReference,
+        tag: p.tag ?? "partner_bulk_api",
+        remark: p.remark ?? undefined,
+        apiRefNumber: payload.apiRefNumber,
+        initiationChannel: "api",
+        items: [
+          {
+            itemId: `${generatedBatchId}-item-001`,
+            beneficiaryId: p.beneficiaryId,
+            amount: { value: p.amount, currency: "INR" as const },
+            purpose: p.remark ?? p.transactionReference
+          }
+        ]
+      });
+
+      if (!("data" in createResult) || !createResult.data) {
+        return "error" in createResult ? (createResult as any) : { error: "child_corporate_not_found" as const };
+      }
+
+      const commandId = `cmd-api-${Date.now()}-${idx}-${Math.floor(Math.random() * 100000).toString().padStart(5, "0")}`;
+
+      createdResults.push({
+        ...createResult.data,
+        commandId,
+        status: "accepted" as const,
+        transactionReference: createResult.data.title,
+        acceptedAt: createResult.data.createdAt ?? new Date().toISOString()
+      });
+    }
+
+    return {
+      data: createdResults
     };
   }
 
@@ -1368,6 +1521,150 @@ export class PayoutManagementService {
     }
 
     return this.applyApprovalAction(batchId, {
+      action: payload.action,
+      actedByUserId: actor.userId,
+      comment: payload.comment
+    });
+  }
+
+  async authorizePublishedFileUpload(
+    uploadId: string,
+    payload: PublishedPayoutApprovalRequest
+  ) {
+    const actor = await this.identityAccessService.getCorporateUserByUsername(
+      payload.actorUsername
+    );
+
+    if (!actor) {
+      return {
+        error: "actor_not_found" as const
+      };
+    }
+
+    return this.applyFileUploadApprovalAction(uploadId, {
+      action: payload.action,
+      actedByUserId: actor.userId,
+      comment: payload.comment
+    });
+  }
+
+  async listBatchesByApiRefNumber(corporateTenantId: string, apiRefNumber: string) {
+    const result = await this.db.query<PayoutBatchRow>(
+      `select pb.batch_id, pb.bank_tenant_id, pb.corporate_tenant_id,
+              pb.corporate_id, pb.source_upload_id, pb.subscription_id, pb.package_code,
+              pb.debit_account_id, pb.payment_method_code,
+              first_item.beneficiary_id as primary_beneficiary_id,
+              first_item.beneficiary_name as primary_beneficiary_name,
+              pb.created_by_user_id, pb.created_by_role, pb.title, pb.tag, pb.remark,
+              pb.state, pb.total_amount, pb.approval_comment, pb.bank_reference,
+              pb.created_at, pb.submitted_at, pb.submitted_by_user_id, pb.submitted_by_role,
+              pb.approved_at, pb.approved_by_user_id, pb.approved_by_role, pb.rejected_at,
+              pb.rejected_by_user_id, pb.rejected_by_role, pb.dispatched_at, pb.completed_at,
+              pb.failure_reason, pb.utr, pb.narration, pb.api_ref_number, pac.approval_levels_required, pac.current_approval_level,
+              pac.roles_by_level, pac.matched_matrix_ids
+       from payout_batches pb
+       left join payout_batch_approval_contexts pac on pac.batch_id = pb.batch_id
+       left join lateral (
+         select pi.beneficiary_id, b.name as beneficiary_name
+         from payout_items pi
+         left join beneficiaries b on b.beneficiary_id = pi.beneficiary_id
+         where pi.batch_id = pb.batch_id
+         order by pi.item_id
+         limit 1
+       ) first_item on true
+       where pb.corporate_tenant_id = $1 and pb.api_ref_number = $2
+       order by pb.created_at asc, pb.batch_id asc`,
+      [corporateTenantId, apiRefNumber]
+    );
+
+    return result.rows.map((row) => this.mapBatchListRow(row));
+  }
+
+  async findBatchByApiRefNumber(corporateTenantId: string, apiRefNumber: string) {
+    const result = await this.db.query<{ batch_id: string; state: PayoutBatchState }>(
+      `select batch_id, state
+       from payout_batches
+       where corporate_tenant_id = $1 and api_ref_number = $2
+       limit 1`,
+      [corporateTenantId, apiRefNumber]
+    );
+
+    return result.rows[0] ? { batchId: result.rows[0].batch_id, state: result.rows[0].state } : null;
+  }
+
+  async applyApiRefApprovalAction(
+    corporateTenantId: string,
+    apiRefNumber: string,
+    payload: PayoutApprovalActionRequest
+  ) {
+    const batches = await this.listBatchesByApiRefNumber(corporateTenantId, apiRefNumber);
+    const actionableBatches = batches.filter((batch) =>
+      batch.state === "pending_approval" || batch.state === "partially_approved"
+    );
+
+    if (actionableBatches.length === 0) {
+      return {
+        error: "no_actionable_batches" as const
+      };
+    }
+
+    const results: Array<{
+      batchId: string;
+      status: "approved" | "rejected" | "skipped";
+      state: PayoutBatch["state"] | null;
+      message?: string;
+    }> = [];
+
+    for (const batch of actionableBatches) {
+      const result = await this.applyApprovalAction(batch.batchId, payload);
+
+      if ("data" in result) {
+        results.push({
+          batchId: batch.batchId,
+          status: payload.action === "approve" ? "approved" : "rejected",
+          state: result.data?.state ?? batch.state
+        });
+      } else {
+        results.push({
+          batchId: batch.batchId,
+          status: "skipped",
+          state: batch.state,
+          message: mapBulkFileApprovalErrorToMessage(result as never)
+        });
+      }
+    }
+
+    const refreshedBatches = await this.listBatchesByApiRefNumber(corporateTenantId, apiRefNumber);
+
+    return {
+      data: {
+        batches: refreshedBatches,
+        summary: {
+          total: actionableBatches.length,
+          processed: results.filter((item) => item.status !== "skipped").length,
+          skipped: results.filter((item) => item.status === "skipped").length
+        },
+        results
+      }
+    };
+  }
+
+  async authorizePublishedApiRef(
+    corporateTenantId: string,
+    apiRefNumber: string,
+    payload: PublishedBulkPayoutApprovalRequest
+  ) {
+    const actor = await this.identityAccessService.getCorporateUserByUsername(
+      payload.actorUsername
+    );
+
+    if (!actor) {
+      return {
+        error: "actor_not_found" as const
+      };
+    }
+
+    return this.applyApiRefApprovalAction(corporateTenantId, apiRefNumber, {
       action: payload.action,
       actedByUserId: actor.userId,
       comment: payload.comment
@@ -1992,7 +2289,7 @@ export class PayoutManagementService {
               pb.created_at, pb.submitted_at, pb.submitted_by_user_id, pb.submitted_by_role,
               pb.approved_at, pb.approved_by_user_id, pb.approved_by_role, pb.rejected_at,
               pb.rejected_by_user_id, pb.rejected_by_role, pb.dispatched_at, pb.completed_at,
-              pb.failure_reason, pac.approval_levels_required, pac.current_approval_level,
+              pb.failure_reason, pb.utr, pb.narration, pb.api_ref_number, pac.approval_levels_required, pac.current_approval_level,
               pac.roles_by_level, pac.matched_matrix_ids
        from payout_batches pb
        left join payout_batch_approval_contexts pac on pac.batch_id = pb.batch_id
@@ -2697,6 +2994,8 @@ export class PayoutManagementService {
       narration: row.narration,
       dispatchedAt: row.dispatched_at?.toISOString() ?? null,
       completedAt: row.completed_at?.toISOString() ?? null,
+      apiRefNumber: row.api_ref_number ?? null,
+      initiationMode: row.source_upload_id ? "bulk" : "single",
       failureReason: row.failure_reason,
       approvalLevelsRequired,
       currentApprovalLevel,
@@ -2758,6 +3057,8 @@ export class PayoutManagementService {
         value: Number(Decimal.fromString(row.total_amount).toCents()),
         currency: this.baseCurrency
       },
+      apiRefNumber: row.api_ref_number ?? null,
+      initiationMode: row.source_upload_id ? "bulk" : "single",
       approvalComment: row.approval_comment,
       bankReference: row.bank_reference,
       utr: row.utr,

@@ -46,6 +46,8 @@ export const payoutBatchCreateSchema = z.object({
   remark: z.string().min(1).optional(),
   utr: z.string().optional(),
   narration: z.string().optional(),
+  apiRefNumber: z.string().optional(),
+  initiationChannel: z.enum(["ui", "api", "bulk_upload"]).optional(),
   items: z.array(payoutItemSchema).min(1)
 });
 
@@ -106,8 +108,19 @@ export const publishedPayoutCreateSchema = z.object({
   txnTitle: z.string().min(2),
   beneficiaryId: z.string().min(3),
   amount: moneySchema,
+  apiRefNumber: z.string().min(2).max(100).optional(),
   tag: z.string().min(1).optional(),
   remark: z.string().min(1).optional()
+});
+
+export const publishedBulkPayoutCreateSchema = z.object({
+  bankTenantId: z.string().min(3),
+  corporateTenantId: z.string().min(3),
+  corporateId: z.string().min(3),
+  packageCode: z.string().min(2),
+  actorUsername: z.string().min(3),
+  apiRefNumber: z.string().min(2).max(100).optional(),
+  payments: z.array(payoutBulkRowSchema).min(1)
 });
 
 export const payoutApprovalActionSchema = z.object({
@@ -117,6 +130,13 @@ export const payoutApprovalActionSchema = z.object({
 });
 
 export const publishedPayoutApprovalSchema = z.object({
+  actorUsername: z.string().min(3),
+  action: z.enum(["approve", "reject"]),
+  comment: z.string().min(2).max(500).optional()
+});
+
+export const publishedBulkPayoutApprovalSchema = z.object({
+  corporateTenantId: z.string().min(3),
   actorUsername: z.string().min(3),
   action: z.enum(["approve", "reject"]),
   comment: z.string().min(2).max(500).optional()
@@ -162,11 +182,15 @@ export type PayoutBulkRow = z.infer<typeof payoutBulkRowSchema>;
 export type PayoutFileUploadStatus = z.infer<typeof payoutFileUploadStatusSchema>;
 export type PayoutFileUploadCreateRequest = z.infer<typeof payoutFileUploadCreateSchema>;
 export type PublishedPayoutCreateRequest = z.infer<typeof publishedPayoutCreateSchema>;
+export type PublishedBulkPayoutCreateRequest = z.infer<typeof publishedBulkPayoutCreateSchema>;
 export type PayoutApprovalActionRequest = z.infer<
   typeof payoutApprovalActionSchema
 >;
 export type PublishedPayoutApprovalRequest = z.infer<
   typeof publishedPayoutApprovalSchema
+>;
+export type PublishedBulkPayoutApprovalRequest = z.infer<
+  typeof publishedBulkPayoutApprovalSchema
 >;
 export type PayoutDispatchRequest = z.infer<typeof payoutDispatchSchema>;
 export type PayoutSimulationRequest = z.infer<typeof payoutSimulationSchema>;
@@ -203,6 +227,8 @@ export type PayoutBatch = {
   state: PayoutBatchState;
   internalState?: string;
   totalAmount: Money;
+  apiRefNumber: string | null;
+  initiationMode?: "single" | "bulk" | null;
   approvalComment: string | null;
   bankReference: string | null;
   utr: string | null;

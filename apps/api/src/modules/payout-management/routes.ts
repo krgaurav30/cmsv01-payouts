@@ -11,7 +11,9 @@ import {
   payoutBulkCreateSchema,
   payoutFileUploadCreateSchema,
   publishedPayoutApprovalSchema,
+  publishedBulkPayoutApprovalSchema,
   publishedPayoutCreateSchema,
+  publishedBulkPayoutCreateSchema,
   payoutRefundCreateSchema,
   payoutSimulationSchema
 } from "./contracts.js";
@@ -624,6 +626,13 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
         });
       }
 
+      if (result.error === "duplicate_api_ref_number") {
+        return reply.status(409).send({
+          message: `API reference number already exists and was processed earlier: ${result.apiRefNumber}`,
+          existingState: result.existingState
+        });
+      }
+
       if (result.error === "subscription_not_found") {
         return reply.status(404).send({
           message: "No active package subscription was found for this transaction context"
@@ -693,6 +702,181 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
         acceptedAt: result.data.acceptedAt
       },
       transaction: result.data
+    });
+  });
+
+  app.post("/v1/partner/payments/batches", async (request, reply) => {
+    const apiKey = request.headers["x-api-key"];
+
+    if (typeof apiKey !== "string" || !(await partnerApiKeyService.isValidApiKey(apiKey))) {
+      return reply.status(401).send({
+        message: "Invalid API key"
+      });
+    }
+
+    const parsed = publishedBulkPayoutCreateSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.status(400).send({
+        message: "Invalid bulk transaction API payload",
+        issues: parsed.error.flatten()
+      });
+    }
+
+    const result = await payoutManagementService.createPublishedBulkTransactions(parsed.data);
+
+    if (!("data" in result)) {
+      if (result.error === "actor_not_found") {
+        return reply.status(404).send({
+          message: "Actor username not found"
+        });
+      }
+
+      if (result.error === "forbidden") {
+        return reply.status(403).send({
+          message: "Only an approved maker can create transactions through this API"
+        });
+      }
+
+      if (result.error === "beneficiary_not_found") {
+        return reply.status(404).send({
+          message: `Beneficiary not found: ${result.beneficiaryId}`
+        });
+      }
+
+      if (result.error === "beneficiary_not_approved") {
+        return reply.status(409).send({
+          message: `Beneficiary is still waiting for checker approval: ${result.beneficiaryId}`
+        });
+      }
+
+      if (result.error === "beneficiary_inactive") {
+        return reply.status(409).send({
+          message: `Beneficiary is inactive and cannot be used for payout creation: ${result.beneficiaryId}`
+        });
+      }
+
+      if (result.error === "beneficiary_package_not_assigned") {
+        return reply.status(409).send({
+          message: `Beneficiary ${result.beneficiaryId} is not assigned to package ${result.packageCode}`
+        });
+      }
+
+      if (result.error === "beneficiary_corporate_mismatch") {
+        return reply.status(409).send({
+          message: `Beneficiary does not belong to the selected child corporate: ${result.beneficiaryId}`
+        });
+      }
+
+      if (result.error === "beneficiary_type_not_allowed") {
+        return reply.status(409).send({
+          message: `Beneficiary type ${result.beneficiaryType} is not allowed for package ${result.packageCode ?? "this selection"}`
+        });
+      }
+
+      if (result.error === "child_corporate_not_found") {
+        return reply.status(404).send({
+          message: "Linked child corporate not found"
+        });
+      }
+
+      if (result.error === "duplicate_transaction_reference") {
+        return reply.status(409).send({
+          message: `Transaction reference already exists and was processed earlier: ${result.transactionReference}`,
+          existingState: result.existingState
+        });
+      }
+
+      if (result.error === "duplicate_api_ref_number") {
+        return reply.status(409).send({
+          message: `API reference number already exists and was processed earlier: ${result.apiRefNumber}`,
+          existingState: result.existingState
+        });
+      }
+
+      if (result.error === "subscription_not_found") {
+        return reply.status(404).send({
+          message: "No active package subscription was found for this transaction context"
+        });
+      }
+
+      if (result.error === "subscription_scope_mismatch") {
+        return reply.status(409).send({
+          message: "The selected package subscription does not belong to this corporate context"
+        });
+      }
+
+      if (result.error === "single_transaction_limit_exceeded") {
+        return reply.status(409).send({
+          message: `This transaction exceeds the single transaction limit of INR ${result.limit.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          limit: result.limit
+        });
+      }
+
+      if (result.error === "daily_cumulative_limit_exceeded") {
+        return reply.status(409).send({
+          message: `This transaction would exceed the daily cumulative transaction limit of INR ${result.limit.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          limit: result.limit,
+          currentTotal: result.currentTotal
+        });
+      }
+
+      if (result.error === "payment_method_required") {
+        return reply.status(409).send({
+          message: `Select a payment method. Allowed methods: ${result.allowedPaymentMethodCodes.join(", ")}`
+        });
+      }
+
+      if (result.error === "payment_method_not_allowed") {
+        return reply.status(409).send({
+          message: `Payment method ${result.paymentMethodCode} is not allowed for the selected package`
+        });
+      }
+
+      if (result.error === "payment_method_amount_out_of_range") {
+        return reply.status(409).send({
+          message: `This amount is outside the allowed range for ${result.paymentMethodCode}`,
+          paymentMethodCode: result.paymentMethodCode,
+          minAmount: result.minAmount,
+          maxAmount: result.maxAmount,
+          amount: result.amount
+        });
+      }
+
+      return reply.status(404).send({
+        message:
+          result.error === "bank_not_found"
+            ? "Linked bank tenant not found"
+            : "Linked corporate tenant not found"
+      });
+    }
+
+    const firstItem = result.data[0];
+
+    return reply.status(201).send({
+      message: "Bulk transaction created successfully in draft state",
+      command: firstItem
+        ? {
+            commandId: firstItem.commandId,
+            batchId: firstItem.batchId,
+            status: "accepted",
+            transactionReference: firstItem.transactionReference,
+            subscriptionId: firstItem.subscriptionId,
+            packageCode: firstItem.packageCode,
+            acceptedAt: firstItem.acceptedAt
+          }
+        : null,
+      transaction: firstItem || null,
+      commands: result.data.map((item) => ({
+        commandId: item.commandId,
+        batchId: item.batchId,
+        status: "accepted",
+        transactionReference: item.transactionReference,
+        subscriptionId: item.subscriptionId,
+        packageCode: item.packageCode,
+        acceptedAt: item.acceptedAt
+      })),
+      transactions: result.data
     });
   });
 
@@ -857,6 +1041,123 @@ export const payoutManagementRoutes: FastifyPluginAsync = async (app) => {
     return {
       message: "Transaction authorization applied",
       transaction: result.data
+    };
+  });
+
+  app.post("/v1/partner/payments/file-uploads/:uploadId/authorize", async (request, reply) => {
+    const apiKey = request.headers["x-api-key"];
+
+    if (typeof apiKey !== "string" || !(await partnerApiKeyService.isValidApiKey(apiKey))) {
+      return reply.status(401).send({
+        message: "Invalid API key"
+      });
+    }
+
+    const params = request.params as { uploadId: string };
+    const parsed = publishedPayoutApprovalSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.status(400).send({
+        message: "Invalid file authorization payload",
+        issues: parsed.error.flatten()
+      });
+    }
+
+    const result = await payoutManagementService.authorizePublishedFileUpload(
+      params.uploadId,
+      parsed.data
+    );
+
+    if ("error" in result) {
+      if (result.error === "actor_not_found") {
+        return reply.status(404).send({
+          message: "Actor username not found"
+        });
+      }
+
+      if (result.error === "upload_not_found") {
+        return reply.status(404).send({
+          message: "Payout file upload not found"
+        });
+      }
+
+      if (result.error === "no_actionable_batches") {
+        return reply.status(409).send({
+          message: "No transactions in this file are waiting for approval"
+        });
+      }
+
+      if (result.error === "forbidden") {
+        return reply.status(403).send({
+          message: "Only an approved checker can authorize transactions through this API"
+        });
+      }
+
+      return reply.status(409).send({
+        message: "The file approval action could not be completed"
+      });
+    }
+
+    return {
+      message: "File authorization applied successfully",
+      summary: result.data.summary,
+      results: result.data.results
+    };
+  });
+
+  app.post("/v1/partner/payments/batches/:apiRefNumber/authorize", async (request, reply) => {
+    const apiKey = request.headers["x-api-key"];
+
+    if (typeof apiKey !== "string" || !(await partnerApiKeyService.isValidApiKey(apiKey))) {
+      return reply.status(401).send({
+        message: "Invalid API key"
+      });
+    }
+
+    const params = request.params as { apiRefNumber: string };
+    const parsed = publishedBulkPayoutApprovalSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.status(400).send({
+        message: "Invalid bulk authorization payload",
+        issues: parsed.error.flatten()
+      });
+    }
+
+    const result = await payoutManagementService.authorizePublishedApiRef(
+      parsed.data.corporateTenantId,
+      params.apiRefNumber,
+      parsed.data
+    );
+
+    if ("error" in result) {
+      if (result.error === "actor_not_found") {
+        return reply.status(404).send({
+          message: "Actor username not found"
+        });
+      }
+
+      if (result.error === "no_actionable_batches") {
+        return reply.status(409).send({
+          message: "No transactions matching this API reference number are waiting for approval"
+        });
+      }
+
+      if (result.error === "forbidden") {
+        return reply.status(403).send({
+          message: "Only an approved checker can authorize transactions through this API"
+        });
+      }
+
+      return reply.status(409).send({
+        message: "The bulk approval action could not be completed"
+      });
+    }
+
+    return {
+      message: "Bulk API reference authorization applied successfully",
+      summary: result.data.summary,
+      results: result.data.results
     };
   });
 
