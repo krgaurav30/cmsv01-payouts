@@ -18,6 +18,7 @@ type ParsedUpload = {
     amount: number;
     tag?: string;
     remark?: string;
+    metadata?: Record<string, any>;
   }>;
   explicitPackageCodes: string[];
   errors: string[];
@@ -61,8 +62,21 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const requestOrigin = request.headers.get("origin") || request.nextUrl.origin;
+
+    // Fetch settings to retrieve metadataFields definition
+    const settingsUrl = `${bffUrl}/v1/settings/corporate-tenant?corporateTenantId=${session.corporateTenantId}&actedByUserId=${session.userId}`;
+    const settingsResponse = await fetch(settingsUrl, {
+      headers: {
+        Cookie: cookieHeader,
+        Origin: requestOrigin
+      }
+    });
+    const settingsData = await settingsResponse.json().catch(() => null);
+    const metadataFields: string[] = settingsData?.metadataFields || [];
+
     const buffer = Buffer.from(await file.arrayBuffer());
-    const parsedUpload = parseWorkbookFromBuffer(buffer);
+    const parsedUpload = parseWorkbookFromBuffer(buffer, metadataFields);
     const explicitPackageCode = parsedUpload.explicitPackageCodes[0] ?? null;
     const hasMixedPackageCodes = parsedUpload.explicitPackageCodes.length > 1;
 
@@ -80,8 +94,6 @@ export async function POST(request: NextRequest) {
         "Package Code is blank in the file. Fill it in the sheet or choose a default package in Context."
       );
     }
-
-    const requestOrigin = request.headers.get("origin") || request.nextUrl.origin;
 
     if (parsedUpload.errors.length > 0) {
       await recordRejectedFileUpload({
@@ -143,7 +155,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function parseWorkbookFromBuffer(buffer: Buffer): ParsedUpload {
+function parseWorkbookFromBuffer(buffer: Buffer, metadataFields?: string[]): ParsedUpload {
   const EXPECTED_HEADERS: Record<string, string> = {
     "package code": "packageCode",
     "payment method code": "paymentMethodCode",
@@ -152,8 +164,18 @@ function parseWorkbookFromBuffer(buffer: Buffer): ParsedUpload {
     "debit account number": "debitAccountNumber",
     amount: "amount",
     tag: "tag",
-    remark: "remark"
+    remark: "remark",
+    metadata: "metadata"
   };
+
+  const metadataFieldsMap: Record<string, string> = {};
+  if (metadataFields && metadataFields.length > 0) {
+    for (const field of metadataFields) {
+      if (field) {
+        metadataFieldsMap[field.trim().toLowerCase()] = field.trim();
+      }
+    }
+  }
 
   const workbook = xlsx.read(buffer, { type: "buffer" });
   const sheetName = workbook.SheetNames[0];
@@ -169,12 +191,15 @@ function parseWorkbookFromBuffer(buffer: Buffer): ParsedUpload {
 
   const headerRow = rows[0] || [];
   const headerMap: Record<string, number> = {};
+  const metadataColumnIndices: Record<string, number> = {};
 
   for (let i = 0; i < headerRow.length; i++) {
     const cellValue = headerRow[i];
     const normalized = String(cellValue || "").trim().toLowerCase();
     if (EXPECTED_HEADERS[normalized]) {
       headerMap[EXPECTED_HEADERS[normalized]] = i;
+    } else if (metadataFieldsMap[normalized]) {
+      metadataColumnIndices[metadataFieldsMap[normalized]] = i;
     }
   }
 
@@ -214,6 +239,39 @@ function parseWorkbookFromBuffer(buffer: Buffer): ParsedUpload {
     const amountVal = row[headerMap["amount"]];
     const tag = getStr(headerMap["tag"]);
     const remark = getStr(headerMap["remark"]);
+    const metadataVal = row[headerMap["metadata"]];
+
+    let parsedMetadata: Record<string, any> | undefined = undefined;
+    if (metadataVal !== undefined && metadataVal !== null && String(metadataVal).trim() !== "") {
+      if (typeof metadataVal === "object" && !Array.isArray(metadataVal)) {
+        parsedMetadata = { ...metadataVal };
+      } else {
+        const metadataStr = String(metadataVal).trim();
+        try {
+          const parsed = JSON.parse(metadataStr);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            parsedMetadata = { ...parsed };
+          } else {
+            parsedMetadata = { value: parsed };
+          }
+        } catch {
+          parsedMetadata = { value: metadataStr };
+        }
+      }
+    }
+
+    for (const [fieldName, idx] of Object.entries(metadataColumnIndices)) {
+      const cellVal = row[idx];
+      if (cellVal !== undefined && cellVal !== null) {
+        const strVal = String(cellVal).trim();
+        if (strVal !== "") {
+          if (!parsedMetadata) {
+            parsedMetadata = {};
+          }
+          parsedMetadata[fieldName] = strVal;
+        }
+      }
+    }
 
     const normalizedPackageCode = packageCode?.toUpperCase() ?? null;
 
@@ -261,7 +319,8 @@ function parseWorkbookFromBuffer(buffer: Buffer): ParsedUpload {
       ...(debitAccountNumber ? { debitAccountNumber } : {}),
       amount,
       ...(tag ? { tag } : {}),
-      ...(remark ? { remark } : {})
+      ...(remark ? { remark } : {}),
+      ...(parsedMetadata ? { metadata: parsedMetadata } : {})
     });
   }
 

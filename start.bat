@@ -1,10 +1,8 @@
 @echo off
-title Future Pay Banking Platform Launcher
-echo ======================================================
-echo           FUTURE PAY BANKING PLATFORM LAUNCHER        
-echo ======================================================
-echo.
-echo Starting all microservices and frontends (API, BFF, Corporate, Bank Ops)...
+title Future Pay Dev Suite
+echo ===================================================
+echo Starting Future Pay Banking Platform Dev Suite...
+echo ===================================================
 echo.
 npm run dev
 pause

@@ -274,6 +274,27 @@ export function TransactionDetailsBody({
         </div>
       </div>
 
+      {transaction.metadata && Object.keys(transaction.metadata).length > 0 && (
+        <div className="ops-static-field" style={{ marginBottom: "20px" }}>
+          <span className="ops-context-label">Metadata</span>
+          <pre style={{
+            background: "rgba(0, 0, 0, 0.03)",
+            border: "1px solid var(--border-subtle, rgba(0, 0, 0, 0.08))",
+            borderRadius: "var(--radius-md, 6px)",
+            padding: "12px",
+            fontSize: "12px",
+            fontFamily: "monospace",
+            overflowX: "auto",
+            margin: "6px 0 0 0",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-all",
+            color: "var(--text-secondary, #4b5563)"
+          }}>
+            {JSON.stringify(transaction.metadata, null, 2)}
+          </pre>
+        </div>
+      )}
+
       <div className="ops-static-field">
         <span className="ops-context-label">Line Items</span>
         {transaction.items.length > 0 ? (

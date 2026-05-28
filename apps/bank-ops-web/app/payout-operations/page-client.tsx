@@ -29,6 +29,7 @@ type PayoutBatch = {
   completedAt: string | null;
   failureReason: string | null;
   items: PayoutItem[];
+  metadata?: Record<string, any> | null;
 };
 
 const DEFAULT_ACTION = {
@@ -255,6 +256,26 @@ export function PayoutOperationsPageClient() {
                   <strong>Batch failure reason</strong>
                   {selectedBatch.failureReason || "No failure reason recorded"}
                 </article>
+                {selectedBatch.metadata && Object.keys(selectedBatch.metadata).length > 0 && (
+                  <article className="detail-card">
+                    <strong>Metadata</strong>
+                    <pre style={{
+                      background: "rgba(0, 0, 0, 0.03)",
+                      border: "1px solid rgba(0, 0, 0, 0.08)",
+                      borderRadius: "6px",
+                      padding: "12px",
+                      fontSize: "12px",
+                      fontFamily: "monospace",
+                      overflowX: "auto",
+                      margin: "6px 0 0 0",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-all",
+                      textAlign: "left"
+                    }}>
+                      {JSON.stringify(selectedBatch.metadata, null, 2)}
+                    </pre>
+                  </article>
+                )}
                 <article className="detail-card">
                   <strong>Payout items</strong>
                   <div className="item-table">

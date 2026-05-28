@@ -176,6 +176,11 @@ await app.register(rateLimit, {
 // CSRF Protection Hook for cookie-authenticated mutating requests (POST, PUT, DELETE, PATCH)
 app.addHook("preHandler", async (request, reply) => {
   if (["POST", "PUT", "DELETE", "PATCH"].includes(request.method)) {
+    // Only enforce CSRF if cookies are present (CSRF only targets cookie-authenticated requests)
+    if (!request.headers.cookie) {
+      return;
+    }
+
     const origin = request.headers.origin || request.headers.referer;
     if (!origin) {
       return reply.status(403).send({ message: "CSRF Protection: Missing Origin or Referer header" });

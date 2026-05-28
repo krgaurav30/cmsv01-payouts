@@ -58,6 +58,7 @@ export type CorporateTenantSettings = {
   updatedAt: string | null;
   updatedByUserId: string | null;
   updatedByRole: string | null;
+  metadataFields: string[] | null;
 };
 
 export type ApprovalMatrix = {
@@ -186,6 +187,7 @@ export type PayoutBatch = {
   timeline: PayoutTimelineEvent[];
   items: PayoutItem[];
   packageCode?: string | null;
+  metadata?: Record<string, any> | null;
 };
 
 export type PayoutFileUpload = {

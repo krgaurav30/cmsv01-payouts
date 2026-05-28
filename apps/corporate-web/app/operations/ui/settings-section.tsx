@@ -152,8 +152,67 @@ export function SettingsSection({
               />
             </label>
           </div>
+        </section>
 
-          <div className="ops-actions">
+        <section className="ops-panel">
+          <div className="ops-panel-head">
+            <div>
+              <h3>Custom Metadata Fields</h3>
+              <p className="ops-panel-desc" style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "4px" }}>
+                Define up to 4 custom metadata fields that will appear as native inputs in your payout creation UI and as spreadsheet columns for bulk uploads.
+              </p>
+            </div>
+          </div>
+
+          <div className="ops-fields two">
+            <label>
+              Field 1 Name
+              <input
+                defaultValue={settings?.metadataFields?.[0] ?? ""}
+                disabled={!canEditSettings}
+                name="metadataField1"
+                placeholder="e.g. Invoice Number"
+                maxLength={40}
+              />
+            </label>
+            <label>
+              Field 2 Name
+              <input
+                defaultValue={settings?.metadataFields?.[1] ?? ""}
+                disabled={!canEditSettings}
+                name="metadataField2"
+                placeholder="e.g. Cost Center"
+                maxLength={40}
+              />
+            </label>
+          </div>
+
+          <div className="ops-fields two">
+            <label>
+              Field 3 Name
+              <input
+                defaultValue={settings?.metadataFields?.[2] ?? ""}
+                disabled={!canEditSettings}
+                name="metadataField3"
+                placeholder="e.g. Department"
+                maxLength={40}
+              />
+            </label>
+            <label>
+              Field 4 Name
+              <input
+                defaultValue={settings?.metadataFields?.[3] ?? ""}
+                disabled={!canEditSettings}
+                name="metadataField4"
+                placeholder="e.g. Project Code"
+                maxLength={40}
+              />
+            </label>
+          </div>
+        </section>
+
+        <section className="ops-panel" style={{ borderTop: "none", paddingTop: "0" }}>
+          <div className="ops-actions" style={{ marginTop: "0" }}>
             <button
               className="ops-button primary"
               disabled={busy || !canEditSettings}

@@ -13,7 +13,8 @@ export const corporateTenantSettingsSchema = z.object({
   maxSingleTransactionAmount: z.number().int().positive(),
   maxDailyCumulativeTransactionAmount: z.number().int().positive(),
   maxBulkUploadRows: z.number().int().positive().max(5000),
-  duplicateReferencePolicy: duplicateReferencePolicySchema
+  duplicateReferencePolicy: duplicateReferencePolicySchema,
+  metadataFields: z.array(z.string().trim()).max(4).optional()
 });
 
 export type DuplicateReferencePolicy = z.infer<typeof duplicateReferencePolicySchema>;
@@ -33,4 +34,5 @@ export type CorporateTenantSettings = {
   updatedAt: number | null;
   updatedByUserId: string | null;
   updatedByRole: string | null;
+  metadataFields: string[] | null;
 };

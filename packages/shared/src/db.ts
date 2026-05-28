@@ -20,7 +20,14 @@ export function getDatabasePool(config: AppConfig) {
       max: config.databaseMaxConnections,
       ssl: {
         rejectUnauthorized: config.dbSslRejectUnauthorized
-      }
+      },
+      idleTimeoutMillis: 15000, // Discard idle connections faster to prevent stale connection errors
+      connectionTimeoutMillis: 10000 // 10s connection timeout fallback
+    });
+
+    // Prevent unhandled error events on idle clients from crashing the Node process
+    pool.on("error", (err) => {
+      console.error("Unexpected error on idle database client:", err);
     });
   }
 

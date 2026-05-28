@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { CorporateDebitAccount } from "../../../lib/types";
 
 type PaymentMethod = {
@@ -85,17 +85,26 @@ function MultiDropdown({
         }}
         style={{
           width: "100%",
-          minHeight: "44px",
+          minHeight: "36px",
+          height: "auto",
           textAlign: "left",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           gap: "10px",
-          padding: "10px 14px",
+          padding: "4px 10px",
           whiteSpace: "normal",
           background: disabled ? "rgba(0, 0, 0, 0.04)" : "var(--surface)",
+          border: open ? "1px solid var(--border-focus)" : "1px solid var(--border)",
+          boxShadow: open ? "0 0 0 2px rgba(37, 99, 235, 0.12)" : "none",
+          borderRadius: "var(--radius-md)",
+          fontSize: "13px",
+          color: "var(--text-primary)",
+          fontFamily: "inherit",
+          outline: "none",
           cursor: disabled ? "not-allowed" : "pointer",
-          opacity: disabled ? 0.7 : 1
+          opacity: disabled ? 0.7 : 1,
+          transition: "border-color 120ms ease, box-shadow 120ms ease"
         }}
       >
         <span
@@ -248,6 +257,47 @@ export function PackagesSection({
   const [toast, setToast] = useState<string | null>(null);
   const [actionMenuItem, setActionMenuItem] = useState<PackageItem | null>(null);
   const [isViewOnly, setIsViewOnly] = useState(false);
+  const packageFormRef = useRef<HTMLDivElement | null>(null);
+
+  // Lock body/documentElement scroll when form is open
+  useEffect(() => {
+    if (showForm) {
+      document.body.style.overflow = "hidden";
+      document.documentElement.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+      document.documentElement.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+      document.documentElement.style.overflow = "";
+    };
+  }, [showForm]);
+
+  // Click outside detection to auto-dismiss sidesheet
+  useEffect(() => {
+    function handleOutsideClick(event: MouseEvent) {
+      if (!showForm) return;
+      if (!(event.target instanceof Node)) return;
+      const target = event.target as HTMLElement;
+
+      // Ignore elements that were unmounted during the click event lifecycle (e.g. toggles, dynamic lists)
+      if (!document.body.contains(target)) return;
+
+      const clickedInside = packageFormRef.current?.contains(target);
+      const clickedOnToggleBtn = target.closest('[data-sidesheet-toggle="package"]');
+      if (!clickedInside && !clickedOnToggleBtn) {
+        cancelEditing();
+      }
+    }
+    if (showForm) {
+      document.addEventListener("mousedown", handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+    };
+  }, [showForm]);
+
 
   useEffect(() => {
     if (toast) {
@@ -297,6 +347,17 @@ export function PackagesSection({
   const [defaultDebitAccountId, setDefaultDebitAccountId] = useState("");
   const [maxPaymentsPerBatch, setMaxPaymentsPerBatch] = useState(1000);
   const [bulkApproveEnabled, setBulkApproveEnabled] = useState(false);
+
+  // Prevent browser focus/click event auto-scrolling issues inside the fixed-position sidesheet
+  useEffect(() => {
+    if (showForm && packageFormRef.current) {
+      packageFormRef.current.scrollTop = 0;
+      const form = packageFormRef.current.querySelector("form");
+      if (form) {
+        form.scrollTop = 0;
+      }
+    }
+  }, [showForm, bulkApproveEnabled]);
 
   async function copyText(text: string) {
     try {
@@ -515,44 +576,33 @@ export function PackagesSection({
   return (
     <section className={isNested ? "" : "ops-page active"} style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       {toast ? (
-        <div
-          style={{
-            position: "sticky",
-            top: "12px",
-            zIndex: 30,
-            background: toast.toLowerCase().includes("error") || toast.toLowerCase().includes("failed") || toast.toLowerCase().includes("trace")
-              ? "var(--danger-soft)"
-              : "var(--success-soft)",
-            color: toast.toLowerCase().includes("error") || toast.toLowerCase().includes("failed") || toast.toLowerCase().includes("trace")
-              ? "var(--danger)"
-              : "var(--success)",
-            border: toast.toLowerCase().includes("error") || toast.toLowerCase().includes("failed") || toast.toLowerCase().includes("trace")
-              ? "1px solid var(--danger-border)"
-              : "1px solid var(--success-border)",
-            borderRadius: "12px",
-            padding: "12px 16px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            boxShadow: "var(--shadow-md)"
-          }}
+        <section 
+          className={`ops-banner ${
+            toast.toLowerCase().includes("error") || toast.toLowerCase().includes("failed") || toast.toLowerCase().includes("trace")
+              ? "ops-banner-error"
+              : "ops-banner-success"
+          }`}
         >
-          <span>{toast}</span>
+          <p>{toast}</p>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             {toast.toLowerCase().includes("error") || toast.toLowerCase().includes("failed") || toast.toLowerCase().includes("trace") ? (
               <button
                 type="button"
-                className="ops-mini"
+                className="ops-banner-close"
                 onClick={() => void copyText(toast)}
               >
                 Copy
               </button>
             ) : null}
-            <button type="button" className="ops-mini" onClick={() => setToast(null)}>
+            <button 
+              type="button" 
+              className="ops-banner-close" 
+              onClick={() => setToast(null)}
+            >
               Dismiss
             </button>
           </div>
-        </div>
+        </section>
       ) : null}
 
 
@@ -566,6 +616,7 @@ export function PackagesSection({
           {(!showForm && !canEdit) ? null : (
             <button
               className="ops-button primary"
+              data-sidesheet-toggle="package"
               type="button"
               onClick={() => {
                 if (showForm) {
@@ -583,165 +634,7 @@ export function PackagesSection({
           )}
         </div>
 
-        {showForm ? (
-        <form className="ops-form" onSubmit={submit}>
-          <div className="ops-fields two">
-            <label>
-              Package Code
-              <input value={packageCode} onChange={(e) => setPackageCode(e.target.value)} required disabled={isViewOnly} />
-            </label>
-            <label>
-              Name
-              <input value={name} onChange={(e) => setName(e.target.value)} required disabled={isViewOnly} />
-            </label>
-          </div>
 
-          <div className="ops-fields three">
-            <label>
-              Use Case
-              <select value={useCase} onChange={(e) => setUseCase(e.target.value as "vendor_payments" | "salary" | "statutory")} disabled={isViewOnly}>
-                <option value="vendor_payments">vendor_payments</option>
-                <option value="salary">salary</option>
-                <option value="statutory">statutory</option>
-              </select>
-            </label>
-            <label>
-              Max Payments Per Batch
-              <input type="number" min={1} value={maxPaymentsPerBatch} onChange={(e) => setMaxPaymentsPerBatch(Number(e.target.value))} disabled={isViewOnly} />
-            </label>
-            <label>
-              Status
-              <input value="active" disabled />
-            </label>
-          </div>
-
-          <div className="ops-fields two">
-            <label>
-              Allowed Beneficiary Types
-              <MultiDropdown
-                label="beneficiary types"
-                options={[
-                  { value: "vendor", label: "Vendor" },
-                  { value: "employee", label: "Employee" },
-                  { value: "statutory", label: "Statutory" }
-                ]}
-                values={allowedBeneficiaryTypes}
-                onChange={setAllowedBeneficiaryTypes}
-                disabled={isViewOnly}
-              />
-            </label>
-            <label>
-              Allowed Payment Methods
-              <MultiDropdown
-                label="payment methods"
-                options={allowedPaymentMethodOptions}
-                values={paymentMethodCodes}
-                onChange={setPaymentMethodCodes}
-                disabled={isViewOnly}
-              />
-            </label>
-          </div>
-
-          <div className="ops-fields two">
-            <label>
-              Default Payment Method
-              <select value={defaultPaymentMethodCode} onChange={(e) => setDefaultPaymentMethodCode(e.target.value)} required disabled={isViewOnly}>
-                <option value="">Select</option>
-                {defaultMethodOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Allowed Debit Accounts
-              <MultiDropdown
-                label="debit accounts"
-                options={allowedDebitAccountOptions}
-                values={debitAccountIds}
-                onChange={setDebitAccountIds}
-                disabled={isViewOnly}
-              />
-            </label>
-          </div>
-
-          <div className="ops-fields two">
-            <label>
-              Default Debit Account
-              <select value={defaultDebitAccountId} onChange={(e) => setDefaultDebitAccountId(e.target.value)} disabled={isViewOnly}>
-                <option value="">None</option>
-                {defaultDebitOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Allowed Debit Mode
-              <select value={debitModeAllowed} onChange={(e) => setDebitModeAllowed(e.target.value)} disabled={isViewOnly}>
-                <option value="single">Single</option>
-                <option value="multi">Multi</option>
-              </select>
-            </label>
-          </div>
-
-          <div className="ops-fields two">
-            <label>
-              Allowed File Failure Handling
-              <select value={fileRejectionMode} onChange={(e) => setFileRejectionMode(e.target.value)} disabled={isViewOnly}>
-                <option value="fail_full_file">Fail Full File</option>
-                <option value="reject_invalid_rows">Reject Invalid Rows</option>
-              </select>
-            </label>
-            <label>
-              Bulk Approval
-              <label className="ops-toggle" style={{ cursor: isViewOnly ? "not-allowed" : "pointer" }}>
-                <input
-                  checked={bulkApproveEnabled}
-                  onChange={(e) => setBulkApproveEnabled(e.target.checked)}
-                  type="checkbox"
-                  disabled={isViewOnly}
-                />
-                <span className="ops-toggle-track" style={{ opacity: isViewOnly ? 0.7 : 1 }}>
-                  <span className="ops-toggle-thumb" />
-                </span>
-                <span className="ops-toggle-label">{bulkApproveEnabled ? "Enabled" : "Disabled"}</span>
-              </label>
-            </label>
-          </div>
-
-          <label>
-            Description
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} disabled={isViewOnly} />
-          </label>
-
-          {msg ? <p className="ops-meta">{msg}</p> : null}
-          <div className="ops-actions">
-            {isViewOnly ? (
-              <button className="ops-button secondary" type="button" onClick={cancelEditing}>
-                Close
-              </button>
-            ) : (
-              <>
-                <button className="ops-button primary" type="submit">
-                  {editing ? "Save package" : "Create package"}
-                </button>
-                {editing ? (
-                  <button className="ops-button" type="button" onClick={cancelEditing}>
-                    Cancel
-                  </button>
-                ) : (
-                  <button className="ops-button" type="button" onClick={resetForm}>
-                    Reset
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-        </form>
-        ) : null}
 
         <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end" }}>
           <label style={{ minWidth: "160px", flex: 1 }}>
@@ -839,6 +732,7 @@ export function PackagesSection({
                                   <button
                                     type="button"
                                     className="ops-action-item"
+                                    data-sidesheet-toggle="package"
                                     onClick={() => {
                                       setIsViewOnly(true);
                                       beginEdit(item);
@@ -851,6 +745,7 @@ export function PackagesSection({
                                       <button
                                         type="button"
                                         className="ops-action-item"
+                                        data-sidesheet-toggle="package"
                                         onClick={() => {
                                           setIsViewOnly(false);
                                           beginEdit(item);
@@ -892,6 +787,254 @@ export function PackagesSection({
           </table>
         </div>
       </section>
+
+      {showForm && (canEdit || isViewOnly) ? (
+        <div 
+          className="ops-create-sidesheet-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              cancelEditing();
+            }
+          }}
+        >
+          <div className="ops-create-sidesheet" ref={packageFormRef}>
+            <form 
+              className="ops-form" 
+              onSubmit={submit}
+              style={{ display: "flex", flexDirection: "column", height: "100%", gap: 0 }}
+            >
+              {/* Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "1px solid var(--border)", paddingBottom: "16px", marginBottom: "20px" }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 600, color: "var(--text-primary)", letterSpacing: "-0.01em" }}>
+                    {isViewOnly ? "View Package" : editing ? "Edit Package" : "Create New Package"}
+                  </h3>
+                  <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--text-secondary)", lineHeight: "1.4" }}>
+                    {isViewOnly ? "Details of this payment package." : "Configure code, use case, debit accounts, and rules for this package."}
+                  </p>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={cancelEditing} 
+                  style={{ background: "none", border: "none", color: "var(--text-tertiary)", fontSize: "20px", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  title="Close form"
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* Scrollable Body */}
+              <div style={{ flex: 1, overflowY: "auto", paddingRight: "4px", display: "flex", flexDirection: "column", gap: "20px" }}>
+                <div className="ops-fields one" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Package Code
+                    <input 
+                      value={packageCode} 
+                      onChange={(e) => setPackageCode(e.target.value)} 
+                      required 
+                      disabled={isViewOnly} 
+                      style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Name
+                    <input 
+                      value={name} 
+                      onChange={(e) => setName(e.target.value)} 
+                      required 
+                      disabled={isViewOnly} 
+                      style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Use Case
+                    <select 
+                      value={useCase} 
+                      onChange={(e) => setUseCase(e.target.value as "vendor_payments" | "salary" | "statutory")} 
+                      disabled={isViewOnly}
+                      style={{ background: "var(--surface)", height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    >
+                      <option value="vendor_payments">vendor_payments</option>
+                      <option value="salary">salary</option>
+                      <option value="statutory">statutory</option>
+                    </select>
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Max Payments Per Batch
+                    <input 
+                      type="number" 
+                      min={1} 
+                      value={maxPaymentsPerBatch} 
+                      onChange={(e) => setMaxPaymentsPerBatch(Number(e.target.value))} 
+                      disabled={isViewOnly} 
+                      style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Allowed Beneficiary Types
+                    <MultiDropdown
+                      label="beneficiary types"
+                      options={[
+                        { value: "vendor", label: "Vendor" },
+                        { value: "employee", label: "Employee" },
+                        { value: "statutory", label: "Statutory" }
+                      ]}
+                      values={allowedBeneficiaryTypes}
+                      onChange={setAllowedBeneficiaryTypes}
+                      disabled={isViewOnly}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Allowed Payment Methods
+                    <MultiDropdown
+                      label="payment methods"
+                      options={allowedPaymentMethodOptions}
+                      values={paymentMethodCodes}
+                      onChange={setPaymentMethodCodes}
+                      disabled={isViewOnly}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Default Payment Method
+                    <select 
+                      value={defaultPaymentMethodCode} 
+                      onChange={(e) => setDefaultPaymentMethodCode(e.target.value)} 
+                      required 
+                      disabled={isViewOnly}
+                      style={{ background: "var(--surface)", height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    >
+                      <option value="">Select</option>
+                      {defaultMethodOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Allowed Debit Accounts
+                    <MultiDropdown
+                      label="debit accounts"
+                      options={allowedDebitAccountOptions}
+                      values={debitAccountIds}
+                      onChange={setDebitAccountIds}
+                      disabled={isViewOnly}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Default Debit Account
+                    <select 
+                      value={defaultDebitAccountId} 
+                      onChange={(e) => setDefaultDebitAccountId(e.target.value)} 
+                      disabled={isViewOnly}
+                      style={{ background: "var(--surface)", height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    >
+                      <option value="">None</option>
+                      {defaultDebitOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Allowed Debit Mode
+                    <select 
+                      value={debitModeAllowed} 
+                      onChange={(e) => setDebitModeAllowed(e.target.value)} 
+                      disabled={isViewOnly}
+                      style={{ background: "var(--surface)", height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    >
+                      <option value="single">Single</option>
+                      <option value="multi">Multi</option>
+                    </select>
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Allowed File Failure Handling
+                    <select 
+                      value={fileRejectionMode} 
+                      onChange={(e) => setFileRejectionMode(e.target.value)} 
+                      disabled={isViewOnly}
+                      style={{ background: "var(--surface)", height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    >
+                      <option value="fail_full_file">Fail Full File</option>
+                      <option value="reject_invalid_rows">Reject Invalid Rows</option>
+                    </select>
+                  </label>
+                  <div style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Bulk Approval
+                    <label className="ops-toggle" style={{ position: "relative", cursor: isViewOnly ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: "8px", marginTop: "4px" }}>
+                      <input
+                        checked={bulkApproveEnabled}
+                        onChange={(e) => setBulkApproveEnabled(e.target.checked)}
+                        type="checkbox"
+                        disabled={isViewOnly}
+                      />
+                      <span className="ops-toggle-track" style={{ opacity: isViewOnly ? 0.7 : 1 }}>
+                        <span className="ops-toggle-thumb" />
+                      </span>
+                      <span className="ops-toggle-label" style={{ fontSize: "12px" }}>{bulkApproveEnabled ? "Enabled" : "Disabled"}</span>
+                    </label>
+                  </div>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Description
+                    <textarea 
+                      value={description} 
+                      onChange={(e) => setDescription(e.target.value)} 
+                      disabled={isViewOnly} 
+                      style={{ minHeight: "80px", padding: "8px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px", fontFamily: "inherit" }}
+                    />
+                  </label>
+                </div>
+                {msg ? <p className="ops-meta" style={{ color: "var(--danger)" }}>{msg}</p> : null}
+              </div>
+
+              {/* Footer */}
+              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "16px", marginTop: "20px", display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                {isViewOnly ? (
+                  <button 
+                    className="ops-button secondary" 
+                    type="button" 
+                    onClick={cancelEditing}
+                    style={{ height: "38px", padding: "0 16px", borderRadius: "6px" }}
+                  >
+                    Close
+                  </button>
+                ) : (
+                  <>
+                    <button 
+                      className="ops-button primary" 
+                      type="submit"
+                      style={{ height: "38px", padding: "0 18px", borderRadius: "6px", fontWeight: 600 }}
+                    >
+                      {editing ? "Save package" : "Create package"}
+                    </button>
+                    {editing ? (
+                      <button 
+                        className="ops-button" 
+                        type="button" 
+                        onClick={cancelEditing}
+                        style={{ height: "38px", padding: "0 16px", borderRadius: "6px" }}
+                      >
+                        Cancel
+                      </button>
+                    ) : (
+                      <button 
+                        className="ops-button" 
+                        type="button" 
+                        onClick={resetForm}
+                        style={{ height: "38px", padding: "0 16px", borderRadius: "6px" }}
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

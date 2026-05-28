@@ -177,13 +177,14 @@ function CompactMultiDropdown({
         onClick={() => !disabled && setOpen((current) => !current)}
         style={{
           width: "100%",
-          height: "36px",
+          minHeight: "36px",
+          height: "auto",
           textAlign: "left",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           gap: "10px",
-          padding: "0 10px",
+          padding: "4px 10px",
           whiteSpace: "normal",
           background: "var(--surface)",
           border: open ? "1px solid var(--border-focus)" : "1px solid var(--border)",
@@ -483,6 +484,12 @@ export function OperationsDashboard({
   const autoRefreshInFlightRef = useRef(false);
   const latestSessionRef = useRef<CorporateSession | null>(initialSession);
   const latestCorporateIdRef = useRef(initialData.selectedCorporateId);
+  const transactionCreateRef = useRef<HTMLDivElement | null>(null);
+  const transactionBulkUploadRef = useRef<HTMLDivElement | null>(null);
+  const beneficiaryCreateRef = useRef<HTMLDivElement | null>(null);
+  const roleCreateRef = useRef<HTMLDivElement | null>(null);
+  const userCreateRef = useRef<HTMLDivElement | null>(null);
+  const approvalMatrixCreateRef = useRef<HTMLDivElement | null>(null);
 
   const [session, setSession] = useState<CorporateSession | null>(initialSession);
   const [loading, setLoading] = useState(() => {
@@ -626,6 +633,7 @@ export function OperationsDashboard({
   const [selectedTransactionDebitAccountId, setSelectedTransactionDebitAccountId] = useState("");
   const [selectedTransactionPaymentMethodCode, setSelectedTransactionPaymentMethodCode] =
     useState("");
+  const [metadataExpanded, setMetadataExpanded] = useState(false);
 
   const [beneficiarySearch, setBeneficiarySearch] = useState("");
   const [beneficiaryStatusFilter, setBeneficiaryStatusFilter] = useState("");
@@ -1400,6 +1408,97 @@ export function OperationsDashboard({
       document.removeEventListener("mousedown", handleDocumentClick);
     };
   }, []);
+
+  useEffect(() => {
+    function handleOutsideClick(event: MouseEvent) {
+      if (!(event.target instanceof Node)) return;
+      const target = event.target as HTMLElement;
+
+      // 1. Close single transaction create sidesheet if click is outside of it
+      if (showTransactionCreate) {
+        const clickedInsideCreate = transactionCreateRef.current?.contains(target);
+        const clickedOnToggleBtn = target.closest('[data-sidesheet-toggle="create"]');
+        if (!clickedInsideCreate && !clickedOnToggleBtn) {
+          setShowTransactionCreate(false);
+        }
+      }
+
+      // 2. Close bulk upload sidesheet if click is outside of it
+      if (showTransactionBulkUpload) {
+        const clickedInsideBulk = transactionBulkUploadRef.current?.contains(target);
+        const clickedOnToggleBtn = target.closest('[data-sidesheet-toggle="bulk"]');
+        if (!clickedInsideBulk && !clickedOnToggleBtn) {
+          setShowTransactionBulkUpload(false);
+        }
+      }
+
+      // 3. Close beneficiary creation sidesheet if click is outside of it
+      if (showBeneficiaryCreate) {
+        const clickedInsideBene = beneficiaryCreateRef.current?.contains(target);
+        const clickedOnToggleBtn = target.closest('[data-sidesheet-toggle="bene"]');
+        if (!clickedInsideBene && !clickedOnToggleBtn) {
+          setShowBeneficiaryCreate(false);
+          setEditingBeneficiaryId(null);
+          setIsBeneficiaryViewOnly(false);
+          setBeneficiaryPackageCodes([]);
+          setBeneIdError("");
+        }
+      }
+
+      // 4. Close role creation sidesheet if click is outside of it
+      if (showRoleCreate) {
+        const clickedInsideRole = roleCreateRef.current?.contains(target);
+        const clickedOnToggleBtn = target.closest('[data-sidesheet-toggle="role"]');
+        if (!clickedInsideRole && !clickedOnToggleBtn) {
+          setShowRoleCreate(false);
+          setEditingRoleId(null);
+          setIsRoleViewOnly(false);
+        }
+      }
+
+      // 5. Close user creation sidesheet if click is outside of it
+      if (showUserCreate) {
+        const clickedInsideUser = userCreateRef.current?.contains(target);
+        const clickedOnToggleBtn = target.closest('[data-sidesheet-toggle="user"]');
+        if (!clickedInsideUser && !clickedOnToggleBtn) {
+          setShowUserCreate(false);
+        }
+      }
+
+      // 6. Close approval matrix creation sidesheet if click is outside of it
+      if (showApprovalMatrixCreate) {
+        const clickedInsideMatrix = approvalMatrixCreateRef.current?.contains(target);
+        const clickedOnToggleBtn = target.closest('[data-sidesheet-toggle="matrix"]');
+        if (!clickedInsideMatrix && !clickedOnToggleBtn) {
+          setShowApprovalMatrixCreate(false);
+          setEditingApprovalMatrixId(null);
+          setIsMatrixViewOnly(false);
+        }
+      }
+    }
+
+    const isAnyOpen =
+      showTransactionCreate ||
+      showTransactionBulkUpload ||
+      showBeneficiaryCreate ||
+      showRoleCreate ||
+      showUserCreate ||
+      showApprovalMatrixCreate;
+
+    if (isAnyOpen) {
+      document.addEventListener("mousedown", handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+    };
+  }, [
+    showTransactionCreate,
+    showTransactionBulkUpload,
+    showBeneficiaryCreate,
+    showRoleCreate,
+    showUserCreate,
+    showApprovalMatrixCreate
+  ]);
 
   useEffect(() => {
     if (!session) {
@@ -2582,6 +2681,20 @@ export function OperationsDashboard({
     const formData = new FormData(form);
     const batchId = cryptoAvailableUuid();
     const beneficiaryId = String(formData.get("beneficiaryId"));
+
+    const metadata: Record<string, any> = {};
+    if (settings?.metadataFields && settings.metadataFields.length > 0) {
+      settings.metadataFields.forEach((fieldName, index) => {
+        const val = formData.get(`metadata_field_${index}`);
+        if (val !== null && val !== undefined) {
+          const strVal = String(val).trim();
+          if (strVal) {
+            metadata[fieldName] = strVal;
+          }
+        }
+      });
+    }
+
     const payload = {
       batchId,
       bankTenantId: session.bankTenantId,
@@ -2594,6 +2707,7 @@ export function OperationsDashboard({
       title: String(formData.get("transactionReference")),
       tag: optionalText(formData.get("tag")),
       remark: optionalText(formData.get("remark")),
+      ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
       items: [
         {
           itemId: createSimpleId("ITEM"),
@@ -3308,7 +3422,13 @@ export function OperationsDashboard({
       maxBulkUploadRows: Number(formData.get("maxBulkUploadRows") ?? 0),
       duplicateReferencePolicy: formData.get("duplicateReferencePolicy") === "on"
         ? "enabled"
-        : "disabled"
+        : "disabled",
+      metadataFields: [
+        String(formData.get("metadataField1") ?? "").trim(),
+        String(formData.get("metadataField2") ?? "").trim(),
+        String(formData.get("metadataField3") ?? "").trim(),
+        String(formData.get("metadataField4") ?? "").trim()
+      ].filter(Boolean)
     });
     setBusy(false);
 
@@ -3332,6 +3452,38 @@ export function OperationsDashboard({
   function navigateToSection(section: SectionId) {
     router.push(`/operations/${section}`);
   }
+
+  // Lock body scroll when a sidesheet is open to prevent double scrollbars
+  useEffect(() => {
+    const isAnySidesheetOpen =
+      showTransactionCreate ||
+      showTransactionBulkUpload ||
+      !!activeTimelineId ||
+      showBeneficiaryCreate ||
+      showUserCreate ||
+      showRoleCreate ||
+      showApprovalMatrixCreate;
+
+    if (isAnySidesheetOpen) {
+      document.body.style.overflow = "hidden";
+      document.documentElement.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+      document.documentElement.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+      document.documentElement.style.overflow = "";
+    };
+  }, [
+    showTransactionCreate,
+    showTransactionBulkUpload,
+    activeTimelineId,
+    showBeneficiaryCreate,
+    showUserCreate,
+    showRoleCreate,
+    showApprovalMatrixCreate
+  ]);
 
   if (loading || !session) {
     return (
@@ -3743,6 +3895,7 @@ export function OperationsDashboard({
                         setShowTransactionCreate(true);
                         navigateToSection("transactions");
                       }}
+                      data-sidesheet-toggle="create"
                       className="ops-quick-action-btn"
                       type="button"
                     >
@@ -3757,6 +3910,7 @@ export function OperationsDashboard({
                         setShowTransactionBulkUpload(true);
                         navigateToSection("transactions");
                       }}
+                      data-sidesheet-toggle="bulk"
                       className="ops-quick-action-btn"
                       type="button"
                     >
@@ -3840,6 +3994,7 @@ export function OperationsDashboard({
                     <>
                       <button
                         className="ops-button secondary"
+                        data-sidesheet-toggle="bulk"
                         onClick={() => setShowTransactionBulkUpload((current) => !current)}
                         type="button"
                       >
@@ -3847,6 +4002,7 @@ export function OperationsDashboard({
                       </button>
                       <button
                         className="ops-button primary"
+                        data-sidesheet-toggle="create"
                         onClick={() => setShowTransactionCreate((current) => !current)}
                         type="button"
                       >
@@ -3856,161 +4012,6 @@ export function OperationsDashboard({
                   ) : null}
                 </div>
               </div>
-
-              {showTransactionBulkUpload && isTransactionMaker ? (
-                <div className="ops-drawer">
-                  <form className="ops-form" onSubmit={handleBulkTransactionUpload}>
-                    <div className="ops-fields one">
-                      <label>
-                        Upload Excel file
-                        <input accept=".xlsx,.xls" name="file" required type="file" />
-                      </label>
-                    </div>
-                    <p className="ops-meta">
-                      Required columns: Package Code, Transaction Reference, Beneficiary ID, Amount. Optional columns: Payment Method Code, Debit Account Number, Tag, Remark
-                    </p>
-                    <div className="ops-actions">
-                      <a
-                        className="ops-button secondary ops-link-button"
-                        href={`/api/payouts/bulk-upload/template${
-                          selectedTransactionPackageCode
-                            ? `?packageCode=${encodeURIComponent(selectedTransactionPackageCode)}`
-                            : ""
-                        }${
-                          selectedTransactionPaymentMethodCode
-                            ? `${selectedTransactionPackageCode ? "&" : "?"}paymentMethodCode=${encodeURIComponent(selectedTransactionPaymentMethodCode)}`
-                            : ""
-                        }${
-                          selectedTransactionDebitAccount?.accountNumber
-                            ? `${selectedTransactionPackageCode || selectedTransactionPaymentMethodCode ? "&" : "?"}debitAccountNumber=${encodeURIComponent(
-                                selectedTransactionDebitAccount.accountNumber
-                              )}`
-                            : ""
-                        }`}
-                      >
-                        Download template
-                      </a>
-                      <button className="ops-button primary" disabled={busy} type="submit">
-                        {busy ? "Uploading..." : "Upload and create"}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              ) : null}
-
-              {showTransactionCreate && isTransactionMaker ? (
-                <div className="ops-drawer">
-                  <form className="ops-form" onSubmit={handleTransactionSubmit}>
-                    <div className="ops-fields three">
-                      <label>
-                        Package
-                        <select
-                          name="packageCode"
-                          required={true}
-                          value={selectedTransactionPackageCode}
-                          onChange={(event) => {
-                            setSelectedTransactionPackageCode(event.target.value);
-                            setSelectedTransactionDebitAccountId("");
-                            setSelectedTransactionPaymentMethodCode("");
-                          }}
-                        >
-                          <option value="">Select package</option>
-                          {transactionPackageOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        Debit Account
-                        <select
-                          name="debitAccountId"
-                          required={true}
-                          value={selectedTransactionDebitAccountId}
-                          onChange={(event) =>
-                            setSelectedTransactionDebitAccountId(event.target.value)
-                          }
-                        >
-                          <option value="">Select debit account</option>
-                          {selectedTransactionDebitAccounts.map((account) => (
-                            <option key={account.debitAccountId} value={account.debitAccountId}>
-                              {account.accountName} ({account.accountNumber})
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        Payment Method
-                        <select
-                          name="paymentMethodCode"
-                          required={true}
-                          value={selectedTransactionPaymentMethodCode}
-                          onChange={(event) =>
-                            setSelectedTransactionPaymentMethodCode(event.target.value)
-                          }
-                        >
-                          <option value="">Select payment method</option>
-                          {selectedTransactionPaymentMethods.map((methodCode) => (
-                            <option key={methodCode} value={methodCode}>
-                              {methodCode}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                    <div className="ops-fields two">
-                      <label>
-                        Transaction Reference
-                        <input
-                          name="transactionReference"
-                          placeholder="INV-2026-000143"
-                          required
-                        />
-                      </label>
-                      <label>
-                        Beneficiary Name
-                        <select name="beneficiaryId" required>
-                          {packageAwareBeneficiaries.map((beneficiary) => (
-                            <option key={beneficiary.beneficiaryId} value={beneficiary.beneficiaryId}>
-                              {beneficiary.name} ({beneficiary.beneficiaryId})
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-
-                    <div className="ops-fields three">
-                      <label>
-                        Amount (INR)
-                        <input
-                          inputMode="decimal"
-                          min="1"
-                          name="amount"
-                          placeholder="1000.00"
-                          step="0.01"
-                          type="number"
-                          required
-                        />
-                      </label>
-                      <label>
-                        Tag
-                        <input name="tag" placeholder="salary, vendor, reimbursements" />
-                      </label>
-                      <label>
-                        Remark
-                        <input name="remark" placeholder="Optional internal note" />
-                      </label>
-                    </div>
-
-                    <div className="ops-actions">
-                      <button className="ops-button primary" disabled={busy} type="submit">
-                        {busy ? "Submitting..." : "Create and submit"}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              ) : null}
 
               <div className="ops-toolbar" style={{ marginTop: "12px", display: "flex", alignItems: "end", gap: "12px", flexWrap: "wrap" }}>
                 <div style={{ position: "relative" }}>
@@ -4252,6 +4253,7 @@ export function OperationsDashboard({
                   {isTransactionMaker ? (
                     <button
                       className="ops-button primary"
+                      data-sidesheet-toggle="bulk"
                       onClick={() => setShowTransactionBulkUpload((current) => !current)}
                       type="button"
                     >
@@ -4260,33 +4262,6 @@ export function OperationsDashboard({
                   ) : null}
                 </div>
               </div>
-
-              {showTransactionBulkUpload && isTransactionMaker ? (
-                <div className="ops-drawer">
-                  <form className="ops-form" onSubmit={handleBulkTransactionUpload}>
-                    <div className="ops-fields one">
-                      <label>
-                        Upload Excel file
-                        <input accept=".xlsx,.xls" name="file" required type="file" />
-                      </label>
-                    </div>
-                    <p className="ops-meta">
-                      Required columns: Transaction Reference, Beneficiary Name, Amount, Tag, Remark
-                    </p>
-                    <div className="ops-actions">
-                      <a
-                        className="ops-button secondary ops-link-button"
-                        href="/api/payouts/bulk-upload/template"
-                      >
-                        Download template
-                      </a>
-                      <button className="ops-button primary" disabled={busy} type="submit">
-                        {busy ? "Uploading..." : "Upload and create"}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              ) : null}
 
               <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0" }}>
                 <div style={{ position: "relative" }}>
@@ -4501,6 +4476,7 @@ export function OperationsDashboard({
                   {isBeneficiaryMaker ? (
                     <button
                       className="ops-button primary"
+                      data-sidesheet-toggle="bene"
                       onClick={() => {
                         if (showBeneficiaryCreate) {
                           setShowBeneficiaryCreate(false);
@@ -4522,163 +4498,7 @@ export function OperationsDashboard({
                 </div>
               </div>
 
-              {showBeneficiaryCreate && (isBeneficiaryMaker || isBeneficiaryViewOnly) ? (
-                <div className="ops-drawer">
-                  <form
-                    className="ops-form"
-                    key={editingBeneficiary?.beneficiaryId ?? "beneficiary-create"}
-                    onSubmit={handleBeneficiarySubmit}
-                  >
-                    <div className="ops-fields two">
-                      <label>
-                        Bene ID
-                        <input
-                          defaultValue={editingBeneficiary?.beneficiaryId ?? ""}
-                          name="beneficiaryId"
-                          placeholder="KUMAR123"
-                          required
-                          disabled={Boolean(editingBeneficiary) || isBeneficiaryViewOnly}
-                          onChange={(e) => handleBeneIdChange(e.target.value)}
-                          style={beneIdError ? { borderColor: "#DC2626" } : undefined}
-                        />
-                        {beneIdError ? (
-                          <span style={{ color: "#DC2626", fontSize: "12px", marginTop: "4px", display: "block", fontWeight: 500 }}>
-                            {beneIdError}
-                          </span>
-                        ) : null}
-                      </label>
-                      <label>
-                        Bene Name
-                        <input
-                          defaultValue={editingBeneficiary?.name ?? ""}
-                          name="name"
-                          placeholder="Orbit Vendor Services"
-                          required
-                          disabled={isBeneficiaryViewOnly}
-                        />
-                      </label>
-                    </div>
 
-                    <div className="ops-fields three">
-                      <label>
-                        Bene Bank Account Number
-                        <input
-                          defaultValue={editingBeneficiary?.accountNumber ?? ""}
-                          name="accountNumber"
-                          placeholder="409876543210"
-                          required
-                          disabled={isBeneficiaryViewOnly}
-                        />
-                      </label>
-                      <label>
-                        Bene IFSC Code
-                        <input
-                          defaultValue={editingBeneficiary?.ifsc ?? ""}
-                          name="ifsc"
-                          placeholder="HDFC0001234"
-                          required
-                          disabled={isBeneficiaryViewOnly}
-                        />
-                      </label>
-                      <label>
-                        Bene Phone Number
-                        <input
-                          defaultValue={editingBeneficiary?.phoneNumber ?? ""}
-                          name="phoneNumber"
-                          placeholder="+91 9876543210"
-                          required
-                          disabled={isBeneficiaryViewOnly}
-                        />
-                      </label>
-                    </div>
-
-                    <div className="ops-fields one">
-                      <label>
-                        Packages
-                        <CompactMultiDropdown
-                          label="beneficiary packages"
-                          options={(() => {
-                            const activePkgs = packages.filter((p) => (p.status ?? "active") === "active");
-                            const activeSubs = subscriptions.filter((s) => s.status === "active");
-                            const list = activePkgs.length > 0 ? activePkgs : activeSubs;
-                            return list.map((item) => ({
-                              value: item.packageCode,
-                              label: `${item.name || item.displayName || item.packageCode} (${item.packageCode})`
-                            }));
-                          })()}
-                          values={beneficiaryPackageCodes}
-                          onChange={setBeneficiaryPackageCodes}
-                          placeholder="Attach packages"
-                          disabled={isBeneficiaryViewOnly}
-                        />
-                      </label>
-                    </div>
-
-                    <div className="ops-fields one">
-                      <label>
-                        Tags
-                        <input name="tags" placeholder="Optional, comma separated" disabled={isBeneficiaryViewOnly} />
-                      </label>
-                    </div>
-
-                    <div className="ops-actions">
-                      {isBeneficiaryViewOnly ? (
-                        <button
-                          className="ops-button secondary"
-                          type="button"
-                          onClick={() => {
-                            setShowBeneficiaryCreate(false);
-                            setEditingBeneficiaryId(null);
-                            setIsBeneficiaryViewOnly(false);
-                            setBeneficiaryPackageCodes([]);
-                            setBeneIdError("");
-                          }}
-                        >
-                          Close
-                        </button>
-                      ) : (
-                        <>
-                          <button className="ops-button primary" disabled={busy} type="submit">
-                            {busy
-                              ? "Saving..."
-                              : editingBeneficiary
-                                ? "Save beneficiary"
-                                : "Create beneficiary"}
-                          </button>
-                          {editingBeneficiary ? (
-                            <button
-                              className="ops-button"
-                              disabled={busy}
-                              type="button"
-                              onClick={() => {
-                                setShowBeneficiaryCreate(false);
-                                setEditingBeneficiaryId(null);
-                                setBeneficiaryPackageCodes([]);
-                                setBeneIdError("");
-                              }}
-                            >
-                              Cancel
-                            </button>
-                          ) : (
-                            <button
-                              className="ops-button"
-                              disabled={busy}
-                              type="button"
-                              onClick={() => {
-                                setBeneficiaryPackageCodes([]);
-                                setShowBeneficiaryCreate(false);
-                                setBeneIdError("");
-                              }}
-                            >
-                              Reset
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </form>
-                </div>
-              ) : null}
 
               <div className="ops-toolbar ops-fields three">
                 <label>
@@ -4829,7 +4649,7 @@ export function OperationsDashboard({
                                   <button
                                     type="button"
                                     className="ops-action-item"
-                                    onClick={() => beginViewBeneficiary(beneficiary)}
+                                    data-sidesheet-toggle="bene" onClick={() => beginViewBeneficiary(beneficiary)}
                                   >
                                     View
                                   </button>
@@ -4838,7 +4658,7 @@ export function OperationsDashboard({
                                       <button
                                         type="button"
                                         className="ops-action-item"
-                                        onClick={() => beginEditBeneficiary(beneficiary)}
+                                        data-sidesheet-toggle="bene" onClick={() => beginEditBeneficiary(beneficiary)}
                                       >
                                         Edit
                                       </button>
@@ -5472,6 +5292,7 @@ export function OperationsDashboard({
                 {isRoleMaker ? (
                   <button
                     className="ops-button primary"
+                    data-sidesheet-toggle="matrix"
                     onClick={() => {
                       if (showApprovalMatrixCreate) {
                         setEditingApprovalMatrixId(null);
@@ -5485,223 +5306,7 @@ export function OperationsDashboard({
                 ) : null}
               </div>
 
-              {showApprovalMatrixCreate && (isRoleMaker || isMatrixViewOnly) ? (
-                <div className="ops-drawer">
-                  <form
-                    className="ops-form"
-                    key={editingApprovalMatrixId ?? "create"}
-                    onSubmit={handleApprovalMatrixSubmit}
-                  >
-                    <h4 style={{ marginBottom: "16px" }}>
-                      {isMatrixViewOnly ? "View Approval Matrix" : editingApprovalMatrixId ? "Edit Approval Matrix" : "Create Approval Matrix"}
-                    </h4>
-                    <div className="ops-fields two">
-                      <label>
-                        Matrix name
-                        <input
-                          defaultValue={editingApprovalMatrix?.name ?? ""}
-                          name="name"
-                          placeholder="Vendor payment standard matrix"
-                          required
-                          disabled={isMatrixViewOnly}
-                        />
-                      </label>
-                      <label>
-                        Package subscription
-                        <select
-                          name="subscriptionId"
-                          required
-                          value={approvalMatrixSubscriptionId}
-                          onChange={(event) => {
-                            const nextSubId = event.target.value;
-                            setApprovalMatrixSubscriptionId(nextSubId);
-                            if (!nextSubId) {
-                              setApprovalMatrixDebitAccountIds([]);
-                            } else {
-                              const selectedSub = subscriptions.find(
-                                (sub) => sub.subscriptionId === nextSubId
-                              );
-                              const allowedIds = new Set(
-                                selectedSub ? selectedSub.debitAccounts.map((da) => da.debitAccountId) : []
-                              );
-                              setApprovalMatrixDebitAccountIds((current) =>
-                                current.filter((id) => allowedIds.has(id))
-                              );
-                            }
-                          }}
-                          disabled={isMatrixViewOnly}
-                        >
-                          <option value="">Select package subscription</option>
-                          {subscriptions
-                            .filter((subscription) => subscription.status === "active")
-                            .map((subscription) => (
-                              <option key={subscription.subscriptionId} value={subscription.subscriptionId}>
-                                {subscription.displayName} ({subscription.packageCode})
-                              </option>
-                            ))}
-                        </select>
-                      </label>
-                      <label>
-                        From Amount
-                        <input
-                          defaultValue={editingApprovalMatrix?.amountFrom ?? ""}
-                          min="0"
-                          name="amountFrom"
-                          required
-                          step="0.01"
-                          type="number"
-                          disabled={isMatrixViewOnly}
-                        />
-                      </label>
-                      <label>
-                        To Amount
-                        <input
-                          defaultValue={editingApprovalMatrix?.amountTo ?? ""}
-                          min="0"
-                          name="amountTo"
-                          required
-                          step="0.01"
-                          type="number"
-                          disabled={isMatrixViewOnly}
-                        />
-                      </label>
-                    </div>
 
-                    <div className="ops-fields two">
-                      <label>
-                        Number of Approval Level
-                        <select
-                          value={approvalMatrixLevels}
-                          onChange={(event) => setApprovalMatrixLevels(Number(event.target.value))}
-                          name="approvalLevels"
-                          required
-                          disabled={isMatrixViewOnly}
-                        >
-                          <option value="1">1</option>
-                          <option value="2">2</option>
-                          <option value="3">3</option>
-                        </select>
-                      </label>
-                      <label>
-                        Debit accounts
-                        <CompactMultiDropdown
-                          label="approval matrix debit accounts"
-                          options={(() => {
-                            const selectedSubscription = subscriptions.find(
-                              (sub) => sub.subscriptionId === approvalMatrixSubscriptionId
-                            );
-                            if (!selectedSubscription) return [];
-                            const allowedIds = new Set(
-                              selectedSubscription.debitAccounts
-                                .filter((da) => da.status === "active")
-                                .map((da) => da.debitAccountId)
-                            );
-                            return debitAccounts
-                              .filter((account) => account.status === "active" && allowedIds.has(account.debitAccountId))
-                              .map((account) => ({
-                                value: account.debitAccountId,
-                                label: `${account.accountName} (${account.accountNumber})`
-                              }));
-                          })()}
-                          values={approvalMatrixDebitAccountIds}
-                          onChange={setApprovalMatrixDebitAccountIds}
-                          placeholder={approvalMatrixSubscriptionId ? "Select debit accounts" : "Select a subscription first"}
-                          disabled={isMatrixViewOnly || !approvalMatrixSubscriptionId}
-                        />
-                      </label>
-                    </div>
-
-                    <div className="ops-fields one" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                      {approvalMatrixLevels >= 1 && (
-                        <label>
-                          Level 1 Approval Roles *
-                          <CompactMultiDropdown
-                            label="level 1 approval roles"
-                            options={approvedTransactionCheckerRoles.map((role) => ({
-                              value: role.name,
-                              label: role.name
-                            }))}
-                            values={approvalMatrixRoleNamesL1}
-                            onChange={setApprovalMatrixRoleNamesL1}
-                            placeholder="Select Level 1 roles"
-                            disabled={isMatrixViewOnly}
-                          />
-                        </label>
-                      )}
-
-                      {approvalMatrixLevels >= 2 && (
-                        <label style={{ marginTop: "8px" }}>
-                          Level 2 Approval Roles *
-                          <CompactMultiDropdown
-                            label="level 2 approval roles"
-                            options={approvedTransactionCheckerRoles.map((role) => ({
-                              value: role.name,
-                              label: role.name
-                            }))}
-                            values={approvalMatrixRoleNamesL2}
-                            onChange={setApprovalMatrixRoleNamesL2}
-                            placeholder="Select Level 2 roles"
-                            disabled={isMatrixViewOnly}
-                          />
-                        </label>
-                      )}
-
-                      {approvalMatrixLevels >= 3 && (
-                        <label style={{ marginTop: "8px" }}>
-                          Level 3 Approval Roles *
-                          <CompactMultiDropdown
-                            label="level 3 approval roles"
-                            options={approvedTransactionCheckerRoles.map((role) => ({
-                              value: role.name,
-                              label: role.name
-                            }))}
-                            values={approvalMatrixRoleNamesL3}
-                            onChange={setApprovalMatrixRoleNamesL3}
-                            placeholder="Select Level 3 roles"
-                            disabled={isMatrixViewOnly}
-                          />
-                        </label>
-                      )}
-                    </div>
-
-                    <div className="ops-actions">
-                      {isMatrixViewOnly ? (
-                        <button
-                          className="ops-button secondary"
-                          type="button"
-                          onClick={() => {
-                            setShowApprovalMatrixCreate(false);
-                            setEditingApprovalMatrixId(null);
-                            setIsMatrixViewOnly(false);
-                          }}
-                          style={{ minWidth: "120px" }}
-                        >
-                          Close
-                        </button>
-                      ) : (
-                        <>
-                          <button className="ops-button primary" disabled={busy} type="submit">
-                            {busy ? "Saving..." : editingApprovalMatrixId ? "Save updates" : "Create approval matrix"}
-                          </button>
-                          {editingApprovalMatrixId ? (
-                            <button
-                              className="ops-button"
-                              disabled={busy}
-                              type="button"
-                              onClick={() => {
-                                setShowApprovalMatrixCreate(false);
-                                setEditingApprovalMatrixId(null);
-                              }}
-                            >
-                              Cancel
-                            </button>
-                          ) : null}
-                        </>
-                      )}
-                    </div>
-                  </form>
-                </div>
-              ) : null}
 
               <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0" }}>
                 <label style={{ minWidth: "160px", flex: 1 }}>
@@ -5797,7 +5402,7 @@ export function OperationsDashboard({
                                   <button
                                     type="button"
                                     className="ops-action-item"
-                                    onClick={() => beginViewMatrix(matrix)}
+                                    data-sidesheet-toggle="matrix" onClick={() => beginViewMatrix(matrix)}
                                   >
                                     View
                                   </button>
@@ -5806,7 +5411,7 @@ export function OperationsDashboard({
                                       <button
                                         type="button"
                                         className="ops-action-item"
-                                        onClick={() => beginEditMatrix(matrix)}
+                                        data-sidesheet-toggle="matrix" onClick={() => beginEditMatrix(matrix)}
                                       >
                                         Edit
                                       </button>
@@ -5852,6 +5457,7 @@ export function OperationsDashboard({
                 {isRoleMaker ? (
                   <button
                     className="ops-button primary"
+                    data-sidesheet-toggle="role"
                     onClick={() => {
                       if (showRoleCreate) {
                         setShowRoleCreate(false);
@@ -5870,130 +5476,7 @@ export function OperationsDashboard({
                 ) : null}
               </div>
 
-              {showRoleCreate && (isRoleMaker || isRoleViewOnly) ? (
-                <div className="ops-drawer">
-                  <form
-                    className="ops-form"
-                    key={editingRole?.roleId ?? "role-create"}
-                    onSubmit={handleRoleSubmit}
-                  >
-                    <h4 style={{ marginBottom: "16px" }}>
-                      {isRoleViewOnly ? "View Role" : editingRole ? "Edit Role" : "Create Role"}
-                    </h4>
-                    <div className="ops-fields three">
-                      <label>
-                        Role name
-                        <input
-                          defaultValue={editingRole?.name ?? ""}
-                          name="name"
-                          placeholder="Finance checker"
-                          required
-                          disabled={isRoleViewOnly}
-                        />
-                      </label>
-                      <label>
-                        Status
-                        <select defaultValue={editingRole?.status ?? "inactive"} name="status" required disabled={isRoleViewOnly}>
-                          <option value="inactive">Inactive</option>
-                          <option value="active">Active</option>
-                        </select>
-                      </label>
-                      <label>
-                        Description
-                        <input
-                          defaultValue={editingRole?.description ?? ""}
-                          name="description"
-                          placeholder="Optional role note"
-                          disabled={isRoleViewOnly}
-                        />
-                      </label>
-                    </div>
-                    <div className="ops-fields one" style={{ marginTop: "12px" }}>
-                      <label>
-                        Allowed Packages
-                        <CompactMultiDropdown
-                          label="allowed packages"
-                          options={subscriptions
-                            .filter((sub) => sub.status === "active")
-                            .map((sub) => ({
-                              value: sub.subscriptionId,
-                              label: `${sub.displayName} (${sub.packageCode})`
-                            }))}
-                          values={roleSubscriptionIds}
-                          onChange={setRoleSubscriptionIds}
-                          placeholder="Select allowed packages for this role"
-                          disabled={isRoleViewOnly}
-                        />
-                      </label>
-                    </div>
-                    <div className="ops-permission-grid">
-                      {PERMISSION_GROUPS.map((group) => (
-                        <section className="ops-permission-card" key={group.label}>
-                          <h4>{group.label}</h4>
-                          <div className="ops-permission-list">
-                            {group.items.map((permission) => (
-                              <label className="ops-permission-item" key={permission.value} style={{ cursor: isRoleViewOnly ? "not-allowed" : "pointer" }}>
-                                <input
-                                  name="permissions"
-                                  type="checkbox"
-                                  value={permission.value}
-                                  defaultChecked={editingRole?.permissions.includes(permission.value) ?? false}
-                                  disabled={isRoleViewOnly}
-                                />
-                                <span>{permission.label}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </section>
-                      ))}
-                    </div>
-                    <div className="ops-actions">
-                      {isRoleViewOnly ? (
-                        <button
-                          className="ops-button secondary"
-                          type="button"
-                          onClick={() => {
-                            setShowRoleCreate(false);
-                            setEditingRoleId(null);
-                            setIsRoleViewOnly(false);
-                          }}
-                          style={{ minWidth: "120px" }}
-                        >
-                          Close
-                        </button>
-                      ) : (
-                        <>
-                          <button className="ops-button primary" disabled={busy} type="submit">
-                            {busy ? "Saving..." : editingRole ? "Save role" : "Create role"}
-                          </button>
-                          {editingRole ? (
-                             <button
-                               className="ops-button"
-                               disabled={busy}
-                               type="button"
-                               onClick={() => {
-                                 setShowRoleCreate(false);
-                                 setEditingRoleId(null);
-                               }}
-                             >
-                               Cancel
-                             </button>
-                          ) : (
-                            <button
-                              className="ops-button"
-                              disabled={busy}
-                              type="button"
-                              onClick={() => setShowRoleCreate(false)}
-                            >
-                              Reset
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </form>
-                </div>
-              ) : null}
+
 
               <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0" }}>
                 <label style={{ minWidth: "160px", flex: 1 }}>
@@ -6104,7 +5587,7 @@ export function OperationsDashboard({
                                   <button
                                     type="button"
                                     className="ops-action-item"
-                                    onClick={() => beginViewRole(role)}
+                                    data-sidesheet-toggle="role" onClick={() => beginViewRole(role)}
                                   >
                                     View
                                   </button>
@@ -6113,7 +5596,7 @@ export function OperationsDashboard({
                                       <button
                                         type="button"
                                         className="ops-action-item"
-                                        onClick={() => beginEditRole(role)}
+                                        data-sidesheet-toggle="role" onClick={() => beginEditRole(role)}
                                       >
                                         Edit
                                       </button>
@@ -6165,6 +5648,7 @@ export function OperationsDashboard({
                 {isUserMaker ? (
                   <button
                     className="ops-button primary"
+                    data-sidesheet-toggle="user"
                     onClick={() => setShowUserCreate((current) => !current)}
                     type="button"
                   >
@@ -6173,59 +5657,7 @@ export function OperationsDashboard({
                 ) : null}
               </div>
 
-              {showUserCreate && isUserMaker ? (
-                <div className="ops-drawer">
-                  <form className="ops-form" onSubmit={handleUserSubmit}>
-                    <div className="ops-fields three">
-                      <label>
-                        Display name
-                        <input name="displayName" placeholder="GRV Maker 2" required />
-                      </label>
-                      <label>
-                        Username
-                        <input name="username" placeholder="grvmaker2" required />
-                      </label>
-                      <label>
-                        Password
-                        <input minLength={4} name="password" placeholder="9771" required />
-                      </label>
-                    </div>
-                    <div className="ops-fields three">
-                      <label>
-                        Role
-                        <select name="role" required>
-                          {approvedRoles.map((role) => (
-                            <option key={role.roleId} value={role.name}>
-                              {role.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        Status
-                        <select name="status" required>
-                          <option value="inactive">Inactive</option>
-                          <option value="active">Active</option>
-                        </select>
-                      </label>
-                    </div>
-                    {approvedRoles.length === 0 ? (
-                      <p className="ops-meta">
-                        Approve at least one role first so it can be assigned to users.
-                      </p>
-                    ) : null}
-                    <div className="ops-actions">
-                      <button
-                        className="ops-button primary"
-                        disabled={busy || approvedRoles.length === 0}
-                        type="submit"
-                      >
-                        {busy ? "Saving..." : "Create user"}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              ) : null}
+
 
               <div className="ops-toolbar" style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap", alignItems: "end", padding: "0" }}>
                 <label style={{ minWidth: "160px", flex: 1 }}>
@@ -6967,6 +6399,61 @@ export function OperationsDashboard({
                   </label>
                 </div>
 
+                <div className="ops-panel-head" style={{ marginTop: "32px", borderTop: "1px solid var(--border)", paddingTop: "24px" }}>
+                  <div>
+                    <h3>Custom Metadata Fields</h3>
+                    <p className="ops-meta">
+                      Define up to 4 custom metadata fields that will appear as native inputs in your payout creation UI and as spreadsheet columns for bulk uploads.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="ops-fields two">
+                  <label>
+                    Field 1 Name
+                    <input
+                      defaultValue={settings?.metadataFields?.[0] ?? ""}
+                      disabled={!canEditSettings}
+                      name="metadataField1"
+                      placeholder="e.g. Invoice Number"
+                      maxLength={40}
+                    />
+                  </label>
+                  <label>
+                    Field 2 Name
+                    <input
+                      defaultValue={settings?.metadataFields?.[1] ?? ""}
+                      disabled={!canEditSettings}
+                      name="metadataField2"
+                      placeholder="e.g. Cost Center"
+                      maxLength={40}
+                    />
+                  </label>
+                </div>
+
+                <div className="ops-fields two" style={{ marginTop: "12px" }}>
+                  <label>
+                    Field 3 Name
+                    <input
+                      defaultValue={settings?.metadataFields?.[2] ?? ""}
+                      disabled={!canEditSettings}
+                      name="metadataField3"
+                      placeholder="e.g. Department"
+                      maxLength={40}
+                    />
+                  </label>
+                  <label>
+                    Field 4 Name
+                    <input
+                      defaultValue={settings?.metadataFields?.[3] ?? ""}
+                      disabled={!canEditSettings}
+                      name="metadataField4"
+                      placeholder="e.g. Project Code"
+                      maxLength={40}
+                    />
+                  </label>
+                </div>
+
                 <div className="ops-actions">
                   <button
                     className="ops-button primary"
@@ -7390,7 +6877,1110 @@ export function OperationsDashboard({
             );
           })()
         ) : null}
+
       </main>
+
+      {showTransactionBulkUpload && isTransactionMaker ? (
+        <div 
+          className="ops-create-sidesheet-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowTransactionBulkUpload(false);
+            }
+          }}
+        >
+          <div className="ops-create-sidesheet" ref={transactionBulkUploadRef}>
+            <form 
+              className="ops-form" 
+              onSubmit={handleBulkTransactionUpload}
+              style={{ display: "flex", flexDirection: "column", height: "100%", gap: 0 }}
+            >
+              {/* Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "1px solid var(--border)", paddingBottom: "16px", marginBottom: "20px" }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 600, color: "var(--text-primary)", letterSpacing: "-0.01em" }}>Bulk Upload Payouts</h3>
+                  <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--text-secondary)", lineHeight: "1.4" }}>Import payouts in bulk using a spreadsheet template.</p>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setShowTransactionBulkUpload(false)} 
+                  style={{ background: "none", border: "none", color: "var(--text-tertiary)", fontSize: "20px", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  title="Close form"
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* Scrollable Body */}
+              <div style={{ flex: 1, overflowY: "auto", paddingRight: "4px", display: "flex", flexDirection: "column", gap: "20px" }}>
+                <div className="ops-fields one">
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Upload Excel file
+                    <input 
+                      accept=".xlsx,.xls" 
+                      name="file" 
+                      required 
+                      type="file" 
+                      style={{ padding: "8px", border: "1px dashed var(--border)", borderRadius: "8px", background: "var(--surface-subtle)" }}
+                    />
+                  </label>
+                </div>
+                <div style={{ background: "var(--surface-subtle)", padding: "14px", borderRadius: "8px", border: "1px solid var(--border)", fontSize: "12px", color: "var(--text-secondary)", lineHeight: "1.5" }}>
+                  <strong>Required columns:</strong>
+                  <ul style={{ margin: "4px 0 10px 16px", padding: 0 }}>
+                    <li>Package Code</li>
+                    <li>Transaction Reference</li>
+                    <li>Beneficiary ID</li>
+                    <li>Amount</li>
+                  </ul>
+                  <strong>Optional columns:</strong>
+                  <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>
+                    <li>Payment Method Code</li>
+                    <li>Debit Account Number</li>
+                    <li>Tag</li>
+                    <li>Remark</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "16px", marginTop: "20px", display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                <a
+                  className="ops-button secondary ops-link-button"
+                  href={`/api/payouts/bulk-upload/template${
+                    selectedTransactionPackageCode
+                      ? `?packageCode=${encodeURIComponent(selectedTransactionPackageCode)}`
+                      : ""
+                  }${
+                    selectedTransactionPaymentMethodCode
+                      ? `${selectedTransactionPackageCode ? "&" : "?"}paymentMethodCode=${encodeURIComponent(selectedTransactionPaymentMethodCode)}`
+                      : ""
+                  }${
+                    selectedTransactionDebitAccount?.accountNumber
+                      ? `${selectedTransactionPackageCode || selectedTransactionPaymentMethodCode ? "&" : "?"}debitAccountNumber=${encodeURIComponent(
+                          selectedTransactionDebitAccount.accountNumber
+                        )}`
+                      : ""
+                  }`}
+                  style={{ height: "38px", padding: "0 16px", borderRadius: "6px", display: "inline-flex", alignItems: "center" }}
+                >
+                  Download template
+                </a>
+                <button 
+                  className="ops-button primary" 
+                  disabled={busy} 
+                  type="submit"
+                  style={{ height: "38px", padding: "0 18px", borderRadius: "6px", fontWeight: 600 }}
+                >
+                  {busy ? "Uploading..." : "Upload and create"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {showTransactionCreate && isTransactionMaker ? (
+        <div 
+          className="ops-create-sidesheet-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowTransactionCreate(false);
+            }
+          }}
+        >
+          <div className="ops-create-sidesheet" ref={transactionCreateRef}>
+            <form 
+              className="ops-form" 
+              onSubmit={handleTransactionSubmit}
+              style={{ display: "flex", flexDirection: "column", height: "100%", gap: 0 }}
+            >
+              {/* Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "1px solid var(--border)", paddingBottom: "16px", marginBottom: "20px" }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 600, color: "var(--text-primary)", letterSpacing: "-0.01em" }}>Create New Payout</h3>
+                  <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--text-secondary)", lineHeight: "1.4" }}>Set up routing, beneficiary, and transaction parameters for approval.</p>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setShowTransactionCreate(false)} 
+                  style={{ background: "none", border: "none", color: "var(--text-tertiary)", fontSize: "20px", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  title="Close form"
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* Scrollable Body */}
+              <div style={{ flex: 1, overflowY: "auto", paddingRight: "4px", display: "flex", flexDirection: "column", gap: "20px" }}>
+                {/* Section 1: Payment Routing */}
+                <div>
+                  <h4 style={{ margin: "0 0 10px", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)" }}>1. Routing & Funding Source</h4>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px", background: "var(--surface-subtle)", padding: "16px", borderRadius: "8px", border: "1px solid var(--border)" }}>
+                    <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                      Package
+                      <select
+                        name="packageCode"
+                        required={true}
+                        value={selectedTransactionPackageCode}
+                        onChange={(event) => {
+                          setSelectedTransactionPackageCode(event.target.value);
+                          setSelectedTransactionDebitAccountId("");
+                          setSelectedTransactionPaymentMethodCode("");
+                        }}
+                        style={{ background: "var(--surface)", height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                      >
+                        <option value="">Select package</option>
+                        {transactionPackageOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                      Debit Account
+                      <select
+                        name="debitAccountId"
+                        required={true}
+                        value={selectedTransactionDebitAccountId}
+                        onChange={(event) =>
+                          setSelectedTransactionDebitAccountId(event.target.value)
+                        }
+                        style={{ background: "var(--surface)", height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                      >
+                        <option value="">Select debit account</option>
+                        {selectedTransactionDebitAccounts.map((account) => (
+                          <option key={account.debitAccountId} value={account.debitAccountId}>
+                            {account.accountName} ({account.accountNumber})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                      Payment Method
+                      <select
+                        name="paymentMethodCode"
+                        required={true}
+                        value={selectedTransactionPaymentMethodCode}
+                        onChange={(event) =>
+                          setSelectedTransactionPaymentMethodCode(event.target.value)
+                        }
+                        style={{ background: "var(--surface)", height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                      >
+                        <option value="">Select payment method</option>
+                        {selectedTransactionPaymentMethods.map((methodCode) => (
+                          <option key={methodCode} value={methodCode}>
+                            {methodCode}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Section 2: Transaction Details */}
+                <div>
+                  <h4 style={{ margin: "0 0 10px", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)" }}>2. Payout Details</h4>
+                  <div style={{ display: "grid", gap: "14px" }}>
+                    <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                      Transaction Reference
+                      <input
+                        name="transactionReference"
+                        placeholder="INV-2026-000143"
+                        required
+                        style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                      />
+                    </label>
+                    <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                      Beneficiary Name
+                      <select 
+                        name="beneficiaryId" 
+                        required
+                        style={{ background: "var(--surface)", height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                      >
+                        {packageAwareBeneficiaries.map((beneficiary) => (
+                          <option key={beneficiary.beneficiaryId} value={beneficiary.beneficiaryId}>
+                            {beneficiary.name} ({beneficiary.beneficiaryId})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                      Amount (INR)
+                      <input
+                        inputMode="decimal"
+                        min="1"
+                        name="amount"
+                        placeholder="1000.00"
+                        step="0.01"
+                        type="number"
+                        required
+                        style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                      />
+                    </label>
+                    <div className="ops-fields two">
+                      <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                        Tag
+                        <input 
+                          name="tag" 
+                          placeholder="salary, vendor, reimbursements" 
+                          style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                        />
+                      </label>
+                      <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                        Remark
+                        <input 
+                          name="remark" 
+                          placeholder="Optional internal note" 
+                          style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 3: Custom Metadata (Optional) */}
+                {settings?.metadataFields && settings.metadataFields.length > 0 ? (
+                  <div style={{ borderTop: "1px solid var(--border)", paddingTop: "16px", marginBottom: "16px" }}>
+                    <button
+                      type="button"
+                      onClick={() => setMetadataExpanded(!metadataExpanded)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "var(--action-text)",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        padding: "6px 0",
+                        outline: "none"
+                      }}
+                    >
+                      <span style={{ fontSize: "9px", transition: "transform 0.15s ease", transform: metadataExpanded ? "rotate(90deg)" : "rotate(0deg)", display: "inline-block" }}>▶</span>
+                      <span>Custom Metadata Fields (Optional)</span>
+                    </button>
+                    {metadataExpanded ? (
+                      <div className="ops-fields two" style={{ marginTop: "16px", animation: "ops-fade-in 0.2s ease" }}>
+                        {settings.metadataFields.map((fieldName, index) => (
+                          <label key={fieldName} style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                            {fieldName}
+                            <input
+                              name={`metadata_field_${index}`}
+                              placeholder={`Enter ${fieldName.toLowerCase()}`}
+                              style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
+              {/* Footer */}
+              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "16px", marginTop: "20px", display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                <button 
+                  type="button" 
+                  className="ops-button secondary" 
+                  onClick={() => setShowTransactionCreate(false)}
+                  style={{ height: "38px", padding: "0 16px", borderRadius: "6px" }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="ops-button primary" 
+                  disabled={busy} 
+                  type="submit"
+                  style={{ height: "38px", padding: "0 18px", borderRadius: "6px", fontWeight: 600 }}
+                >
+                  {busy ? "Submitting..." : "Create and submit"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {showBeneficiaryCreate && (isBeneficiaryMaker || isBeneficiaryViewOnly) ? (
+        <div 
+          className="ops-create-sidesheet-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowBeneficiaryCreate(false);
+              setEditingBeneficiaryId(null);
+              setIsBeneficiaryViewOnly(false);
+              setBeneficiaryPackageCodes([]);
+              setBeneIdError("");
+            }
+          }}
+        >
+          <div className="ops-create-sidesheet" ref={beneficiaryCreateRef}>
+            <form
+              className="ops-form"
+              key={editingBeneficiary?.beneficiaryId ?? "beneficiary-create"}
+              onSubmit={handleBeneficiarySubmit}
+              style={{ display: "flex", flexDirection: "column", height: "100%", gap: 0 }}
+            >
+              {/* Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "1px solid var(--border)", paddingBottom: "16px", marginBottom: "20px" }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 600, color: "var(--text-primary)", letterSpacing: "-0.01em" }}>
+                    {isBeneficiaryViewOnly ? "View Beneficiary" : editingBeneficiary ? "Edit Beneficiary" : "Create New Beneficiary"}
+                  </h3>
+                  <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--text-secondary)", lineHeight: "1.4" }}>
+                    {isBeneficiaryViewOnly ? "Details of this beneficiary." : "Set up a new beneficiary for corporate payments."}
+                  </p>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setShowBeneficiaryCreate(false);
+                    setEditingBeneficiaryId(null);
+                    setIsBeneficiaryViewOnly(false);
+                    setBeneficiaryPackageCodes([]);
+                    setBeneIdError("");
+                  }}
+                  style={{ background: "none", border: "none", color: "var(--text-tertiary)", fontSize: "20px", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  title="Close form"
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* Scrollable Body */}
+              <div style={{ flex: 1, overflowY: "auto", paddingRight: "4px", display: "flex", flexDirection: "column", gap: "20px" }}>
+                <div className="ops-fields one" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Bene ID
+                    <input
+                      defaultValue={editingBeneficiary?.beneficiaryId ?? ""}
+                      name="beneficiaryId"
+                      placeholder="KUMAR123"
+                      required
+                      disabled={Boolean(editingBeneficiary) || isBeneficiaryViewOnly}
+                      onChange={(e) => handleBeneIdChange(e.target.value)}
+                      style={{
+                        height: "38px",
+                        border: "1px solid var(--border)",
+                        borderRadius: "6px",
+                        fontSize: "13px",
+                        ...(beneIdError ? { borderColor: "#DC2626" } : {})
+                      }}
+                    />
+                    {beneIdError ? (
+                      <span style={{ color: "#DC2626", fontSize: "12px", marginTop: "4px", display: "block", fontWeight: 500 }}>
+                        {beneIdError}
+                      </span>
+                    ) : null}
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Bene Name
+                    <input
+                      defaultValue={editingBeneficiary?.name ?? ""}
+                      name="name"
+                      placeholder="Orbit Vendor Services"
+                      required
+                      disabled={isBeneficiaryViewOnly}
+                      style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Bene Bank Account Number
+                    <input
+                      defaultValue={editingBeneficiary?.accountNumber ?? ""}
+                      name="accountNumber"
+                      placeholder="409876543210"
+                      required
+                      disabled={isBeneficiaryViewOnly}
+                      style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Bene IFSC Code
+                    <input
+                      defaultValue={editingBeneficiary?.ifsc ?? ""}
+                      name="ifsc"
+                      placeholder="HDFC0001234"
+                      required
+                      disabled={isBeneficiaryViewOnly}
+                      style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Bene Phone Number
+                    <input
+                      defaultValue={editingBeneficiary?.phoneNumber ?? ""}
+                      name="phoneNumber"
+                      placeholder="+91 9876543210"
+                      required
+                      disabled={isBeneficiaryViewOnly}
+                      style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Packages
+                    <CompactMultiDropdown
+                      label="beneficiary packages"
+                      options={(() => {
+                        const activePkgs = packages.filter((p) => (p.status ?? "active") === "active");
+                        const activeSubs = subscriptions.filter((s) => s.status === "active");
+                        const list = activePkgs.length > 0 ? activePkgs : activeSubs;
+                        return list.map((item) => ({
+                          value: item.packageCode,
+                          label: `${item.name || item.displayName || item.packageCode} (${item.packageCode})`
+                        }));
+                      })()}
+                      values={beneficiaryPackageCodes}
+                      onChange={setBeneficiaryPackageCodes}
+                      placeholder="Attach packages"
+                      disabled={isBeneficiaryViewOnly}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Tags
+                    <input 
+                      name="tags" 
+                      placeholder="Optional, comma separated" 
+                      disabled={isBeneficiaryViewOnly} 
+                      style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "16px", marginTop: "20px", display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                {isBeneficiaryViewOnly ? (
+                  <button
+                    className="ops-button secondary"
+                    type="button"
+                    onClick={() => {
+                      setShowBeneficiaryCreate(false);
+                      setEditingBeneficiaryId(null);
+                      setIsBeneficiaryViewOnly(false);
+                      setBeneficiaryPackageCodes([]);
+                      setBeneIdError("");
+                    }}
+                    style={{ height: "38px", padding: "0 16px", borderRadius: "6px" }}
+                  >
+                    Close
+                  </button>
+                ) : (
+                  <>
+                    <button 
+                      className="ops-button primary" 
+                      disabled={busy} 
+                      type="submit"
+                      style={{ height: "38px", padding: "0 18px", borderRadius: "6px", fontWeight: 600 }}
+                    >
+                      {busy
+                        ? "Saving..."
+                        : editingBeneficiary
+                          ? "Save beneficiary"
+                          : "Create beneficiary"}
+                    </button>
+                    {editingBeneficiary ? (
+                      <button
+                        className="ops-button"
+                        disabled={busy}
+                        type="button"
+                        onClick={() => {
+                          setShowBeneficiaryCreate(false);
+                          setEditingBeneficiaryId(null);
+                          setBeneficiaryPackageCodes([]);
+                          setBeneIdError("");
+                        }}
+                        style={{ height: "38px", padding: "0 16px", borderRadius: "6px" }}
+                      >
+                        Cancel
+                      </button>
+                    ) : (
+                      <button
+                        className="ops-button"
+                        disabled={busy}
+                        type="button"
+                        onClick={() => {
+                          setBeneficiaryPackageCodes([]);
+                          setShowBeneficiaryCreate(false);
+                          setBeneIdError("");
+                        }}
+                        style={{ height: "38px", padding: "0 16px", borderRadius: "6px" }}
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {showRoleCreate && (isRoleMaker || isRoleViewOnly) ? (
+        <div 
+          className="ops-create-sidesheet-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowRoleCreate(false);
+              setEditingRoleId(null);
+              setIsRoleViewOnly(false);
+            }
+          }}
+        >
+          <div className="ops-create-sidesheet" ref={roleCreateRef}>
+            <form
+              className="ops-form"
+              key={editingRole?.roleId ?? "role-create"}
+              onSubmit={handleRoleSubmit}
+              style={{ display: "flex", flexDirection: "column", height: "100%", gap: 0 }}
+            >
+              {/* Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "1px solid var(--border)", paddingBottom: "16px", marginBottom: "20px" }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 600, color: "var(--text-primary)", letterSpacing: "-0.01em" }}>
+                    {isRoleViewOnly ? "View Role" : editingRole ? "Edit Role" : "Create New Role"}
+                  </h3>
+                  <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--text-secondary)", lineHeight: "1.4" }}>
+                    {isRoleViewOnly ? "Details of this custom role." : "Define name, status, and permissions for this role."}
+                  </p>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setShowRoleCreate(false);
+                    setEditingRoleId(null);
+                    setIsRoleViewOnly(false);
+                  }}
+                  style={{ background: "none", border: "none", color: "var(--text-tertiary)", fontSize: "20px", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  title="Close form"
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* Scrollable Body */}
+              <div style={{ flex: 1, overflowY: "auto", paddingRight: "4px", display: "flex", flexDirection: "column", gap: "20px" }}>
+                <div className="ops-fields one" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Role name
+                    <input
+                      defaultValue={editingRole?.name ?? ""}
+                      name="name"
+                      placeholder="Finance checker"
+                      required
+                      disabled={isRoleViewOnly}
+                      style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Status
+                    <select 
+                      defaultValue={editingRole?.status ?? "inactive"} 
+                      name="status" 
+                      required 
+                      disabled={isRoleViewOnly}
+                      style={{ background: "var(--surface)", height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    >
+                      <option value="inactive">Inactive</option>
+                      <option value="active">Active</option>
+                    </select>
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Description
+                    <input
+                      defaultValue={editingRole?.description ?? ""}
+                      name="description"
+                      placeholder="Optional role note"
+                      disabled={isRoleViewOnly}
+                      style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Allowed Packages
+                    <CompactMultiDropdown
+                      label="allowed packages"
+                      options={subscriptions
+                        .filter((sub) => sub.status === "active")
+                        .map((sub) => ({
+                          value: sub.subscriptionId,
+                          label: `${sub.displayName} (${sub.packageCode})`
+                        }))}
+                      values={roleSubscriptionIds}
+                      onChange={setRoleSubscriptionIds}
+                      placeholder="Select allowed packages"
+                      disabled={isRoleViewOnly}
+                    />
+                  </label>
+                </div>
+
+                <div className="ops-permission-grid" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  {PERMISSION_GROUPS.map((group) => (
+                    <section className="ops-permission-card" key={group.label} style={{ background: "var(--surface-subtle)", padding: "14px", borderRadius: "8px", border: "1px solid var(--border)" }}>
+                      <h4 style={{ margin: "0 0 10px", fontSize: "12px", fontWeight: 600, color: "var(--text-primary)" }}>{group.label}</h4>
+                      <div className="ops-permission-list" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        {group.items.map((permission) => (
+                          <label className="ops-permission-item" key={permission.value} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", cursor: isRoleViewOnly ? "not-allowed" : "pointer" }}>
+                            <input
+                              name="permissions"
+                              type="checkbox"
+                              value={permission.value}
+                              defaultChecked={editingRole?.permissions.includes(permission.value) ?? false}
+                              disabled={isRoleViewOnly}
+                            />
+                            <span>{permission.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "16px", marginTop: "20px", display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                {isRoleViewOnly ? (
+                  <button
+                    className="ops-button secondary"
+                    type="button"
+                    onClick={() => {
+                      setShowRoleCreate(false);
+                      setEditingRoleId(null);
+                      setIsRoleViewOnly(false);
+                    }}
+                    style={{ height: "38px", padding: "0 16px", borderRadius: "6px" }}
+                  >
+                    Close
+                  </button>
+                ) : (
+                  <>
+                    <button 
+                      className="ops-button primary" 
+                      disabled={busy} 
+                      type="submit"
+                      style={{ height: "38px", padding: "0 18px", borderRadius: "6px", fontWeight: 600 }}
+                    >
+                      {busy ? "Saving..." : editingRole ? "Save role" : "Create role"}
+                    </button>
+                    {editingRole ? (
+                       <button
+                         className="ops-button"
+                         disabled={busy}
+                         type="button"
+                         onClick={() => {
+                           setShowRoleCreate(false);
+                           setEditingRoleId(null);
+                         }}
+                         style={{ height: "38px", padding: "0 16px", borderRadius: "6px" }}
+                       >
+                         Cancel
+                       </button>
+                    ) : (
+                      <button
+                        className="ops-button"
+                        disabled={busy}
+                        type="button"
+                        onClick={() => setShowRoleCreate(false)}
+                        style={{ height: "38px", padding: "0 16px", borderRadius: "6px" }}
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {showUserCreate && isUserMaker ? (
+        <div 
+          className="ops-create-sidesheet-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowUserCreate(false);
+            }
+          }}
+        >
+          <div className="ops-create-sidesheet" ref={userCreateRef}>
+            <form 
+              className="ops-form" 
+              onSubmit={handleUserSubmit}
+              style={{ display: "flex", flexDirection: "column", height: "100%", gap: 0 }}
+            >
+              {/* Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "1px solid var(--border)", paddingBottom: "16px", marginBottom: "20px" }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 600, color: "var(--text-primary)", letterSpacing: "-0.01em" }}>Create New User</h3>
+                  <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--text-secondary)", lineHeight: "1.4" }}>Register a new user account with role assignments.</p>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setShowUserCreate(false)} 
+                  style={{ background: "none", border: "none", color: "var(--text-tertiary)", fontSize: "20px", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  title="Close form"
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* Scrollable Body */}
+              <div style={{ flex: 1, overflowY: "auto", paddingRight: "4px", display: "flex", flexDirection: "column", gap: "20px" }}>
+                <div className="ops-fields one" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Display name
+                    <input 
+                      name="displayName" 
+                      placeholder="GRV Maker 2" 
+                      required 
+                      style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Username
+                    <input 
+                      name="username" 
+                      placeholder="grvmaker2" 
+                      required 
+                      style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Password
+                    <input 
+                      minLength={4} 
+                      name="password" 
+                      placeholder="9771" 
+                      required 
+                      type="password"
+                      style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Role
+                    <select 
+                      name="role" 
+                      required
+                      style={{ background: "var(--surface)", height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    >
+                      {approvedRoles.map((role) => (
+                        <option key={role.roleId} value={role.name}>
+                          {role.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Status
+                    <select 
+                      name="status" 
+                      required
+                      style={{ background: "var(--surface)", height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    >
+                      <option value="inactive">Inactive</option>
+                      <option value="active">Active</option>
+                    </select>
+                  </label>
+                </div>
+                {approvedRoles.length === 0 ? (
+                  <p className="ops-meta" style={{ color: "#DC2626" }}>
+                    Approve at least one role first so it can be assigned to users.
+                  </p>
+                ) : null}
+              </div>
+
+              {/* Footer */}
+              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "16px", marginTop: "20px", display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                <button 
+                  type="button" 
+                  className="ops-button secondary" 
+                  onClick={() => setShowUserCreate(false)}
+                  style={{ height: "38px", padding: "0 16px", borderRadius: "6px" }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="ops-button primary" 
+                  disabled={busy || approvedRoles.length === 0} 
+                  type="submit"
+                  style={{ height: "38px", padding: "0 18px", borderRadius: "6px", fontWeight: 600 }}
+                >
+                  {busy ? "Saving..." : "Create user"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {showApprovalMatrixCreate && (isRoleMaker || isMatrixViewOnly) ? (
+        <div 
+          className="ops-create-sidesheet-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowApprovalMatrixCreate(false);
+              setEditingApprovalMatrixId(null);
+              setIsMatrixViewOnly(false);
+            }
+          }}
+        >
+          <div className="ops-create-sidesheet" ref={approvalMatrixCreateRef}>
+            <form
+              className="ops-form"
+              key={editingApprovalMatrixId ?? "create"}
+              onSubmit={handleApprovalMatrixSubmit}
+              style={{ display: "flex", flexDirection: "column", height: "100%", gap: 0 }}
+            >
+              {/* Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "1px solid var(--border)", paddingBottom: "16px", marginBottom: "20px" }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 600, color: "var(--text-primary)", letterSpacing: "-0.01em" }}>
+                    {isMatrixViewOnly ? "View Approval Matrix" : editingApprovalMatrixId ? "Edit Approval Matrix" : "Create Approval Matrix"}
+                  </h3>
+                  <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--text-secondary)", lineHeight: "1.4" }}>
+                    Configure value tiers and custom multi-role approval steps.
+                  </p>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setShowApprovalMatrixCreate(false);
+                    setEditingApprovalMatrixId(null);
+                    setIsMatrixViewOnly(false);
+                  }}
+                  style={{ background: "none", border: "none", color: "var(--text-tertiary)", fontSize: "20px", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  title="Close form"
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* Scrollable Body */}
+              <div style={{ flex: 1, overflowY: "auto", paddingRight: "4px", display: "flex", flexDirection: "column", gap: "20px" }}>
+                <div className="ops-fields one" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Matrix name
+                    <input
+                      defaultValue={editingApprovalMatrix?.name ?? ""}
+                      name="name"
+                      placeholder="Vendor payment standard matrix"
+                      required
+                      disabled={isMatrixViewOnly}
+                      style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Package subscription
+                    <select
+                      name="subscriptionId"
+                      required
+                      value={approvalMatrixSubscriptionId}
+                      onChange={(event) => {
+                        const nextSubId = event.target.value;
+                        setApprovalMatrixSubscriptionId(nextSubId);
+                        if (!nextSubId) {
+                          setApprovalMatrixDebitAccountIds([]);
+                        } else {
+                          const selectedSub = subscriptions.find(
+                            (sub) => sub.subscriptionId === nextSubId
+                          );
+                          const allowedIds = new Set(
+                            selectedSub ? selectedSub.debitAccounts.map((da) => da.debitAccountId) : []
+                          );
+                          setApprovalMatrixDebitAccountIds((current) =>
+                            current.filter((id) => allowedIds.has(id))
+                          );
+                        }
+                      }}
+                      disabled={isMatrixViewOnly}
+                      style={{ background: "var(--surface)", height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    >
+                      <option value="">Select package subscription</option>
+                      {subscriptions
+                        .filter((subscription) => subscription.status === "active")
+                        .map((subscription) => (
+                          <option key={subscription.subscriptionId} value={subscription.subscriptionId}>
+                            {subscription.displayName} ({subscription.packageCode})
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    From Amount
+                    <input
+                      defaultValue={editingApprovalMatrix?.amountFrom ?? ""}
+                      min="0"
+                      name="amountFrom"
+                      required
+                      step="0.01"
+                      type="number"
+                      disabled={isMatrixViewOnly}
+                      style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    To Amount
+                    <input
+                      defaultValue={editingApprovalMatrix?.amountTo ?? ""}
+                      min="0"
+                      name="amountTo"
+                      required
+                      step="0.01"
+                      type="number"
+                      disabled={isMatrixViewOnly}
+                      style={{ height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    />
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Number of Approval Level
+                    <select
+                      value={approvalMatrixLevels}
+                      onChange={(event) => setApprovalMatrixLevels(Number(event.target.value))}
+                      name="approvalLevels"
+                      required
+                      disabled={isMatrixViewOnly}
+                      style={{ background: "var(--surface)", height: "38px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }}
+                    >
+                      <option value="1">1</option>
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                    </select>
+                  </label>
+                  <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                    Debit accounts
+                    <CompactMultiDropdown
+                      label="approval matrix debit accounts"
+                      options={(() => {
+                        const selectedSubscription = subscriptions.find(
+                          (sub) => sub.subscriptionId === approvalMatrixSubscriptionId
+                        );
+                        if (!selectedSubscription) return [];
+                        const allowedIds = new Set(
+                          selectedSubscription.debitAccounts
+                            .filter((da) => da.status === "active")
+                            .map((da) => da.debitAccountId)
+                        );
+                        return debitAccounts
+                          .filter((account) => account.status === "active" && allowedIds.has(account.debitAccountId))
+                          .map((account) => ({
+                            value: account.debitAccountId,
+                            label: `${account.accountName} (${account.accountNumber})`
+                          }));
+                      })()}
+                      values={approvalMatrixDebitAccountIds}
+                      onChange={setApprovalMatrixDebitAccountIds}
+                      placeholder={approvalMatrixSubscriptionId ? "Select debit accounts" : "Select a subscription first"}
+                      disabled={isMatrixViewOnly || !approvalMatrixSubscriptionId}
+                    />
+                  </label>
+                </div>
+
+                <div className="ops-fields one" style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "12px" }}>
+                  {approvalMatrixLevels >= 1 && (
+                    <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px" }}>
+                      Level 1 Approval Roles *
+                      <CompactMultiDropdown
+                        label="level 1 approval roles"
+                        options={approvedTransactionCheckerRoles.map((role) => ({
+                          value: role.name,
+                          label: role.name
+                        }))}
+                        values={approvalMatrixRoleNamesL1}
+                        onChange={setApprovalMatrixRoleNamesL1}
+                        placeholder="Select Level 1 roles"
+                        disabled={isMatrixViewOnly}
+                      />
+                    </label>
+                  )}
+
+                  {approvalMatrixLevels >= 2 && (
+                    <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px", marginTop: "8px" }}>
+                      Level 2 Approval Roles *
+                      <CompactMultiDropdown
+                        label="level 2 approval roles"
+                        options={approvedTransactionCheckerRoles.map((role) => ({
+                          value: role.name,
+                          label: role.name
+                        }))}
+                        values={approvalMatrixRoleNamesL2}
+                        onChange={setApprovalMatrixRoleNamesL2}
+                        placeholder="Select Level 2 roles"
+                        disabled={isMatrixViewOnly}
+                      />
+                    </label>
+                  )}
+
+                  {approvalMatrixLevels >= 3 && (
+                    <label style={{ fontSize: "11px", fontWeight: 600, display: "grid", gap: "4px", marginTop: "8px" }}>
+                      Level 3 Approval Roles *
+                      <CompactMultiDropdown
+                        label="level 3 approval roles"
+                        options={approvedTransactionCheckerRoles.map((role) => ({
+                          value: role.name,
+                          label: role.name
+                        }))}
+                        values={approvalMatrixRoleNamesL3}
+                        onChange={setApprovalMatrixRoleNamesL3}
+                        placeholder="Select Level 3 roles"
+                        disabled={isMatrixViewOnly}
+                      />
+                    </label>
+                  )}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "16px", marginTop: "20px", display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                {isMatrixViewOnly ? (
+                  <button
+                    className="ops-button secondary"
+                    type="button"
+                    onClick={() => {
+                      setShowApprovalMatrixCreate(false);
+                      setEditingApprovalMatrixId(null);
+                      setIsMatrixViewOnly(false);
+                    }}
+                    style={{ height: "38px", padding: "0 16px", borderRadius: "6px" }}
+                  >
+                    Close
+                  </button>
+                ) : (
+                  <>
+                    <button 
+                      className="ops-button primary" 
+                      disabled={busy} 
+                      type="submit"
+                      style={{ height: "38px", padding: "0 18px", borderRadius: "6px", fontWeight: 600 }}
+                    >
+                      {busy ? "Saving..." : editingApprovalMatrixId ? "Save updates" : "Create approval matrix"}
+                    </button>
+                    {editingApprovalMatrixId ? (
+                      <button
+                        className="ops-button"
+                        disabled={busy}
+                        type="button"
+                        onClick={() => {
+                          setShowApprovalMatrixCreate(false);
+                          setEditingApprovalMatrixId(null);
+                        }}
+                        style={{ height: "38px", padding: "0 16px", borderRadius: "6px" }}
+                      >
+                        Cancel
+                      </button>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
       {session && <Chatbot session={session} />}
     </div>
   );

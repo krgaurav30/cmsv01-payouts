@@ -83,6 +83,7 @@ type PayoutBatchRow = {
   current_approval_level?: number | null;
   roles_by_level?: Array<{ level: number; roles: string[] }> | null;
   matched_matrix_ids?: string[] | null;
+  metadata?: any;
 };
 
 type PayoutItemRow = {
@@ -140,6 +141,7 @@ type PayoutFileUploadRow = {
     amount: number;
     tag?: string | null;
     remark?: string | null;
+    metadata?: Record<string, any> | null;
   }> | null;
   processing_started_at?: number | null;
   processed_at?: number | null;
@@ -286,7 +288,7 @@ export class PayoutManagementService {
                               pb.approved_at, pb.approved_by_user_id, pb.approved_by_role, pb.rejected_at,
                               pb.rejected_by_user_id, pb.rejected_by_role, pb.dispatched_at, pb.completed_at,
                               pb.failure_reason, pb.utr, pb.narration, pb.api_ref_number, pac.approval_levels_required, pac.current_approval_level,
-                              pac.roles_by_level, pac.matched_matrix_ids
+                              pac.roles_by_level, pac.matched_matrix_ids, pb.metadata
                        from payout_batches pb
                        left join payout_batch_approval_contexts pac on pac.batch_id = pb.batch_id
                        left join lateral (
@@ -370,7 +372,7 @@ export class PayoutManagementService {
               pb.approved_at, pb.approved_by_user_id, pb.approved_by_role, pb.rejected_at,
               pb.rejected_by_user_id, pb.rejected_by_role, pb.dispatched_at, pb.completed_at,
               pb.failure_reason, pb.utr, pb.narration, pb.api_ref_number, pac.approval_levels_required, pac.current_approval_level,
-              pac.roles_by_level, pac.matched_matrix_ids
+              pac.roles_by_level, pac.matched_matrix_ids, pb.metadata
        from payout_batches pb
        left join payout_batch_approval_contexts pac on pac.batch_id = pb.batch_id
        left join lateral (
@@ -627,10 +629,10 @@ export class PayoutManagementService {
            bank_reference, created_at, submitted_at, submitted_by_user_id, submitted_by_role,
            approved_at, approved_by_user_id, approved_by_role, rejected_at,
            rejected_by_user_id, rejected_by_role, dispatched_at, completed_at,
-           failure_reason, utr, narration, api_ref_number
+           failure_reason, utr, narration, api_ref_number, metadata
          )
          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'draft', $15, null, null, (extract(epoch from now()) * 1000)::bigint,
-                 null, null, null, null, null, null, null, null, null, null, null, null, $16, $17, $18)
+                 null, null, null, null, null, null, null, null, null, null, null, null, $16, $17, $18, $19::jsonb)
          on conflict (batch_id) do update
          set bank_tenant_id = excluded.bank_tenant_id,
              corporate_tenant_id = excluded.corporate_tenant_id,
@@ -648,7 +650,8 @@ export class PayoutManagementService {
              total_amount = excluded.total_amount,
              utr = coalesce(payout_batches.utr, excluded.utr),
              narration = coalesce(payout_batches.narration, excluded.narration),
-             api_ref_number = coalesce(payout_batches.api_ref_number, excluded.api_ref_number)`,
+             api_ref_number = coalesce(payout_batches.api_ref_number, excluded.api_ref_number),
+             metadata = excluded.metadata`,
         [
           payload.batchId,
           payload.bankTenantId,
@@ -667,7 +670,8 @@ export class PayoutManagementService {
           totalAmountDecimal.toString(),
           batchUtr,
           batchNarration,
-          payload.apiRefNumber ?? null
+          payload.apiRefNumber ?? null,
+          payload.metadata ? JSON.stringify(payload.metadata) : null
         ]
       );
 
@@ -1217,6 +1221,7 @@ export class PayoutManagementService {
       remark: payload.remark,
       apiRefNumber: payload.apiRefNumber,
       initiationChannel: "api",
+      metadata: payload.metadata,
       items: [
         {
           itemId: generatedItemId,
@@ -1343,6 +1348,7 @@ export class PayoutManagementService {
         remark: p.remark ?? undefined,
         apiRefNumber: payload.apiRefNumber,
         initiationChannel: "api",
+        metadata: p.metadata,
         items: [
           {
             itemId: `${generatedBatchId}-item-001`,
@@ -2377,7 +2383,7 @@ export class PayoutManagementService {
               pb.approved_at, pb.approved_by_user_id, pb.approved_by_role, pb.rejected_at,
               pb.rejected_by_user_id, pb.rejected_by_role, pb.dispatched_at, pb.completed_at,
               pb.failure_reason, pb.utr, pb.narration, pb.api_ref_number, pac.approval_levels_required, pac.current_approval_level,
-              pac.roles_by_level, pac.matched_matrix_ids
+              pac.roles_by_level, pac.matched_matrix_ids, pb.metadata
        from payout_batches pb
        left join payout_batch_approval_contexts pac on pac.batch_id = pb.batch_id
        left join lateral (
@@ -2729,6 +2735,7 @@ export class PayoutManagementService {
             remark: row.remark ?? undefined,
             utr: batchUtr,
             narration: batchNarration,
+            metadata: row.metadata ?? undefined,
             items: [
               {
                 itemId: `${createSimpleId("ITEM")}-${globalIndex + 1}`,
@@ -3112,7 +3119,8 @@ export class PayoutManagementService {
       rejectedByUserId: row.rejected_by_user_id,
       rejectedByRole: row.rejected_by_role,
       timeline: [],
-      items: []
+      items: [],
+      metadata: row.metadata
     } satisfies PayoutBatch;
   }
 
@@ -3181,7 +3189,8 @@ export class PayoutManagementService {
       approvalRoles,
       matchedApprovalMatrixIds: approvalContext?.matched_matrix_ids ?? [],
       timeline,
-      items: itemsResult.rows.map(mapPayoutItemRow)
+      items: itemsResult.rows.map(mapPayoutItemRow),
+      metadata: row.metadata
     } satisfies PayoutBatch;
   }
 
@@ -3351,7 +3360,7 @@ export class PayoutManagementService {
               submitted_by_user_id, submitted_by_role, approved_at, approved_by_user_id,
               approved_by_role, rejected_at,
               rejected_by_user_id, rejected_by_role, dispatched_at, completed_at,
-              failure_reason, utr, narration
+              failure_reason, utr, narration, metadata
        from payout_batches
        where corporate_tenant_id = $1
          and corporate_id = $2

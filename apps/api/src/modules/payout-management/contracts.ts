@@ -48,6 +48,7 @@ export const payoutBatchCreateSchema = z.object({
   narration: z.string().optional(),
   apiRefNumber: z.string().optional(),
   initiationChannel: z.enum(["ui", "api", "bulk_upload"]).optional(),
+  metadata: z.record(z.any()).optional(),
   items: z.array(payoutItemSchema).min(1)
 });
 
@@ -58,7 +59,8 @@ export const payoutBulkRowSchema = z.object({
   debitAccountNumber: z.string().min(6).optional(),
   amount: z.number().int().positive(),
   tag: z.string().min(1).optional(),
-  remark: z.string().min(1).optional()
+  remark: z.string().min(1).optional(),
+  metadata: z.record(z.any()).optional()
 });
 
 export const payoutBulkCreateSchema = z.object({
@@ -110,7 +112,8 @@ export const publishedPayoutCreateSchema = z.object({
   amount: moneySchema,
   apiRefNumber: z.string().min(2).max(100).optional(),
   tag: z.string().min(1).optional(),
-  remark: z.string().min(1).optional()
+  remark: z.string().min(1).optional(),
+  metadata: z.record(z.any()).optional()
 });
 
 export const publishedBulkPayoutCreateSchema = z.object({
@@ -252,6 +255,7 @@ export type PayoutBatch = {
   rejectedByRole: string | null;
   timeline: PayoutTimelineEvent[];
   items: PayoutItem[];
+  metadata?: Record<string, any> | null;
 };
 
 export type PayoutItem = PayoutItemInput & {

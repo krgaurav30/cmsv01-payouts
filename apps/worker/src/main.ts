@@ -69,6 +69,7 @@ type ProjectionBatchRow = {
   current_approval_level?: number | null;
   roles_by_level?: Array<{ level: number; roles: string[] }> | null;
   matched_matrix_ids?: string[] | null;
+  metadata?: any;
 };
 
 type ApprovalContextRow = {
@@ -173,8 +174,8 @@ async function syncTransactionProjection(batchId: string) {
             pb.created_at, pb.submitted_at, pb.submitted_by_user_id, pb.submitted_by_role,
             pb.approved_at, pb.approved_by_user_id, pb.approved_by_role, pb.rejected_at,
             pb.rejected_by_user_id, pb.rejected_by_role, pb.dispatched_at, pb.completed_at,
-            pb.failure_reason, pac.approval_levels_required, pac.current_approval_level,
-            pac.roles_by_level, pac.matched_matrix_ids
+            pb.failure_reason, pb.utr, pb.narration, pb.api_ref_number, pac.approval_levels_required, pac.current_approval_level,
+            pac.roles_by_level, pac.matched_matrix_ids, pb.metadata
      from payout_batches pb
      left join payout_batch_approval_contexts pac on pac.batch_id = pb.batch_id
      left join lateral (
@@ -204,12 +205,12 @@ async function syncTransactionProjection(batchId: string) {
        dispatched_at, completed_at, failure_reason, approval_levels_required,
        current_approval_level, roles_by_level, matched_matrix_ids, created_at,
        submitted_at, approved_at, rejected_at, submitted_by_user_id, submitted_by_role,
-       approved_by_user_id, approved_by_role, rejected_by_user_id, rejected_by_role, updated_at
+       approved_by_user_id, approved_by_role, rejected_by_user_id, rejected_by_role, updated_at, metadata
      )
      values (
        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
        $17, $18, $19, $20, $21::jsonb, $22, $23, $24, $25, $26, $27, $28, $29,
-       $30, $31, $32, (extract(epoch from now()) * 1000)::bigint
+       $30, $31, $32, (extract(epoch from now()) * 1000)::bigint, $33::jsonb
      )
      on conflict (batch_id) do update
      set bank_tenant_id = excluded.bank_tenant_id,
@@ -243,7 +244,8 @@ async function syncTransactionProjection(batchId: string) {
          approved_by_role = excluded.approved_by_role,
          rejected_by_user_id = excluded.rejected_by_user_id,
          rejected_by_role = excluded.rejected_by_role,
-         updated_at = (extract(epoch from now()) * 1000)::bigint`,
+         updated_at = (extract(epoch from now()) * 1000)::bigint,
+         metadata = excluded.metadata`,
     [
       row.batch_id,
       row.bank_tenant_id,
@@ -276,7 +278,8 @@ async function syncTransactionProjection(batchId: string) {
       row.approved_by_user_id,
       row.approved_by_role,
       row.rejected_by_user_id,
-      row.rejected_by_role
+      row.rejected_by_role,
+      row.metadata ? JSON.stringify(row.metadata) : null
     ]
   );
 

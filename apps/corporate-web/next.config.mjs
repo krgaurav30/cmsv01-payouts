@@ -16,10 +16,6 @@ const nextConfig = {
             value: "nosniff"
           },
           {
-            key: "X-Frame-Options",
-            value: "DENY"
-          },
-          {
             key: "Referrer-Policy",
             value: "strict-origin-when-cross-origin"
           },
@@ -38,10 +34,32 @@ const nextConfig = {
           {
             key: "X-DNS-Prefetch-Control",
             value: "on"
+          }
+        ]
+      },
+      {
+        source: "/((?!developer-portal).*)",
+        headers: [
+          {
+            key: "X-Frame-Options",
+            value: "DENY"
           },
           {
             key: "Content-Security-Policy",
             value: "frame-ancestors 'none';"
+          }
+        ]
+      },
+      {
+        source: "/developer-portal",
+        headers: [
+          {
+            key: "X-Frame-Options",
+            value: "SAMEORIGIN"
+          },
+          {
+            key: "Content-Security-Policy",
+            value: "frame-ancestors 'self';"
           }
         ]
       }

@@ -23,6 +23,7 @@ type CorporateTenantSettingsRow = {
   updated_at: number | null;
   updated_by_user_id: string | null;
   updated_by_role: string | null;
+  metadata_fields: any | null;
 };
 
 const DEFAULT_SINGLE_LIMIT = 500_000;
@@ -42,7 +43,7 @@ export class SettingsManagementService {
               registered_address, default_approval_note_template,
               max_single_transaction_amount, max_daily_cumulative_transaction_amount,
               max_bulk_upload_rows, duplicate_reference_policy, updated_at,
-              updated_by_user_id, updated_by_role
+              updated_by_user_id, updated_by_role, metadata_fields
        from corporate_tenant_settings
        where corporate_tenant_id = $1`,
       [corporateTenantId]
@@ -76,7 +77,8 @@ export class SettingsManagementService {
       duplicateReferencePolicy: "enabled",
       updatedAt: null,
       updatedByUserId: null,
-      updatedByRole: null
+      updatedByRole: null,
+      metadataFields: null
     } satisfies CorporateTenantSettings;
   }
 
@@ -124,9 +126,9 @@ export class SettingsManagementService {
          registered_address, default_approval_note_template,
          max_single_transaction_amount, max_daily_cumulative_transaction_amount,
          max_bulk_upload_rows, duplicate_reference_policy, updated_at,
-         updated_by_user_id, updated_by_role
+         updated_by_user_id, updated_by_role, metadata_fields
        )
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, (extract(epoch from now()) * 1000)::bigint, $11, $12)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, (extract(epoch from now()) * 1000)::bigint, $11, $12, $13)
        on conflict (corporate_tenant_id) do update
        set company_display_name = excluded.company_display_name,
            support_email = excluded.support_email,
@@ -139,12 +141,13 @@ export class SettingsManagementService {
            duplicate_reference_policy = excluded.duplicate_reference_policy,
            updated_at = (extract(epoch from now()) * 1000)::bigint,
            updated_by_user_id = excluded.updated_by_user_id,
-           updated_by_role = excluded.updated_by_role
+           updated_by_role = excluded.updated_by_role,
+           metadata_fields = excluded.metadata_fields
        returning corporate_tenant_id, company_display_name, support_email, support_phone,
                  registered_address, default_approval_note_template,
                  max_single_transaction_amount, max_daily_cumulative_transaction_amount,
                  max_bulk_upload_rows, duplicate_reference_policy, updated_at,
-                 updated_by_user_id, updated_by_role`,
+                 updated_by_user_id, updated_by_role, metadata_fields`,
       [
         payload.corporateTenantId,
         payload.companyDisplayName,
@@ -157,7 +160,8 @@ export class SettingsManagementService {
         payload.maxBulkUploadRows,
         payload.duplicateReferencePolicy,
         payload.actedByUserId,
-        actor.role
+        actor.role,
+        payload.metadataFields ? JSON.stringify(payload.metadataFields) : null
       ]
     );
 
@@ -182,7 +186,8 @@ function mapSettingsRow(row: CorporateTenantSettingsRow) {
       row.duplicate_reference_policy === "disabled" ? "disabled" : "enabled",
     updatedAt: row.updated_at,
     updatedByUserId: row.updated_by_user_id,
-    updatedByRole: row.updated_by_role
+    updatedByRole: row.updated_by_role,
+    metadataFields: Array.isArray(row.metadata_fields) ? row.metadata_fields : null
   } satisfies CorporateTenantSettings;
 }
 
