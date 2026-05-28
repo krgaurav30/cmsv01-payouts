@@ -661,6 +661,32 @@ export function OperationsDashboard({
   const [pendingBeneficiariesPage, setPendingBeneficiariesPage] = useState(1);
   const [pendingBeneficiariesHasMore, setPendingBeneficiariesHasMore] = useState(true);
 
+  const latestTransactionsPageRef = useRef(transactionsPage);
+  const latestPendingTransactionsPageRef = useRef(pendingTransactionsPage);
+  const latestFileUploadsPageRef = useRef(fileUploadsPage);
+  const latestBeneficiariesPageRef = useRef(beneficiariesPage);
+  const latestPendingBeneficiariesPageRef = useRef(pendingBeneficiariesPage);
+
+  useEffect(() => {
+    latestTransactionsPageRef.current = transactionsPage;
+  }, [transactionsPage]);
+
+  useEffect(() => {
+    latestPendingTransactionsPageRef.current = pendingTransactionsPage;
+  }, [pendingTransactionsPage]);
+
+  useEffect(() => {
+    latestFileUploadsPageRef.current = fileUploadsPage;
+  }, [fileUploadsPage]);
+
+  useEffect(() => {
+    latestBeneficiariesPageRef.current = beneficiariesPage;
+  }, [beneficiariesPage]);
+
+  useEffect(() => {
+    latestPendingBeneficiariesPageRef.current = pendingBeneficiariesPage;
+  }, [pendingBeneficiariesPage]);
+
   // Approval workbench lists
   const [pendingTransactions, setPendingTransactions] = useState<PayoutBatch[]>([]);
   const [pendingBeneficiaries, setPendingBeneficiaries] = useState<Beneficiary[]>([]);
@@ -944,6 +970,12 @@ export function OperationsDashboard({
     const scopes = options.scopes ?? [];
     const shouldFetch = (scope: any) => scopes.length === 0 || scopes.includes(scope);
 
+    const expectedTransactionsPage = latestTransactionsPageRef.current;
+    const expectedPendingTransactionsPage = latestPendingTransactionsPageRef.current;
+    const expectedFileUploadsPage = latestFileUploadsPageRef.current;
+    const expectedBeneficiariesPage = latestBeneficiariesPageRef.current;
+    const expectedPendingBeneficiariesPage = latestPendingBeneficiariesPageRef.current;
+
     if (!corporateId) {
       setTransactions([]);
       setFileUploads([]);
@@ -998,27 +1030,27 @@ export function OperationsDashboard({
     ] = await Promise.all([
       shouldFetch("transactions")
         ? fetchJson<{ items: PayoutBatch[], pagination?: { hasMore: boolean } }>(
-            `/v1/payouts/batches?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}&page=1&limit=${transactionsPage * 25}`
+            `/v1/payouts/batches?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}&page=1&limit=${expectedTransactionsPage * 25}`
           )
         : Promise.resolve({ ok: true as const, data: { items: transactions, pagination: { hasMore: transactionsHasMore } } }),
       shouldFetch("transactions")
         ? fetchJson<{ items: PayoutBatch[], pagination?: { hasMore: boolean } }>(
-            `/v1/payouts/batches?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}&state=pending_approvals&page=1&limit=${pendingTransactionsPage * 25}`
+            `/v1/payouts/batches?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}&state=pending_approvals&page=1&limit=${expectedPendingTransactionsPage * 25}`
           )
         : Promise.resolve({ ok: true as const, data: { items: pendingTransactions, pagination: { hasMore: pendingTransactionsHasMore } } }),
       shouldFetch("file-uploads")
         ? fetchJson<{ items: PayoutFileUpload[], pagination?: { hasMore: boolean } }>(
-            `/v1/payouts/file-uploads?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}&page=1&limit=${fileUploadsPage * 25}`
+            `/v1/payouts/file-uploads?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}&page=1&limit=${expectedFileUploadsPage * 25}`
           )
         : Promise.resolve({ ok: true as const, data: { items: fileUploads, pagination: { hasMore: fileUploadsHasMore } } }),
       shouldFetch("beneficiaries")
         ? fetchJson<{ items: Beneficiary[], pagination?: { hasMore: boolean } }>(
-            `/v1/beneficiaries?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}&page=1&limit=${beneficiariesPage * 25}`
+            `/v1/beneficiaries?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}&page=1&limit=${expectedBeneficiariesPage * 25}`
           )
         : Promise.resolve({ ok: true as const, data: { items: beneficiaries, pagination: { hasMore: beneficiariesHasMore } } }),
       shouldFetch("beneficiaries")
         ? fetchJson<{ items: Beneficiary[], pagination?: { hasMore: boolean } }>(
-            `/v1/beneficiaries?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}&approvalState=pending_approval&page=1&limit=${pendingBeneficiariesPage * 25}`
+            `/v1/beneficiaries?corporateTenantId=${encodeURIComponent(currentSession.corporateTenantId)}&corporateId=${encodeURIComponent(corporateId)}&approvalState=pending_approval&page=1&limit=${expectedPendingBeneficiariesPage * 25}`
           )
         : Promise.resolve({ ok: true as const, data: { items: pendingBeneficiaries, pagination: { hasMore: pendingBeneficiariesHasMore } } }),
       shouldFetch("approval-matrices")
@@ -1051,28 +1083,38 @@ export function OperationsDashboard({
     ]);
 
     if (shouldFetch("transactions") && transactionsResult.ok) {
-      setTransactions(transactionsResult.data.items ?? []);
-      setTransactionsHasMore(transactionsResult.data.pagination?.hasMore ?? false);
+      if (latestTransactionsPageRef.current === expectedTransactionsPage) {
+        setTransactions(transactionsResult.data.items ?? []);
+        setTransactionsHasMore(transactionsResult.data.pagination?.hasMore ?? false);
+      }
     }
 
     if (shouldFetch("transactions") && pendingTransactionsResult.ok) {
-      setPendingTransactions(pendingTransactionsResult.data.items ?? []);
-      setPendingTransactionsHasMore(pendingTransactionsResult.data.pagination?.hasMore ?? false);
+      if (latestPendingTransactionsPageRef.current === expectedPendingTransactionsPage) {
+        setPendingTransactions(pendingTransactionsResult.data.items ?? []);
+        setPendingTransactionsHasMore(pendingTransactionsResult.data.pagination?.hasMore ?? false);
+      }
     }
 
     if (shouldFetch("file-uploads") && fileUploadsResult.ok) {
-      setFileUploads(fileUploadsResult.data.items ?? []);
-      setFileUploadsHasMore(fileUploadsResult.data.pagination?.hasMore ?? false);
+      if (latestFileUploadsPageRef.current === expectedFileUploadsPage) {
+        setFileUploads(fileUploadsResult.data.items ?? []);
+        setFileUploadsHasMore(fileUploadsResult.data.pagination?.hasMore ?? false);
+      }
     }
 
     if (shouldFetch("beneficiaries") && beneficiariesResult.ok) {
-      setBeneficiaries(beneficiariesResult.data.items ?? []);
-      setBeneficiariesHasMore(beneficiariesResult.data.pagination?.hasMore ?? false);
+      if (latestBeneficiariesPageRef.current === expectedBeneficiariesPage) {
+        setBeneficiaries(beneficiariesResult.data.items ?? []);
+        setBeneficiariesHasMore(beneficiariesResult.data.pagination?.hasMore ?? false);
+      }
     }
 
     if (shouldFetch("beneficiaries") && pendingBeneficiariesResult.ok) {
-      setPendingBeneficiaries(pendingBeneficiariesResult.data.items ?? []);
-      setPendingBeneficiariesHasMore(pendingBeneficiariesResult.data.pagination?.hasMore ?? false);
+      if (latestPendingBeneficiariesPageRef.current === expectedPendingBeneficiariesPage) {
+        setPendingBeneficiaries(pendingBeneficiariesResult.data.items ?? []);
+        setPendingBeneficiariesHasMore(pendingBeneficiariesResult.data.pagination?.hasMore ?? false);
+      }
     }
 
     if (shouldFetch("approval-matrices") && approvalMatricesResult.ok) {
